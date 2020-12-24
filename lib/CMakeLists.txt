@@ -1058,7 +1058,7 @@ target_link_libraries(fox PRIVATE ${X11_LIBRARIES} ${LIBRARIES} ${CMAKE_THREAD_L
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/icons.cpp ${CMAKE_CURRENT_SOURCE_DIR}/icons.h
-  COMMAND reswrap -h -n FX -o icons.h ${ICONS}
+  COMMAND reswrap -i -n FX -o icons.h ${ICONS}
   COMMAND reswrap -e -n FX -o icons.cpp ${ICONS}
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS reswrap
