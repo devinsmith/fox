@@ -3,28 +3,26 @@
 *                          R e c t a n g l e    C l a s s                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1994,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1994,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXRectangle.cpp,v 1.16 2006/01/22 17:58:39 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
-#include "fxpriv.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXSize.h"
@@ -120,23 +118,51 @@ FXRectangle& FXRectangle::operator*=(const FXRectangle &r){
 
 // Union between rectangles
 FXRectangle FXRectangle::operator+(const FXRectangle& r) const {
-  register FXshort xx=_min(x,r.x);
-  register FXshort ww=_max(x+w,r.x+r.w)-xx;
-  register FXshort yy=_min(y,r.y);
-  register FXshort hh=_max(y+h,r.y+r.h)-yy;
+  FXshort xx=_min(x,r.x);
+  FXshort ww=_max(x+w,r.x+r.w)-xx;
+  FXshort yy=_min(y,r.y);
+  FXshort hh=_max(y+h,r.y+r.h)-yy;
   return FXRectangle(xx,yy,ww,hh);
   }
 
 
 // Intersection between rectangles
 FXRectangle FXRectangle::operator*(const FXRectangle& r) const {
-  register FXshort xx=_max(x,r.x);
-  register FXshort ww=_min(x+w,r.x+r.w)-xx;
-  register FXshort yy=_max(y,r.y);
-  register FXshort hh=_min(y+h,r.y+r.h)-yy;
+  FXshort xx=_max(x,r.x);
+  FXshort ww=_min(x+w,r.x+r.w)-xx;
+  FXshort yy=_max(y,r.y);
+  FXshort hh=_min(y+h,r.y+r.h)-yy;
   return FXRectangle(xx,yy,ww,hh);
   }
 
+
+// Pieces of this rectangle after taking a bite out of it
+void FXRectangle::bite(FXRectangle pieces[],const FXRectangle& b) const {
+  pieces[0].x=pieces[1].x=x;
+  pieces[0].y=pieces[3].y=y;
+  pieces[2].w=pieces[3].w=x+w;
+  pieces[1].h=pieces[2].h=y+h;
+  pieces[1].w=pieces[2].x=b.x;
+  pieces[0].h=pieces[1].y=b.y;
+  pieces[0].w=pieces[3].x=b.x+b.w;
+  pieces[2].y=pieces[3].h=b.y+b.h;
+  if(pieces[1].w<pieces[1].x) pieces[1].w=pieces[2].x=pieces[1].x;
+  if(pieces[0].h<pieces[0].y) pieces[0].h=pieces[1].y=pieces[0].y;
+  if(pieces[3].x>pieces[3].w) pieces[3].x=pieces[0].w=pieces[3].w;
+  if(pieces[2].y>pieces[2].h) pieces[2].y=pieces[3].h=pieces[2].h;
+  if(pieces[1].w>pieces[3].x) pieces[1].w=pieces[2].x=pieces[3].x;
+  if(pieces[0].h>pieces[2].y) pieces[0].h=pieces[1].y=pieces[2].y;
+  if(pieces[3].x<pieces[1].w) pieces[3].x=pieces[0].w=pieces[1].w;
+  if(pieces[2].y<pieces[0].h) pieces[2].y=pieces[3].h=pieces[0].h;
+  pieces[0].w-=pieces[0].x;
+  pieces[0].h-=pieces[0].y;
+  pieces[1].w-=pieces[1].x;
+  pieces[1].h-=pieces[1].y;
+  pieces[2].w-=pieces[2].x;
+  pieces[2].h-=pieces[2].y;
+  pieces[3].w-=pieces[3].x;
+  pieces[3].h-=pieces[3].y;
+  }
 
 
 // Save object to a stream

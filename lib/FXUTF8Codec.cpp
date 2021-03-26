@@ -3,30 +3,28 @@
 *                      U T F - 8  T e x t   C o d e c                           *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2006 by L.Johnson & J.van der Zijp.  All Rights Reserved.  *
+* Copyright (C) 2002,2020 by L.Johnson & J.van der Zijp.  All Rights Reserved.  *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXUTF8Codec.cpp,v 1.19 2006/01/22 17:58:50 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
-#include "FXDict.h"
 #include "FXString.h"
 #include "FXTextCodec.h"
 #include "FXUTF8Codec.h"
@@ -35,7 +33,7 @@
 /*
   Notes:
   - This is the utf-8 codec used for external inputs; it takes care of
-    things like BOM's being inserted.
+    things like BOM's (0xFEFF or "\xEFxBB\xBF" )being inserted.
 */
 
 /*******************************************************************************/
@@ -43,24 +41,37 @@
 namespace FX {
 
 
-
 // Convert utf8 but strip BOM
-FXint FXUTF8Codec::mb2wc(FXwchar& wc,const FXchar* src,FXint nsrc) const {
-  register FXint n1,n2;
-  n1=utf2wc(wc,src,nsrc);
-  if(0<n1 && wc==0xFEFF){
-    n2=utf2wc(wc,src,nsrc);
-    if(n2<0) return -n1+n2;
-    if(n2==0) return 0;
-    return n1+n2;
+FXint FXUTF8Codec::mb2wc(FXwchar& w,const FXchar* src,FXint nsrc) const {
+  FXint n=0;
+a:if(n>=nsrc) return 0;
+  w=(FXuchar)src[n++];
+  if(__unlikely(0x80<=w)){
+    if(__unlikely(w<0xC0)) return 0;
+    if(__unlikely(n>=nsrc)) return 0;
+    if(__unlikely(!FXISFOLLOWUTF8(src[n]))) return 0;
+    w=(w<<6)^(FXuchar)src[n++]^0x3080;
+    if(__unlikely(0x800<=w)){
+      if(__unlikely(n>=nsrc)) return 0;
+      if(__unlikely(!FXISFOLLOWUTF8(src[n]))) return 0;
+      w=(w<<6)^(FXuchar)src[n++]^0x20080;
+      if(__unlikely(0x10000<=w)){
+        if(__unlikely(n>=nsrc)) return 0;
+        if(__unlikely(!FXISFOLLOWUTF8(src[n]))) return 0;
+        w=(w<<6)^(FXuchar)src[n++]^0x400080;
+        if(__unlikely(0x110000<=w)) return 0;
+        }
+      if(__unlikely(w==0xFEFF)) goto a;
+      }
     }
-  return n1;
+  return n;
   }
 
 
 // Convert to utf8
-FXint FXUTF8Codec::wc2mb(FXchar* dst,FXint ndst,FXwchar wc) const {
-  return wc2utf(dst,ndst,wc);
+FXint FXUTF8Codec::wc2mb(FXchar* dst,FXint ndst,FXwchar w) const {
+  if(__unlikely(ndst<wc2utf(w))) return 0;
+  return wc2utf(dst,w);
   }
 
 

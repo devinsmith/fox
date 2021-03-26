@@ -3,40 +3,43 @@
 *                       M e n u   C a p t i o n   W i d g e t                   *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMenuCaption.cpp,v 1.53.2.1 2006/12/11 15:57:26 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXMenuCaption.h"
 
@@ -47,7 +50,6 @@
     accelerator key combination.
   - When menu label changes, hotkey might have to be adjusted.
   - Fix it so menu stays up when after Alt-F, you press Alt-E.
-  - FXMenuCascade should send ID_POST/ID_UNPOST to self.
   - Look into SEL_FOCUS_SELF some more:- menus should not
     get focus, or at least, return the focus to the original
     widget.
@@ -67,10 +69,11 @@ namespace FX {
 
 // Map
 FXDEFMAP(FXMenuCaption) FXMenuCaptionMap[]={
-  FXMAPFUNC(SEL_PAINT,0,FXMenuCaption::onPaint),
   FXMAPFUNC(SEL_UPDATE,0,FXMenuCaption::onUpdate),
+  FXMAPFUNC(SEL_PAINT,0,FXMenuCaption::onPaint),
   FXMAPFUNC(SEL_QUERY_TIP,0,FXMenuCaption::onQueryTip),
   FXMAPFUNC(SEL_QUERY_HELP,0,FXMenuCaption::onQueryHelp),
+  FXMAPFUNC(SEL_COMMAND,FXMenuCaption::ID_SETVALUE,FXMenuCaption::onCmdSetValue),
   FXMAPFUNC(SEL_COMMAND,FXMenuCaption::ID_SETSTRINGVALUE,FXMenuCaption::onCmdSetStringValue),
   FXMAPFUNC(SEL_COMMAND,FXMenuCaption::ID_GETSTRINGVALUE,FXMenuCaption::onCmdGetStringValue),
   FXMAPFUNC(SEL_COMMAND,FXMenuCaption::ID_SETICONVALUE,FXMenuCaption::onCmdSetIconValue),
@@ -89,26 +92,35 @@ FXIMPLEMENT(FXMenuCaption,FXWindow,FXMenuCaptionMap,ARRAYNUMBER(FXMenuCaptionMap
 // Deserialization
 FXMenuCaption::FXMenuCaption(){
   flags|=FLAG_SHOWN;
+  icon=(FXIcon*)-1L;
+  font=(FXFont*)-1L;
+  textColor=0;
+  selbackColor=0;
+  seltextColor=0;
+  hiliteColor=0;
+  shadowColor=0;
+  hotoff=0;
+  hotkey=0;
   }
 
 
 // Menu entry
-FXMenuCaption::FXMenuCaption(FXComposite* p,const FXString& text,FXIcon* ic,FXuint opts):
-  FXWindow(p,opts,0,0,0,0){
+FXMenuCaption::FXMenuCaption(FXComposite* p,const FXString& text,FXIcon* ic,FXuint opts):FXWindow(p,opts,0,0,0,0){
   FXString string=text.section('\t',0);
-  flags|=FLAG_SHOWN;
-  label=stripHotKey(string);
-  help=text.section('\t',2);
-  icon=ic;
-  font=getApp()->getNormalFont();
   hotkey=parseHotKey(string);
+  label=stripHotKey(string);
   hotoff=findHotKey(string);
-  addHotKey(hotkey);
+  font=getApp()->getNormalFont();
+  help=text.section('\t',2);
+  tip=text.section('\t',1);
   textColor=getApp()->getForeColor();
-  seltextColor=getApp()->getSelMenuTextColor();
   selbackColor=getApp()->getSelMenuBackColor();
+  seltextColor=getApp()->getSelMenuTextColor();
   hiliteColor=getApp()->getHiliteColor();
   shadowColor=getApp()->getShadowColor();
+  icon=ic;
+  addHotKey(hotkey);
+  flags|=FLAG_SHOWN;
   }
 
 
@@ -247,6 +259,13 @@ long FXMenuCaption::onPaint(FXObject*,FXSelector,void* ptr){
       dc.fillRectangle(xx+1+font->getTextWidth(&label[0],hotoff),yy+1,font->getTextWidth(&label[hotoff],wclen(&label[hotoff])),1);
       }
     }
+  return 1;
+  }
+
+
+// Update value from a message
+long FXMenuCaption::onCmdSetValue(FXObject*,FXSelector,void* ptr){
+  setText((const FXchar*)ptr);
   return 1;
   }
 

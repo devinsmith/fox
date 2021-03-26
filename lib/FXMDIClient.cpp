@@ -3,43 +3,44 @@
 *          M u l t i p l e   D o c u m e n t   C l i e n t   W i n d o w        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMDIClient.cpp,v 1.62.2.2 2007/10/25 15:08:51 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
 #include "FXObjectList.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
-#include "FXId.h"
-#include "FXDrawable.h"
+#include "FXDCWindow.h"
 #include "FXImage.h"
 #include "FXIcon.h"
-#include "FXWindow.h"
 #include "FXFrame.h"
 #include "FXLabel.h"
 #include "FXButton.h"
@@ -104,6 +105,7 @@ namespace FX {
 
 
 FXDEFMAP(FXMDIClient) FXMDIClientMap[]={
+  FXMAPFUNC(SEL_PAINT,0,FXMDIClient::onPaint),
   FXMAPFUNC(SEL_UPDATE,FXWindow::ID_MDI_NEXT,FXMDIClient::onUpdActivateNext),
   FXMAPFUNC(SEL_UPDATE,FXWindow::ID_MDI_PREV,FXMDIClient::onUpdActivatePrev),
   FXMAPFUNC(SEL_UPDATE,FXWindow::ID_MDI_TILEHORIZONTAL,FXMDIClient::onUpdTileHorizontal),
@@ -138,19 +140,27 @@ FXIMPLEMENT(FXMDIClient,FXComposite,FXMDIClientMap,ARRAYNUMBER(FXMDIClientMap))
 FXMDIClient::FXMDIClient(){
   flags|=FLAG_SHOWN;
   active=NULL;
+  backImage=NULL;
   cascadex=CASCADE_XOFF;
   cascadey=CASCADE_YOFF;
   }
 
 
 // Construct and init
-FXMDIClient::FXMDIClient(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXComposite(p,opts,x,y,w,h){
+FXMDIClient::FXMDIClient(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXComposite(p,opts,x,y,w,h){
   flags|=FLAG_SHOWN;
   backColor=getApp()->getShadowColor();
   active=NULL;
+  backImage=NULL;
   cascadex=CASCADE_XOFF;
   cascadey=CASCADE_YOFF;
+  }
+
+
+// Create window
+void FXMDIClient::create(){
+  FXComposite::create();
+  if(backImage) backImage->create();
   }
 
 
@@ -168,8 +178,8 @@ FXint FXMDIClient::getDefaultHeight(){
 
 // Recalculate layout
 void FXMDIClient::layout(){
-  register FXMDIChild* child;
-  register FXint xx,yy,ww,hh;
+  FXMDIChild* child;
+  FXint xx,yy,ww,hh;
 
   // Place children
   for(child=(FXMDIChild*)getFirst(); child; child=(FXMDIChild*)child->getNext()){
@@ -204,9 +214,134 @@ void FXMDIClient::layout(){
   }
 
 
+// Handle repaint
+long FXMDIClient::onPaint(FXObject*,FXSelector,void* ptr){
+  FXDCWindow dc(this,(FXEvent*)ptr);
+  if(backImage){
+    dc.setFillStyle(FILL_TILED);
+    dc.setTile(backImage);
+    dc.fillRectangle(0,0,width,height);
+    }
+  else{
+    dc.setForeground(backColor);
+    dc.fillRectangle(0,0,width,height);
+    }
+  return 1;
+  }
+
+
+// Pass message to all MDI windows; the crufty loop is because
+// it is possible for the child receiving the message to be deleted
+long FXMDIClient::forallWindows(FXObject* sender,FXSelector sel,void* ptr){
+  FXWindow *child,*nextchild;
+  for(child=getFirst(); child; child=nextchild){
+    nextchild=child->getNext();
+    if(!child->handle(sender,sel,ptr)) return 0;
+    }
+  return 1;
+  }
+
+
+// Pass message to all different documents; here the complication
+// is that the whole group of child windows sharing the same
+// document may be deleted; also, we want to send only ONE of the
+// document-sharing children a message.
+long FXMDIClient::forallDocuments(FXObject* sender,FXSelector sel,void* ptr){
+  FXWindow *child,*nextchild,*ch;
+  for(child=getFirst(); child; child=nextchild){
+    nextchild=child->getNext();
+x:  if(nextchild && nextchild->getTarget()){
+      for(ch=child; ch; ch=ch->getPrev()){
+        if(ch->getTarget()==nextchild->getTarget()){
+          nextchild=nextchild->getNext();
+          goto x;
+          }
+        }
+      }
+    if(!child->handle(sender,sel,ptr)) return 0;
+    }
+  return 1;
+  }
+
+
+// Pass message to all MDI windows whose target is document;
+// note that the child may be deleted as a result of the message.
+long FXMDIClient::forallDocWindows(FXObject* document,FXObject* sender,FXSelector sel,void* ptr){
+  FXWindow *child,*nextchild;
+  for(child=getFirst(); child; child=nextchild){
+    nextchild=child->getNext();
+    if(child->getTarget()==document){
+      if(!child->handle(sender,sel,ptr)) return 0;
+      }
+    }
+  return 1;
+  }
+
+
+// Set the active child
+FXbool FXMDIClient::setActiveChild(FXMDIChild* child,FXbool notify){
+  FXbool wasmax=false;
+  if(active!=child){
+
+    if(active){
+
+      // Was it maximized?
+      wasmax=active->isMaximized();
+
+      // Deactivate old MDIChild
+      active->handle(this,FXSEL(SEL_DESELECTED,0),(void*)child);        // FIXME should call member function
+
+      // Restore to normal size if it was maximized
+      if(wasmax && child) active->restore(notify);
+      }
+
+    if(child){
+
+      // Activate new MDIChild
+      child->handle(this,FXSEL(SEL_SELECTED,0),(void*)active);          // FIXME should call member function
+
+      // Maximize because the old MDIChild was maximized
+      if(wasmax) child->maximize(notify);
+
+      // Raise it
+      child->raise();
+      }
+
+    active=child;
+
+    // Need layout
+    recalc();
+
+    // GUI update will be needed
+    getApp()->refresh();
+
+    // Notify target
+    if(notify && target){ target->tryHandle(this,FXSEL(SEL_CHANGED,message),child); }
+
+    return true;
+    }
+  return false;
+  }
+
+
+// Get active document; this is the target of the active MDI Child
+FXObject* FXMDIClient::getActiveDocument() const {
+  return getActiveChild() ? getActiveChild()->getTarget() : NULL;
+  }
+
+
+// Change background image
+void FXMDIClient::setBackImage(FXImage* img){
+  if(backImage!=img){
+    backImage=img;
+    update();
+    }
+  }
+
+
 // Cascade windows
 void FXMDIClient::cascade(FXbool notify){
-  register FXMDIChild* child;
+  FXMDIChild* child;
   FXint childx,childy,childw,childh;
   childx=5;
   childy=5;
@@ -234,15 +369,15 @@ void FXMDIClient::cascade(FXbool notify){
 
 // Layout horizontally
 void FXMDIClient::horizontal(FXbool notify){
-  register FXMDIChild* child;
-  register FXint n,nr,nc,hroom,vroom,r,c;
+  FXMDIChild* child;
+  FXint n,nr,nc,hroom,vroom,r,c;
   for(n=0,child=(FXMDIChild*)getFirst(); child; child=(FXMDIChild*)child->getNext()){
     if(child->shown() && !child->isMinimized()) n++;
     }
   nr=n;
   nc=1;
   if(n>3){
-    nc=(int)sqrt((double)n);
+    nc=(int)Math::sqrt((double)n);
     nr=(n+nc-1)/nc;
     }
   hroom=0;
@@ -264,15 +399,15 @@ void FXMDIClient::horizontal(FXbool notify){
 
 // Layout vertically
 void FXMDIClient::vertical(FXbool notify){
-  register FXMDIChild* child;
-  register FXint n,nr,nc,hroom,vroom,r,c;
+  FXMDIChild* child;
+  FXint n,nr,nc,hroom,vroom,r,c;
   for(n=0,child=(FXMDIChild*)getFirst(); child; child=(FXMDIChild*)child->getNext()){
     if(child->shown() && !child->isMinimized()) n++;
     }
   nc=n;
   nr=1;
   if(n>3){
-    nr=(int)sqrt((double)n);
+    nr=(int)Math::sqrt((double)n);
     nc=(n+nr-1)/nr;
     }
   hroom=0;
@@ -294,7 +429,7 @@ void FXMDIClient::vertical(FXbool notify){
 
 // User clicks on one of the window menus
 long FXMDIClient::onCmdWindowSelect(FXObject*,FXSelector sel,void*){
-  setActiveChild((FXMDIChild*)childAtIndex(FXSELID(sel)-ID_MDI_1),TRUE);
+  setActiveChild((FXMDIChild*)childAtIndex(FXSELID(sel)-ID_MDI_1),true);
   return 1;
   }
 
@@ -423,55 +558,9 @@ long FXMDIClient::onUpdMenuClose(FXObject* sender,FXSelector sel,void* ptr){
   }
 
 
-// Set the active child
-FXbool FXMDIClient::setActiveChild(FXMDIChild* child,FXbool notify){
-  FXbool wasmax=FALSE;
-  if(active!=child){
-
-    if(active){
-
-      // Was it maximized?
-      wasmax=active->isMaximized();
-
-      // Deactivate old MDIChild
-      active->handle(this,FXSEL(SEL_DESELECTED,0),(void*)child);     // FIXME should call member function
-
-      // Restore to normal size if it was maximized
-      if(wasmax) active->restore(notify);
-      }
-
-    if(child){
-
-      // Activate new MDIChild
-      child->handle(this,FXSEL(SEL_SELECTED,0),(void*)active);     // FIXME should call member function
-
-      // Maximize because the old MDIChild was maximized
-      if(wasmax) child->maximize(notify);
-
-      // Raise it
-      child->raise();
-      }
-
-    active=child;
-
-    // Need layout
-    recalc();
-
-    // GUI update will be needed
-    getApp()->refresh();
-
-    // Notify target
-    if(notify && target){ target->tryHandle(this,FXSEL(SEL_CHANGED,message),child); }
-
-    return TRUE;
-    }
-  return FALSE;
-  }
-
-
 // Tile horizontally (actually, prefer wider windows)
 long FXMDIClient::onCmdTileHorizontal(FXObject*,FXSelector,void*){
-  horizontal(TRUE);
+  horizontal(true);
   return 1;
   }
 
@@ -485,7 +574,7 @@ long FXMDIClient::onUpdTileHorizontal(FXObject* sender,FXSelector,void*){
 
 // Tile vertically (actually, prefer taller windows)
 long FXMDIClient::onCmdTileVertical(FXObject*,FXSelector,void*){
-  vertical(TRUE);
+  vertical(true);
   return 1;
   }
 
@@ -499,7 +588,7 @@ long FXMDIClient::onUpdTileVertical(FXObject* sender,FXSelector,void*){
 
 // Cascade windows
 long FXMDIClient::onCmdCascade(FXObject*,FXSelector,void*){
-  cascade(TRUE);
+  cascade(true);
   return 1;
   }
 
@@ -511,57 +600,9 @@ long FXMDIClient::onUpdCascade(FXObject* sender,FXSelector,void*){
   }
 
 
-// Pass message to all MDI windows; the crufty loop is because
-// it is possible for the child receiving the message to be deleted
-long FXMDIClient::forallWindows(FXObject* sender,FXSelector sel,void* ptr){
-  register FXWindow *child,*nextchild;
-  for(child=getFirst(); child; child=nextchild){
-    nextchild=child->getNext();
-    if(!child->handle(sender,sel,ptr)) return 0;
-    }
-  return 1;
-  }
-
-
-// Pass message to all different documents; here the complication
-// is that the whole group of child windows sharing the same
-// document may be deleted; also, we want to send only ONE of the
-// document-sharing children a message.
-long FXMDIClient::forallDocuments(FXObject* sender,FXSelector sel,void* ptr){
-  register FXWindow *child,*nextchild,*ch;
-  for(child=getFirst(); child; child=nextchild){
-    nextchild=child->getNext();
-x:  if(nextchild && nextchild->getTarget()){
-      for(ch=child; ch; ch=ch->getPrev()){
-        if(ch->getTarget()==nextchild->getTarget()){
-          nextchild=nextchild->getNext();
-          goto x;
-          }
-        }
-      }
-    if(!child->handle(sender,sel,ptr)) return 0;
-    }
-  return 1;
-  }
-
-
-// Pass message to all MDI windows whose target is document;
-// note that the child may be deleted as a result of the message.
-long FXMDIClient::forallDocWindows(FXObject* document,FXObject* sender,FXSelector sel,void* ptr){
-  register FXWindow *child,*nextchild;
-  for(child=getFirst(); child; child=nextchild){
-    nextchild=child->getNext();
-    if(child->getTarget()==document){
-      if(!child->handle(sender,sel,ptr)) return 0;
-      }
-    }
-  return 1;
-  }
-
-
 // Activate next child
 long FXMDIClient::onCmdActivateNext(FXObject*,FXSelector,void*){
-  if(active && active->getNext()) setActiveChild((FXMDIChild*)active->getNext(),TRUE);
+  if(active && active->getNext()) setActiveChild((FXMDIChild*)active->getNext(),true);
   return 1;
   }
 
@@ -575,7 +616,7 @@ long FXMDIClient::onUpdActivateNext(FXObject* sender,FXSelector,void*){
 
 // Activate previous child
 long FXMDIClient::onCmdActivatePrev(FXObject*,FXSelector,void*){
-  if(active && active->getPrev()) setActiveChild((FXMDIChild*)active->getPrev(),TRUE);
+  if(active && active->getPrev()) setActiveChild((FXMDIChild*)active->getPrev(),true);
   return 1;
   }
 
@@ -616,6 +657,7 @@ void FXMDIClient::load(FXStream& store){
 // Destruct thrashes object
 FXMDIClient::~FXMDIClient(){
   active=(FXMDIChild*)-1L;
+  backImage=(FXImage*)-1L;
   }
 
 }

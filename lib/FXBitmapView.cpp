@@ -3,40 +3,42 @@
 *                    B i t m a p   V i e w   W i d g e t                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXBitmapView.cpp,v 1.16 2006/01/22 17:58:18 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
-#include "FXThread.h"
+#include "fxmath.h"
+#include "FXMutex.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXAccelTable.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
+#include "FXAccelTable.h"
 #include "FXBitmap.h"
-#include "FXIcon.h"
 #include "FXComposite.h"
 #include "FXCanvas.h"
 #include "FXButton.h"
@@ -85,8 +87,7 @@ FXBitmapView::FXBitmapView(){
 
 
 // Construct and init
-FXBitmapView::FXBitmapView(FXComposite* p,FXBitmap* bmp,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXScrollArea(p,opts,x,y,w,h){
+FXBitmapView::FXBitmapView(FXComposite* p,FXBitmap* bmp,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXScrollArea(p,opts,x,y,w,h){
   flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
@@ -113,7 +114,7 @@ void FXBitmapView::detach(){
 
 
 // Can have focus
-bool FXBitmapView::canFocus() const { return true; }
+FXbool FXBitmapView::canFocus() const { return true; }
 
 
 // Determine content width of scroll area
@@ -131,10 +132,13 @@ FXint FXBitmapView::getContentHeight(){
 // Recalculate layout
 void FXBitmapView::layout(){
 
-  // Layout scroll bars and viewport
-  FXScrollArea::layout();
+  // Place scroll bars
+  placeScrollBars(width,height);
 
+  // Repaint
   update();
+
+  // Not dirty
   flags&=~FLAG_DIRTY;
   }
 
@@ -143,22 +147,23 @@ void FXBitmapView::layout(){
 long FXBitmapView::onPaint(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   FXDCWindow dc(this,event);
-  FXint xx,yy,ww,hh;
-  FXint xl,xr,yt,yb;
+  FXint xx,yy,ww,hh,vw,vh,xl,xr,yt,yb;
+  vw=getVisibleWidth();
+  vh=getVisibleHeight();
   if(bitmap){
     ww=bitmap->getWidth();
     hh=bitmap->getHeight();
     xx=pos_x;
     yy=pos_y;
-    if(ww<viewport_w){
+    if(ww<vw){
       if(options&BITMAPVIEW_LEFT) xx=0;
-      else if(options&BITMAPVIEW_RIGHT) xx=viewport_w-ww;
-      else xx=(viewport_w-ww)/2;
+      else if(options&BITMAPVIEW_RIGHT) xx=vw-ww;
+      else xx=(vw-ww)/2;
       }
-    if(hh<viewport_h){
+    if(hh<vh){
       if(options&BITMAPVIEW_TOP) yy=0;
-      else if(options&BITMAPVIEW_BOTTOM) yy=viewport_h-hh;
-      else yy=(viewport_h-hh)/2;
+      else if(options&BITMAPVIEW_BOTTOM) yy=vh-hh;
+      else yy=(vh-hh)/2;
       }
     dc.setForeground(onColor);
     dc.setBackground(offColor);
@@ -166,16 +171,18 @@ long FXBitmapView::onPaint(FXObject*,FXSelector,void* ptr){
     dc.setForeground(backColor);
     xl=xx; xr=xx+ww;
     yt=yy; yb=yy+hh;
-    if(xl<0) xl=0; if(xr>viewport_w) xr=viewport_w;
-    if(yt<0) yt=0; if(yb>viewport_h) yb=viewport_h;
+    if(xl<0) xl=0;
+    if(xr>vw) xr=vw;
+    if(yt<0) yt=0;
+    if(yb>vh) yb=vh;
     dc.fillRectangle(0,0,xr,yt);
-    dc.fillRectangle(0,yt,xl,viewport_h-yt);
-    dc.fillRectangle(xr,0,viewport_w-xr,yb);
-    dc.fillRectangle(xl,yb,viewport_w-xl,viewport_h-yb);
+    dc.fillRectangle(0,yt,xl,vh-yt);
+    dc.fillRectangle(xr,0,vw-xr,yb);
+    dc.fillRectangle(xl,yb,vw-xl,vh-yb);
     }
   else{
     dc.setForeground(backColor);
-    dc.fillRectangle(0,0,width,height);
+    dc.fillRectangle(0,0,vw,vh);
     }
   return 1;
   }

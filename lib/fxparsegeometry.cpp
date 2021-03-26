@@ -3,23 +3,20 @@
 *         P a r s e   G e o m e t r y   F r o m   C o m m a n d   L i n e       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2002,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxparsegeometry.cpp,v 1.6 2006/01/22 17:58:53 fox Exp $                  *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
@@ -51,12 +48,12 @@ namespace FX {
 //      4       width was assigned
 //      8       height was assigned
 FXint fxparsegeometry(const FXchar *string,FXint& x,FXint& y,FXint& w,FXint& h){
-  register FXint result=0;
-  register FXint tw=0;
-  register FXint th=0;
-  register FXint tx=0;
-  register FXint ty=0;
-  register FXint mul;
+  FXint result=0;
+  FXint tw=0;
+  FXint th=0;
+  FXint tx=0;
+  FXint ty=0;
+  FXint mul;
 
   // Got string?
   if(string && *string!='\0'){

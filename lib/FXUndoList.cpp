@@ -3,38 +3,40 @@
 *                  U n d o / R e d o - a b l e   C o m m a n d                  *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXUndoList.cpp,v 1.57 2006/01/22 17:58:50 fox Exp $                      *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
+#include "FXEvent.h"
 #include "FXWindow.h"
+#include "FXApp.h"
 #include "FXUndoList.h"
 
 /*
@@ -112,11 +114,11 @@ FXString FXCommand::redoName() const { return "Redo"; }
 
 
 // Allow merging is false by default
-bool FXCommand::canMerge() const { return false; }
+FXbool FXCommand::canMerge() const { return false; }
 
 
 // Don't merge by default
-bool FXCommand::mergeWith(FXCommand*){ return false; }
+FXbool FXCommand::mergeWith(FXCommand*){ return false; }
 
 
 // Default returns size of undo record itself
@@ -131,7 +133,7 @@ FXIMPLEMENT(FXCommandGroup,FXCommand,NULL,0)
 
 // Undoing a command group undoes each sub command
 void FXCommandGroup::undo(){
-  register FXCommand *command;
+  FXCommand *command;
   while(undolist){
     command=undolist;
     undolist=undolist->next;
@@ -144,7 +146,7 @@ void FXCommandGroup::undo(){
 
 // Undoing a command group undoes each sub command
 void FXCommandGroup::redo(){
-  register FXCommand *command;
+  FXCommand *command;
   while(redolist){
     command=redolist;
     redolist=redolist->next;
@@ -157,8 +159,8 @@ void FXCommandGroup::redo(){
 
 // Return the size of the information in the undo command group.
 FXuint FXCommandGroup::size() const {
-  register FXuint result=sizeof(FXCommandGroup);
-  register FXCommand *command;
+  FXuint result=sizeof(FXCommandGroup);
+  FXCommand *command;
   for(command=undolist; command; command=command->next){
     result+=command->size();
     }
@@ -171,7 +173,7 @@ FXuint FXCommandGroup::size() const {
 
 // Destrying the command group destroys the subcommands
 FXCommandGroup::~FXCommandGroup(){
-  register FXCommand *command;
+  FXCommand *command;
   while(redolist){
     command=redolist;
     redolist=redolist->next;
@@ -235,7 +237,7 @@ void FXUndoList::unmark(){
 
 
 // Check if marked
-bool FXUndoList::marked() const {
+FXbool FXUndoList::marked() const {
   return (group==NULL) && (marker==0);
   }
 
@@ -243,7 +245,7 @@ bool FXUndoList::marked() const {
 // Cut the redo list; can no longer revert to marked
 // state if mark is inside the redo list.
 void FXUndoList::cut(){
-  register FXCommand *command;
+  FXCommand *command;
   if(marker<0) marker=NOMARK;
   while(redolist){
     command=redolist;
@@ -256,9 +258,9 @@ void FXUndoList::cut(){
 
 
 // Add new command, executing if desired
-void FXUndoList::add(FXCommand* command,bool doit,bool merge){
-  register FXCommandGroup* g=this;
-  register FXuint size=0;
+void FXUndoList::add(FXCommand* command,FXbool doit,FXbool merge){
+  FXCommandGroup* g=this;
+  FXuint oldsize=0;
 
   // Must pass a command
   if(!command){ fxerror("FXCommandGroup::add: NULL command argument.\n"); }
@@ -278,7 +280,7 @@ void FXUndoList::add(FXCommand* command,bool doit,bool merge){
   while(g->group){ g=g->group; }
 
   // Old size of previous record
-  if(g->undolist) size=g->undolist->size();
+  if(g->undolist) oldsize=g->undolist->size();
 
   // Try to merge commands when desired and possible
   if(merge && g->undolist && !marked() && command->canMerge() && g->undolist->mergeWith(command)){
@@ -287,7 +289,7 @@ void FXUndoList::add(FXCommand* command,bool doit,bool merge){
     if(this==g){
 
       // Update space, which is the new size less the old size
-      space+=g->undolist->size()-size;
+      space+=g->undolist->size()-oldsize;
       }
 
     // Delete incoming command that was merged
@@ -321,7 +323,7 @@ void FXUndoList::add(FXCommand* command,bool doit,bool merge){
 
 // Begin a new undo command group
 void FXUndoList::begin(FXCommandGroup *command){
-  register FXCommandGroup* g=this;
+  FXCommandGroup* g=this;
 
   // Must pass a command group
   if(!command){ fxerror("FXCommandGroup::begin: NULL command argument.\n"); }
@@ -342,8 +344,8 @@ void FXUndoList::begin(FXCommandGroup *command){
 
 // End undo command group
 void FXUndoList::end(){
-  register FXCommandGroup *command;
-  register FXCommandGroup *g=this;
+  FXCommandGroup *command;
+  FXCommandGroup *g=this;
 
   // Must have called begin
   if(!g->group){ fxerror("FXCommandGroup::end: no matching call to begin.\n"); }
@@ -388,7 +390,7 @@ void FXUndoList::end(){
 
 // Abort undo command group
 void FXUndoList::abort(){
-  register FXCommandGroup *g=this;
+  FXCommandGroup *g=this;
 
   // Must be called after begin
   if(!g->group){ fxerror("FXCommandGroup::abort: no matching call to begin.\n"); }
@@ -409,7 +411,7 @@ void FXUndoList::abort(){
 
 // Undo last command
 void FXUndoList::undo(){
-  register FXCommand *command;
+  FXCommand *command;
   if(group){ fxerror("FXCommandGroup::undo: cannot call undo inside begin-end block.\n"); }
   if(undolist){
     working=true;
@@ -430,7 +432,7 @@ void FXUndoList::undo(){
 
 // Redo next command
 void FXUndoList::redo(){
-  register FXCommand *command;
+  FXCommand *command;
   if(group){ fxerror("FXCommandGroup::redo: cannot call undo inside begin-end block.\n"); }
   if(redolist){
     working=true;
@@ -471,19 +473,19 @@ void FXUndoList::revert(){
 
 
 // Can we undo more commands
-bool FXUndoList::canUndo() const {
+FXbool FXUndoList::canUndo() const {
   return undolist!=NULL;
   }
 
 
 // Can we redo more commands
-bool FXUndoList::canRedo() const {
+FXbool FXUndoList::canRedo() const {
   return redolist!=NULL;
   }
 
 
 // Can revert to marked
-bool FXUndoList::canRevert() const {
+FXbool FXUndoList::canRevert() const {
   return marker!=NOMARK && marker!=0;
   }
 
@@ -504,7 +506,7 @@ FXString FXUndoList::redoName() const {
 
 // Clear list
 void FXUndoList::clear(){
-  register FXCommand *command;
+  FXCommand *command;
   FXTRACE((100,"FXUndoList::clear: space=%d undocount=%d redocount=%d marker=%d\n",space,undocount,redocount,marker));
   while(redolist){
     command=redolist;
@@ -621,9 +623,9 @@ FXuint FXUndoList::size() const {
 void FXUndoList::trimCount(FXint nc){
   FXTRACE((100,"FXUndoList::trimCount: was: space=%d undocount=%d; marker=%d ",space,undocount,marker));
   if(undocount>nc){
-    register FXCommand **pp=&undolist;
-    register FXCommand *p=*pp;
-    register FXint i=0;
+    FXCommand **pp=&undolist;
+    FXCommand *p=*pp;
+    FXint i=0;
     while(p && i<nc){
       pp=&p->next;
       p=*pp;
@@ -646,9 +648,9 @@ void FXUndoList::trimCount(FXint nc){
 void FXUndoList::trimSize(FXuint sz){
   FXTRACE((100,"FXUndoList::trimSize: was: space=%d undocount=%d; marker=%d ",space,undocount,marker));
   if(space>sz){
-    register FXCommand **pp=&undolist;
-    register FXCommand *p=*pp;
-    register FXuint s=0;
+    FXCommand **pp=&undolist;
+    FXCommand *p=*pp;
+    FXuint s=0;
     while(p && (s=s+p->size())<=sz){
       pp=&p->next;
       p=*pp;

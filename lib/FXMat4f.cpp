@@ -3,27 +3,26 @@
 *            S i n g l e - P r e c i s i o n   4 x 4   M a t r i x              *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1994,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1994,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMat4f.cpp,v 1.16 2006/01/22 17:58:35 fox Exp $                         *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXObject.h"
@@ -39,25 +38,9 @@
   Notes:
   - Transformations pre-multiply.
   - Goal is same effect as OpenGL.
+  - Some operations assume last column is (0,0,0,1).
 */
 
-
-#define DET2(a00,a01, \
-             a10,a11) ((a00)*(a11)-(a10)*(a01))
-
-#define DET3(a00,a01,a02, \
-             a10,a11,a12, \
-             a20,a21,a22) ((a00)*DET2(a11,a12,a21,a22) - \
-                           (a10)*DET2(a01,a02,a21,a22) + \
-                           (a20)*DET2(a01,a02,a11,a12))
-
-#define DET4(a00,a01,a02,a03, \
-             a10,a11,a12,a13, \
-             a20,a21,a22,a23, \
-             a30,a31,a32,a33) ((a00)*DET3(a11,a12,a13,a21,a22,a23,a31,a32,a33) - \
-                               (a10)*DET3(a01,a02,a03,a21,a22,a23,a31,a32,a33) + \
-                               (a20)*DET3(a01,a02,a03,a11,a12,a13,a31,a32,a33) - \
-                               (a30)*DET3(a01,a02,a03,a11,a12,a13,a21,a22,a23))
 
 using namespace FX;
 
@@ -65,20 +48,89 @@ using namespace FX;
 
 namespace FX {
 
-// Build matrix from constant
-FXMat4f::FXMat4f(FXfloat w){
-  m[0][0]=w; m[0][1]=w; m[0][2]=w; m[0][3]=w;
-  m[1][0]=w; m[1][1]=w; m[1][2]=w; m[1][3]=w;
-  m[2][0]=w; m[2][1]=w; m[2][2]=w; m[2][3]=w;
-  m[3][0]=w; m[3][1]=w; m[3][2]=w; m[3][3]=w;
+
+// Initialize matrix from scalar
+FXMat4f::FXMat4f(FXfloat s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_set1_ps(s));
+  _mm_storeu_ps(&m[1][0],_mm_set1_ps(s));
+  _mm_storeu_ps(&m[2][0],_mm_set1_ps(s));
+  _mm_storeu_ps(&m[3][0],_mm_set1_ps(s));
+#else
+  m[0][0]=s; m[0][1]=s; m[0][2]=s; m[0][3]=s;
+  m[1][0]=s; m[1][1]=s; m[1][2]=s; m[1][3]=s;
+  m[2][0]=s; m[2][1]=s; m[2][2]=s; m[2][3]=s;
+  m[3][0]=s; m[3][1]=s; m[3][2]=s; m[3][3]=s;
+#endif
   }
 
 
-// Build matrix from scalars
-FXMat4f::FXMat4f(FXfloat a00,FXfloat a01,FXfloat a02,FXfloat a03,
-                 FXfloat a10,FXfloat a11,FXfloat a12,FXfloat a13,
-                 FXfloat a20,FXfloat a21,FXfloat a22,FXfloat a23,
-                 FXfloat a30,FXfloat a31,FXfloat a32,FXfloat a33){
+// Initialize with 3x3 rotation and scaling matrix
+FXMat4f::FXMat4f(const FXMat3f& s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_set_ps(0.0f,s[0][2],s[0][1],s[0][0]));
+  _mm_storeu_ps(&m[1][0],_mm_set_ps(0.0f,s[1][2],s[1][1],s[1][0]));
+  _mm_storeu_ps(&m[2][0],_mm_set_ps(0.0f,s[2][2],s[2][1],s[2][0]));
+  _mm_storeu_ps(&m[3][0],_mm_set_ps(1.0f,0.0f,0.0f,0.0f));
+#else
+  m[0][0]=s[0][0]; m[0][1]=s[0][1]; m[0][2]=s[0][2]; m[0][3]=0.0f;
+  m[1][0]=s[1][0]; m[1][1]=s[1][1]; m[1][2]=s[1][2]; m[1][3]=0.0f;
+  m[2][0]=s[2][0]; m[2][1]=s[2][1]; m[2][2]=s[2][2]; m[2][3]=0.0f;
+  m[3][0]=0.0f;    m[3][1]=0.0f;    m[3][2]=0.0f;    m[3][3]=1.0f;
+#endif
+  }
+
+
+// Initialize matrix from another matrix
+FXMat4f::FXMat4f(const FXMat4f& s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_loadu_ps(&s[0][0]));
+  _mm_storeu_ps(&m[1][0],_mm_loadu_ps(&s[1][0]));
+  _mm_storeu_ps(&m[2][0],_mm_loadu_ps(&s[2][0]));
+  _mm_storeu_ps(&m[3][0],_mm_loadu_ps(&s[3][0]));
+#else
+  m[0]=s[0];
+  m[1]=s[1];
+  m[2]=s[2];
+  m[3]=s[3];
+#endif
+  }
+
+
+// Initialize matrix from array
+FXMat4f::FXMat4f(const FXfloat s[]){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_loadu_ps(s+0));
+  _mm_storeu_ps(&m[1][0],_mm_loadu_ps(s+4));
+  _mm_storeu_ps(&m[2][0],_mm_loadu_ps(s+8));
+  _mm_storeu_ps(&m[3][0],_mm_loadu_ps(s+12));
+#else
+  m[0][0]=s[0];  m[0][1]=s[1];  m[0][2]=s[2];  m[0][3]=s[3];
+  m[1][0]=s[4];  m[1][1]=s[5];  m[1][2]=s[6];  m[1][3]=s[7];
+  m[2][0]=s[8];  m[2][1]=s[9];  m[2][2]=s[10]; m[2][3]=s[11];
+  m[3][0]=s[12]; m[3][1]=s[13]; m[3][2]=s[14]; m[3][3]=s[15];
+#endif
+  }
+
+
+// Initialize diagonal matrix
+FXMat4f::FXMat4f(FXfloat a,FXfloat b,FXfloat c,FXfloat d){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_set_ps(0.0f,0.0f,0.0f,a));
+  _mm_storeu_ps(&m[1][0],_mm_set_ps(0.0f,0.0f,b,0.0f));
+  _mm_storeu_ps(&m[2][0],_mm_set_ps(0.0f,c,0.0f,0.0f));
+  _mm_storeu_ps(&m[3][0],_mm_set_ps(d,0.0f,0.0f,0.0f));
+#else
+  m[0][0]=a;    m[0][1]=0.0f; m[0][2]=0.0f; m[0][3]=0.0f;
+  m[1][0]=0.0f; m[1][1]=b;    m[1][2]=0.0f; m[1][3]=0.0f;
+  m[2][0]=0.0f; m[2][1]=0.0f; m[2][2]=c;    m[2][3]=0.0f;
+  m[3][0]=0.0f; m[3][1]=0.0f; m[3][2]=0.0f; m[3][3]=d;
+#endif
+  }
+
+
+// Initialize matrix from components
+FXMat4f::FXMat4f(FXfloat a00,FXfloat a01,FXfloat a02,FXfloat a03,FXfloat a10,FXfloat a11,FXfloat a12,FXfloat a13,FXfloat a20,FXfloat a21,FXfloat a22,FXfloat a23,FXfloat a30,FXfloat a31,FXfloat a32,FXfloat a33){
   m[0][0]=a00; m[0][1]=a01; m[0][2]=a02; m[0][3]=a03;
   m[1][0]=a10; m[1][1]=a11; m[1][2]=a12; m[1][3]=a13;
   m[2][0]=a20; m[2][1]=a21; m[2][2]=a22; m[2][3]=a23;
@@ -86,69 +138,189 @@ FXMat4f::FXMat4f(FXfloat a00,FXfloat a01,FXfloat a02,FXfloat a03,
   }
 
 
-// Build matrix from four vectors
+// Initialize matrix from four vectors
 FXMat4f::FXMat4f(const FXVec4f& a,const FXVec4f& b,const FXVec4f& c,const FXVec4f& d){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_loadu_ps(a));
+  _mm_storeu_ps(&m[1][0],_mm_loadu_ps(b));
+  _mm_storeu_ps(&m[2][0],_mm_loadu_ps(c));
+  _mm_storeu_ps(&m[3][0],_mm_loadu_ps(d));
+#else
   m[0][0]=a[0]; m[0][1]=a[1]; m[0][2]=a[2]; m[0][3]=a[3];
   m[1][0]=b[0]; m[1][1]=b[1]; m[1][2]=b[2]; m[1][3]=b[3];
   m[2][0]=c[0]; m[2][1]=c[1]; m[2][2]=c[2]; m[2][3]=c[3];
   m[3][0]=d[0]; m[3][1]=d[1]; m[3][2]=d[2]; m[3][3]=d[3];
+#endif
   }
 
 
-// Copy constructor
-FXMat4f::FXMat4f(const FXMat4f& other){
-  m[0]=other[0];
-  m[1]=other[1];
-  m[2]=other[2];
-  m[3]=other[3];
+// Initialize matrix from quaternion
+FXMat4f::FXMat4f(const FXQuatf& quat){
+  set(FXMat3f(quat));
   }
 
 
-// Assignment operator
-FXMat4f& FXMat4f::operator=(const FXMat4f& other){
-  m[0]=other[0];
-  m[1]=other[1];
-  m[2]=other[2];
-  m[3]=other[3];
+// Assign from scalar
+FXMat4f& FXMat4f::operator=(FXfloat s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_set1_ps(s));
+  _mm_storeu_ps(&m[1][0],_mm_set1_ps(s));
+  _mm_storeu_ps(&m[2][0],_mm_set1_ps(s));
+  _mm_storeu_ps(&m[3][0],_mm_set1_ps(s));
+#else
+  m[0][0]=s; m[0][1]=s; m[0][2]=s; m[0][3]=s;
+  m[1][0]=s; m[1][1]=s; m[1][2]=s; m[1][3]=s;
+  m[2][0]=s; m[2][1]=s; m[2][2]=s; m[2][3]=s;
+  m[3][0]=s; m[3][1]=s; m[3][2]=s; m[3][3]=s;
+#endif
   return *this;
   }
 
 
-// Set matrix to constant
-FXMat4f& FXMat4f::operator=(FXfloat w){
-  m[0][0]=w; m[0][1]=w; m[0][2]=w; m[0][3]=w;
-  m[1][0]=w; m[1][1]=w; m[1][2]=w; m[1][3]=w;
-  m[2][0]=w; m[2][1]=w; m[2][2]=w; m[2][3]=w;
-  m[3][0]=w; m[3][1]=w; m[3][2]=w; m[3][3]=w;
+// Assign from 3x3 rotation and scaling matrix
+FXMat4f& FXMat4f::operator=(const FXMat3f& s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_set_ps(0.0f,s[0][2],s[0][1],s[0][0]));
+  _mm_storeu_ps(&m[1][0],_mm_set_ps(0.0f,s[1][2],s[1][1],s[1][0]));
+  _mm_storeu_ps(&m[2][0],_mm_set_ps(0.0f,s[2][2],s[2][1],s[2][0]));
+  _mm_storeu_ps(&m[3][0],_mm_set_ps(1.0f,0.0f,0.0f,0.0f));
+#else
+  m[0][0]=s[0][0]; m[0][1]=s[0][1]; m[0][2]=s[0][2]; m[0][3]=0.0f;
+  m[1][0]=s[1][0]; m[1][1]=s[1][1]; m[1][2]=s[1][2]; m[1][3]=0.0f;
+  m[2][0]=s[2][0]; m[2][1]=s[2][1]; m[2][2]=s[2][2]; m[2][3]=0.0f;
+  m[3][0]=0.0f;    m[3][1]=0.0f;    m[3][2]=0.0f;    m[3][3]=1.0f;
+#endif
+  return *this;
+  }
+
+
+// Assignment operator
+FXMat4f& FXMat4f::operator=(const FXMat4f& s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_loadu_ps(&s[0][0]));
+  _mm_storeu_ps(&m[1][0],_mm_loadu_ps(&s[1][0]));
+  _mm_storeu_ps(&m[2][0],_mm_loadu_ps(&s[2][0]));
+  _mm_storeu_ps(&m[3][0],_mm_loadu_ps(&s[3][0]));
+#else
+  m[0]=s[0];
+  m[1]=s[1];
+  m[2]=s[2];
+  m[3]=s[3];
+#endif
+  return *this;
+  }
+
+
+// Assignment from quaternion
+FXMat4f& FXMat4f::operator=(const FXQuatf& quat){
+  return set(FXMat3f(quat));
+  }
+
+
+// Assignment from array
+FXMat4f& FXMat4f::operator=(const FXfloat s[]){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_loadu_ps(s+0));
+  _mm_storeu_ps(&m[1][0],_mm_loadu_ps(s+4));
+  _mm_storeu_ps(&m[2][0],_mm_loadu_ps(s+8));
+  _mm_storeu_ps(&m[3][0],_mm_loadu_ps(s+12));
+#else
+  m[0][0]=s[0];  m[0][1]=s[1];  m[0][2]=s[2];  m[0][3]=s[3];
+  m[1][0]=s[4];  m[1][1]=s[5];  m[1][2]=s[6];  m[1][3]=s[7];
+  m[2][0]=s[8];  m[2][1]=s[9];  m[2][2]=s[10]; m[2][3]=s[11];
+  m[3][0]=s[12]; m[3][1]=s[13]; m[3][2]=s[14]; m[3][3]=s[15];
+#endif
+  return *this;
+  }
+
+
+// Set value from scalar
+FXMat4f& FXMat4f::set(FXfloat s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_set1_ps(s));
+  _mm_storeu_ps(&m[1][0],_mm_set1_ps(s));
+  _mm_storeu_ps(&m[2][0],_mm_set1_ps(s));
+  _mm_storeu_ps(&m[3][0],_mm_set1_ps(s));
+#else
+  m[0][0]=s; m[0][1]=s; m[0][2]=s; m[0][3]=s;
+  m[1][0]=s; m[1][1]=s; m[1][2]=s; m[1][3]=s;
+  m[2][0]=s; m[2][1]=s; m[2][2]=s; m[2][3]=s;
+  m[3][0]=s; m[3][1]=s; m[3][2]=s; m[3][3]=s;
+#endif
+  return *this;
+  }
+
+
+// Set from 3x3 rotation and scaling matrix
+FXMat4f& FXMat4f::set(const FXMat3f& s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_set_ps(0.0f,s[0][2],s[0][1],s[0][0]));
+  _mm_storeu_ps(&m[1][0],_mm_set_ps(0.0f,s[1][2],s[1][1],s[1][0]));
+  _mm_storeu_ps(&m[2][0],_mm_set_ps(0.0f,s[2][2],s[2][1],s[2][0]));
+  _mm_storeu_ps(&m[3][0],_mm_set_ps(1.0f,0.0f,0.0f,0.0f));
+#else
+  m[0][0]=s[0][0]; m[0][1]=s[0][1]; m[0][2]=s[0][2]; m[0][3]=0.0f;
+  m[1][0]=s[1][0]; m[1][1]=s[1][1]; m[1][2]=s[1][2]; m[1][3]=0.0f;
+  m[2][0]=s[2][0]; m[2][1]=s[2][1]; m[2][2]=s[2][2]; m[2][3]=0.0f;
+  m[3][0]=0.0f;    m[3][1]=0.0f;    m[3][2]=0.0f;    m[3][3]=1.0f;
+#endif
   return *this;
   }
 
 
 // Set value from another matrix
-FXMat4f& FXMat4f::set(const FXMat4f& other){
-  m[0]=other[0];
-  m[1]=other[1];
-  m[2]=other[2];
-  m[3]=other[3];
+FXMat4f& FXMat4f::set(const FXMat4f& s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_loadu_ps(&s[0][0]));
+  _mm_storeu_ps(&m[1][0],_mm_loadu_ps(&s[1][0]));
+  _mm_storeu_ps(&m[2][0],_mm_loadu_ps(&s[2][0]));
+  _mm_storeu_ps(&m[3][0],_mm_loadu_ps(&s[3][0]));
+#else
+  m[0]=s[0];
+  m[1]=s[1];
+  m[2]=s[2];
+  m[3]=s[3];
+#endif
   return *this;
   }
 
 
-// Construct from scalar number
-FXMat4f& FXMat4f::set(FXfloat w){
-  m[0][0]=w; m[0][1]=w; m[0][2]=w; m[0][3]=w;
-  m[1][0]=w; m[1][1]=w; m[1][2]=w; m[1][3]=w;
-  m[2][0]=w; m[2][1]=w; m[2][2]=w; m[2][3]=w;
-  m[3][0]=w; m[3][1]=w; m[3][2]=w; m[3][3]=w;
+// Set value from array
+FXMat4f& FXMat4f::set(const FXfloat s[]){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_loadu_ps(s+0));
+  _mm_storeu_ps(&m[1][0],_mm_loadu_ps(s+4));
+  _mm_storeu_ps(&m[2][0],_mm_loadu_ps(s+8));
+  _mm_storeu_ps(&m[3][0],_mm_loadu_ps(s+12));
+#else
+  m[0][0]=s[0];  m[0][1]=s[1];  m[0][2]=s[2];  m[0][3]=s[3];
+  m[1][0]=s[4];  m[1][1]=s[5];  m[1][2]=s[6];  m[1][3]=s[7];
+  m[2][0]=s[8];  m[2][1]=s[9];  m[2][2]=s[10]; m[2][3]=s[11];
+  m[3][0]=s[12]; m[3][1]=s[13]; m[3][2]=s[14]; m[3][3]=s[15];
+#endif
   return *this;
   }
 
 
-// Construct from components
-FXMat4f& FXMat4f::set(FXfloat a00,FXfloat a01,FXfloat a02,FXfloat a03,
-                      FXfloat a10,FXfloat a11,FXfloat a12,FXfloat a13,
-                      FXfloat a20,FXfloat a21,FXfloat a22,FXfloat a23,
-                      FXfloat a30,FXfloat a31,FXfloat a32,FXfloat a33){
+// Set diagonal matrix
+FXMat4f& FXMat4f::set(FXfloat a,FXfloat b,FXfloat c,FXfloat d){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_set_ps(0.0f,0.0f,0.0f,a));
+  _mm_storeu_ps(&m[1][0],_mm_set_ps(0.0f,0.0f,b,0.0f));
+  _mm_storeu_ps(&m[2][0],_mm_set_ps(0.0f,c,0.0f,0.0f));
+  _mm_storeu_ps(&m[3][0],_mm_set_ps(d,0.0f,0.0f,0.0f));
+#else
+  m[0][0]=a;    m[0][1]=0.0f; m[0][2]=0.0f; m[0][3]=0.0f;
+  m[1][0]=0.0f; m[1][1]=b;    m[1][2]=0.0f; m[1][3]=0.0f;
+  m[2][0]=0.0f; m[2][1]=0.0f; m[2][2]=c;    m[2][3]=0.0f;
+  m[3][0]=0.0f; m[3][1]=0.0f; m[3][2]=0.0f; m[3][3]=d;
+#endif
+  return *this;
+  }
+
+
+// Set value from components
+FXMat4f& FXMat4f::set(FXfloat a00,FXfloat a01,FXfloat a02,FXfloat a03,FXfloat a10,FXfloat a11,FXfloat a12,FXfloat a13,FXfloat a20,FXfloat a21,FXfloat a22,FXfloat a23,FXfloat a30,FXfloat a31,FXfloat a32,FXfloat a33){
   m[0][0]=a00; m[0][1]=a01; m[0][2]=a02; m[0][3]=a03;
   m[1][0]=a10; m[1][1]=a11; m[1][2]=a12; m[1][3]=a13;
   m[2][0]=a20; m[2][1]=a21; m[2][2]=a22; m[2][3]=a23;
@@ -157,295 +329,251 @@ FXMat4f& FXMat4f::set(FXfloat a00,FXfloat a01,FXfloat a02,FXfloat a03,
   }
 
 
-// Construct matrix from three vectors
+// Set value from four vectors
 FXMat4f& FXMat4f::set(const FXVec4f& a,const FXVec4f& b,const FXVec4f& c,const FXVec4f& d){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_loadu_ps(a));
+  _mm_storeu_ps(&m[1][0],_mm_loadu_ps(b));
+  _mm_storeu_ps(&m[2][0],_mm_loadu_ps(c));
+  _mm_storeu_ps(&m[3][0],_mm_loadu_ps(d));
+#else
   m[0][0]=a[0]; m[0][1]=a[1]; m[0][2]=a[2]; m[0][3]=a[3];
   m[1][0]=b[0]; m[1][1]=b[1]; m[1][2]=b[2]; m[1][3]=b[3];
   m[2][0]=c[0]; m[2][1]=c[1]; m[2][2]=c[2]; m[2][3]=c[3];
   m[3][0]=d[0]; m[3][1]=d[1]; m[3][2]=d[2]; m[3][3]=d[3];
+#endif
   return *this;
+  }
+
+
+// Set value from quaternion
+FXMat4f& FXMat4f::set(const FXQuatf& quat){
+  return set(FXMat3f(quat));
   }
 
 
 // Add matrices
-FXMat4f& FXMat4f::operator+=(const FXMat4f& w){
-  m[0][0]+=w[0][0]; m[0][1]+=w[0][1]; m[0][2]+=w[0][2]; m[0][3]+=w[0][3];
-  m[1][0]+=w[1][0]; m[1][1]+=w[1][1]; m[1][2]+=w[1][2]; m[1][3]+=w[1][3];
-  m[2][0]+=w[2][0]; m[2][1]+=w[2][1]; m[2][2]+=w[2][2]; m[2][3]+=w[2][3];
-  m[3][0]+=w[3][0]; m[3][1]+=w[3][1]; m[3][2]+=w[3][2]; m[3][3]+=w[3][3];
+FXMat4f& FXMat4f::operator+=(const FXMat4f& s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_add_ps(_mm_loadu_ps(&m[0][0]),_mm_loadu_ps(&s[0][0])));
+  _mm_storeu_ps(&m[1][0],_mm_add_ps(_mm_loadu_ps(&m[1][0]),_mm_loadu_ps(&s[1][0])));
+  _mm_storeu_ps(&m[2][0],_mm_add_ps(_mm_loadu_ps(&m[2][0]),_mm_loadu_ps(&s[2][0])));
+  _mm_storeu_ps(&m[3][0],_mm_add_ps(_mm_loadu_ps(&m[3][0]),_mm_loadu_ps(&s[3][0])));
+#else
+  m[0][0]+=s[0][0]; m[0][1]+=s[0][1]; m[0][2]+=s[0][2]; m[0][3]+=s[0][3];
+  m[1][0]+=s[1][0]; m[1][1]+=s[1][1]; m[1][2]+=s[1][2]; m[1][3]+=s[1][3];
+  m[2][0]+=s[2][0]; m[2][1]+=s[2][1]; m[2][2]+=s[2][2]; m[2][3]+=s[2][3];
+  m[3][0]+=s[3][0]; m[3][1]+=s[3][1]; m[3][2]+=s[3][2]; m[3][3]+=s[3][3];
+#endif
   return *this;
   }
 
 
-// Substract matrices
-FXMat4f& FXMat4f::operator-=(const FXMat4f& w){
-  m[0][0]-=w[0][0]; m[0][1]-=w[0][1]; m[0][2]-=w[0][2]; m[0][3]-=w[0][3];
-  m[1][0]-=w[1][0]; m[1][1]-=w[1][1]; m[1][2]-=w[1][2]; m[1][3]-=w[1][3];
-  m[2][0]-=w[2][0]; m[2][1]-=w[2][1]; m[2][2]-=w[2][2]; m[2][3]-=w[2][3];
-  m[3][0]-=w[3][0]; m[3][1]-=w[3][1]; m[3][2]-=w[3][2]; m[3][3]-=w[3][3];
+// Subtract matrices
+FXMat4f& FXMat4f::operator-=(const FXMat4f& s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_sub_ps(_mm_loadu_ps(&m[0][0]),_mm_loadu_ps(&s[0][0])));
+  _mm_storeu_ps(&m[1][0],_mm_sub_ps(_mm_loadu_ps(&m[1][0]),_mm_loadu_ps(&s[1][0])));
+  _mm_storeu_ps(&m[2][0],_mm_sub_ps(_mm_loadu_ps(&m[2][0]),_mm_loadu_ps(&s[2][0])));
+  _mm_storeu_ps(&m[3][0],_mm_sub_ps(_mm_loadu_ps(&m[3][0]),_mm_loadu_ps(&s[3][0])));
+#else
+  m[0][0]-=s[0][0]; m[0][1]-=s[0][1]; m[0][2]-=s[0][2]; m[0][3]-=s[0][3];
+  m[1][0]-=s[1][0]; m[1][1]-=s[1][1]; m[1][2]-=s[1][2]; m[1][3]-=s[1][3];
+  m[2][0]-=s[2][0]; m[2][1]-=s[2][1]; m[2][2]-=s[2][2]; m[2][3]-=s[2][3];
+  m[3][0]-=s[3][0]; m[3][1]-=s[3][1]; m[3][2]-=s[3][2]; m[3][3]-=s[3][3];
+#endif
   return *this;
   }
 
 
 // Multiply matrix by scalar
-FXMat4f& FXMat4f::operator*=(FXfloat w){
-  m[0][0]*=w; m[0][1]*=w; m[0][2]*=w; m[0][3]*=w;
-  m[1][0]*=w; m[1][1]*=w; m[1][2]*=w; m[2][3]*=w;
-  m[2][0]*=w; m[2][1]*=w; m[2][2]*=w; m[3][3]*=w;
-  m[3][0]*=w; m[3][1]*=w; m[3][2]*=w; m[3][3]*=w;
+FXMat4f& FXMat4f::operator*=(FXfloat s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_mul_ps(_mm_loadu_ps(&m[0][0]),_mm_set1_ps(s)));
+  _mm_storeu_ps(&m[1][0],_mm_mul_ps(_mm_loadu_ps(&m[1][0]),_mm_set1_ps(s)));
+  _mm_storeu_ps(&m[2][0],_mm_mul_ps(_mm_loadu_ps(&m[2][0]),_mm_set1_ps(s)));
+  _mm_storeu_ps(&m[3][0],_mm_mul_ps(_mm_loadu_ps(&m[3][0]),_mm_set1_ps(s)));
+#else
+  m[0][0]*=s; m[0][1]*=s; m[0][2]*=s; m[0][3]*=s;
+  m[1][0]*=s; m[1][1]*=s; m[1][2]*=s; m[2][3]*=s;
+  m[2][0]*=s; m[2][1]*=s; m[2][2]*=s; m[3][3]*=s;
+  m[3][0]*=s; m[3][1]*=s; m[3][2]*=s; m[3][3]*=s;
+#endif
   return *this;
   }
 
 
 // Multiply matrix by matrix
-FXMat4f& FXMat4f::operator*=(const FXMat4f& w){
-  register FXfloat x,y,z,h;
-  x=m[0][0]; y=m[0][1]; z=m[0][2]; h=m[0][3];
-  m[0][0]=x*w[0][0]+y*w[1][0]+z*w[2][0]+h*w[3][0];
-  m[0][1]=x*w[0][1]+y*w[1][1]+z*w[2][1]+h*w[3][1];
-  m[0][2]=x*w[0][2]+y*w[1][2]+z*w[2][2]+h*w[3][2];
-  m[0][3]=x*w[0][3]+y*w[1][3]+z*w[2][3]+h*w[3][3];
-  x=m[1][0]; y=m[1][1]; z=m[1][2]; h=m[1][3];
-  m[1][0]=x*w[0][0]+y*w[1][0]+z*w[2][0]+h*w[3][0];
-  m[1][1]=x*w[0][1]+y*w[1][1]+z*w[2][1]+h*w[3][1];
-  m[1][2]=x*w[0][2]+y*w[1][2]+z*w[2][2]+h*w[3][2];
-  m[1][3]=x*w[0][3]+y*w[1][3]+z*w[2][3]+h*w[3][3];
-  x=m[2][0]; y=m[2][1]; z=m[2][2]; h=m[2][3];
-  m[2][0]=x*w[0][0]+y*w[1][0]+z*w[2][0]+h*w[3][0];
-  m[2][1]=x*w[0][1]+y*w[1][1]+z*w[2][1]+h*w[3][1];
-  m[2][2]=x*w[0][2]+y*w[1][2]+z*w[2][2]+h*w[3][2];
-  m[2][3]=x*w[0][3]+y*w[1][3]+z*w[2][3]+h*w[3][3];
-  x=m[3][0]; y=m[3][1]; z=m[3][2]; h=m[3][3];
-  m[3][0]=x*w[0][0]+y*w[1][0]+z*w[2][0]+h*w[3][0];
-  m[3][1]=x*w[0][1]+y*w[1][1]+z*w[2][1]+h*w[3][1];
-  m[3][2]=x*w[0][2]+y*w[1][2]+z*w[2][2]+h*w[3][2];
-  m[3][3]=x*w[0][3]+y*w[1][3]+z*w[2][3]+h*w[3][3];
+FXMat4f& FXMat4f::operator*=(const FXMat4f& s){
+#if defined(FOX_HAS_SSE)
+  __m128 b0=_mm_loadu_ps(&s[0][0]);
+  __m128 b1=_mm_loadu_ps(&s[1][0]);
+  __m128 b2=_mm_loadu_ps(&s[2][0]);
+  __m128 b3=_mm_loadu_ps(&s[3][0]);
+  __m128 xx,yy,zz,ww;
+  xx=_mm_set1_ps(m[0][0]);
+  yy=_mm_set1_ps(m[0][1]);
+  zz=_mm_set1_ps(m[0][2]);
+  ww=_mm_set1_ps(m[0][3]);
+  _mm_storeu_ps(m[0],_mm_add_ps(_mm_add_ps(_mm_mul_ps(b0,xx),_mm_mul_ps(b1,yy)),_mm_add_ps(_mm_mul_ps(b2,zz),_mm_mul_ps(b3,ww))));
+  xx=_mm_set1_ps(m[1][0]);
+  yy=_mm_set1_ps(m[1][1]);
+  zz=_mm_set1_ps(m[1][2]);
+  ww=_mm_set1_ps(m[1][3]);
+  _mm_storeu_ps(m[1],_mm_add_ps(_mm_add_ps(_mm_mul_ps(b0,xx),_mm_mul_ps(b1,yy)),_mm_add_ps(_mm_mul_ps(b2,zz),_mm_mul_ps(b3,ww))));
+  xx=_mm_set1_ps(m[2][0]);
+  yy=_mm_set1_ps(m[2][1]);
+  zz=_mm_set1_ps(m[2][2]);
+  ww=_mm_set1_ps(m[2][3]);
+  _mm_storeu_ps(m[2],_mm_add_ps(_mm_add_ps(_mm_mul_ps(b0,xx),_mm_mul_ps(b1,yy)),_mm_add_ps(_mm_mul_ps(b2,zz),_mm_mul_ps(b3,ww))));
+  xx=_mm_set1_ps(m[3][0]);
+  yy=_mm_set1_ps(m[3][1]);
+  zz=_mm_set1_ps(m[3][2]);
+  ww=_mm_set1_ps(m[3][3]);
+  _mm_storeu_ps(m[3],_mm_add_ps(_mm_add_ps(_mm_mul_ps(b0,xx),_mm_mul_ps(b1,yy)),_mm_add_ps(_mm_mul_ps(b2,zz),_mm_mul_ps(b3,ww))));
+#else
+  FXfloat x,y,z,w;
+  x=m[0][0]; y=m[0][1]; z=m[0][2]; w=m[0][3];
+  m[0][0]=x*s[0][0]+y*s[1][0]+z*s[2][0]+w*s[3][0];
+  m[0][1]=x*s[0][1]+y*s[1][1]+z*s[2][1]+w*s[3][1];
+  m[0][2]=x*s[0][2]+y*s[1][2]+z*s[2][2]+w*s[3][2];
+  m[0][3]=x*s[0][3]+y*s[1][3]+z*s[2][3]+w*s[3][3];
+  x=m[1][0]; y=m[1][1]; z=m[1][2]; w=m[1][3];
+  m[1][0]=x*s[0][0]+y*s[1][0]+z*s[2][0]+w*s[3][0];
+  m[1][1]=x*s[0][1]+y*s[1][1]+z*s[2][1]+w*s[3][1];
+  m[1][2]=x*s[0][2]+y*s[1][2]+z*s[2][2]+w*s[3][2];
+  m[1][3]=x*s[0][3]+y*s[1][3]+z*s[2][3]+w*s[3][3];
+  x=m[2][0]; y=m[2][1]; z=m[2][2]; w=m[2][3];
+  m[2][0]=x*s[0][0]+y*s[1][0]+z*s[2][0]+w*s[3][0];
+  m[2][1]=x*s[0][1]+y*s[1][1]+z*s[2][1]+w*s[3][1];
+  m[2][2]=x*s[0][2]+y*s[1][2]+z*s[2][2]+w*s[3][2];
+  m[2][3]=x*s[0][3]+y*s[1][3]+z*s[2][3]+w*s[3][3];
+  x=m[3][0]; y=m[3][1]; z=m[3][2]; w=m[3][3];
+  m[3][0]=x*s[0][0]+y*s[1][0]+z*s[2][0]+w*s[3][0];
+  m[3][1]=x*s[0][1]+y*s[1][1]+z*s[2][1]+w*s[3][1];
+  m[3][2]=x*s[0][2]+y*s[1][2]+z*s[2][2]+w*s[3][2];
+  m[3][3]=x*s[0][3]+y*s[1][3]+z*s[2][3]+w*s[3][3];
+#endif
   return *this;
   }
 
 
 // Divide matric by scalar
-FXMat4f& FXMat4f::operator/=(FXfloat w){
-  m[0][0]/=w; m[0][1]/=w; m[0][2]/=w; m[0][3]/=w;
-  m[1][0]/=w; m[1][1]/=w; m[1][2]/=w; m[1][3]/=w;
-  m[2][0]/=w; m[2][1]/=w; m[2][2]/=w; m[2][3]/=w;
-  m[3][0]/=w; m[3][1]/=w; m[3][2]/=w; m[3][3]/=w;
+FXMat4f& FXMat4f::operator/=(FXfloat s){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_div_ps(_mm_loadu_ps(&m[0][0]),_mm_set1_ps(s)));
+  _mm_storeu_ps(&m[1][0],_mm_div_ps(_mm_loadu_ps(&m[1][0]),_mm_set1_ps(s)));
+  _mm_storeu_ps(&m[2][0],_mm_div_ps(_mm_loadu_ps(&m[2][0]),_mm_set1_ps(s)));
+  _mm_storeu_ps(&m[3][0],_mm_div_ps(_mm_loadu_ps(&m[3][0]),_mm_set1_ps(s)));
+#else
+  m[0][0]/=s; m[0][1]/=s; m[0][2]/=s; m[0][3]/=s;
+  m[1][0]/=s; m[1][1]/=s; m[1][2]/=s; m[1][3]/=s;
+  m[2][0]/=s; m[2][1]/=s; m[2][2]/=s; m[2][3]/=s;
+  m[3][0]/=s; m[3][1]/=s; m[3][2]/=s; m[3][3]/=s;
+#endif
   return *this;
   }
 
 
 // Unary minus
 FXMat4f FXMat4f::operator-() const {
+#if defined(FOX_HAS_SSE)
+  FXMat4f r;
+  _mm_storeu_ps(r[0],_mm_sub_ps(_mm_set_ps(0.0f,0.0f,0.0f,0.0f),_mm_loadu_ps(m[0])));
+  _mm_storeu_ps(r[1],_mm_sub_ps(_mm_set_ps(0.0f,0.0f,0.0f,0.0f),_mm_loadu_ps(m[1])));
+  _mm_storeu_ps(r[2],_mm_sub_ps(_mm_set_ps(0.0f,0.0f,0.0f,0.0f),_mm_loadu_ps(m[2])));
+  _mm_storeu_ps(r[3],_mm_sub_ps(_mm_set_ps(0.0f,0.0f,0.0f,0.0f),_mm_loadu_ps(m[3])));
+  return r;
+#else
   return FXMat4f(-m[0][0],-m[0][1],-m[0][2],-m[0][3],
                  -m[1][0],-m[1][1],-m[1][2],-m[1][3],
                  -m[2][0],-m[2][1],-m[2][2],-m[2][3],
                  -m[3][0],-m[3][1],-m[3][2],-m[3][3]);
+#endif
   }
 
 
-// Add matrices
-FXMat4f FXMat4f::operator+(const FXMat4f& w) const {
-  return FXMat4f(m[0][0]+w[0][0],m[0][1]+w[0][1],m[0][2]+w[0][2],m[0][3]+w[0][3],
-                 m[1][0]+w[1][0],m[1][1]+w[1][1],m[1][2]+w[1][2],m[1][3]+w[1][3],
-                 m[2][0]+w[2][0],m[2][1]+w[2][1],m[2][2]+w[2][2],m[2][3]+w[2][3],
-                 m[3][0]+w[3][0],m[3][1]+w[3][1],m[3][2]+w[3][2],m[3][3]+w[3][3]);
-  }
-
-
-// Substract matrices
-FXMat4f FXMat4f::operator-(const FXMat4f& w) const {
-  return FXMat4f(m[0][0]-w[0][0],m[0][1]-w[0][1],m[0][2]-w[0][2],m[0][3]-w[0][3],
-                 m[1][0]-w[1][0],m[1][1]-w[1][1],m[1][2]-w[1][2],m[1][3]-w[1][3],
-                 m[2][0]-w[2][0],m[2][1]-w[2][1],m[2][2]-w[2][2],m[2][3]-w[2][3],
-                 m[3][0]-w[3][0],m[3][1]-w[3][1],m[3][2]-w[3][2],m[3][3]-w[3][3]);
-  }
-
-
-// Composite matrices
-FXMat4f FXMat4f::operator*(const FXMat4f& w) const {
-  register FXfloat x,y,z,h;
-  FXMat4f r;
-  x=m[0][0]; y=m[0][1]; z=m[0][2]; h=m[0][3];
-  r[0][0]=x*w[0][0]+y*w[1][0]+z*w[2][0]+h*w[3][0];
-  r[0][1]=x*w[0][1]+y*w[1][1]+z*w[2][1]+h*w[3][1];
-  r[0][2]=x*w[0][2]+y*w[1][2]+z*w[2][2]+h*w[3][2];
-  r[0][3]=x*w[0][3]+y*w[1][3]+z*w[2][3]+h*w[3][3];
-  x=m[1][0]; y=m[1][1]; z=m[1][2]; h=m[1][3];
-  r[1][0]=x*w[0][0]+y*w[1][0]+z*w[2][0]+h*w[3][0];
-  r[1][1]=x*w[0][1]+y*w[1][1]+z*w[2][1]+h*w[3][1];
-  r[1][2]=x*w[0][2]+y*w[1][2]+z*w[2][2]+h*w[3][2];
-  r[1][3]=x*w[0][3]+y*w[1][3]+z*w[2][3]+h*w[3][3];
-  x=m[2][0]; y=m[2][1]; z=m[2][2]; h=m[2][3];
-  r[2][0]=x*w[0][0]+y*w[1][0]+z*w[2][0]+h*w[3][0];
-  r[2][1]=x*w[0][1]+y*w[1][1]+z*w[2][1]+h*w[3][1];
-  r[2][2]=x*w[0][2]+y*w[1][2]+z*w[2][2]+h*w[3][2];
-  r[2][3]=x*w[0][3]+y*w[1][3]+z*w[2][3]+h*w[3][3];
-  x=m[3][0]; y=m[3][1]; z=m[3][2]; h=m[3][3];
-  r[3][0]=x*w[0][0]+y*w[1][0]+z*w[2][0]+h*w[3][0];
-  r[3][1]=x*w[0][1]+y*w[1][1]+z*w[2][1]+h*w[3][1];
-  r[3][2]=x*w[0][2]+y*w[1][2]+z*w[2][2]+h*w[3][2];
-  r[3][3]=x*w[0][3]+y*w[1][3]+z*w[2][3]+h*w[3][3];
-  return r;
-  }
-
-
-// Multiply scalar by matrix
-FXMat4f operator*(FXfloat x,const FXMat4f& a){
-  return FXMat4f(x*a[0][0],x*a[0][1],x*a[0][2],a[0][3],
-                 x*a[1][0],x*a[1][1],x*a[1][2],a[1][3],
-                 x*a[2][0],x*a[2][1],x*a[2][2],a[2][3],
-                 x*a[3][0],x*a[3][1],x*a[3][2],a[3][3]);
-  }
-
-
-// Multiply matrix by scalar
-FXMat4f operator*(const FXMat4f& a,FXfloat x){
-  return FXMat4f(a[0][0]*x,a[0][1]*x,a[0][2]*x,a[0][3],
-                 a[1][0]*x,a[1][1]*x,a[1][2]*x,a[1][3],
-                 a[2][0]*x,a[2][1]*x,a[2][2]*x,a[2][3],
-                 a[3][0]*x,a[3][1]*x,a[3][2]*x,a[3][3]);
-  }
-
-
-// Divide scalar by matrix
-FXMat4f operator/(FXfloat x,const FXMat4f& a){
-  return FXMat4f(x/a[0][0],x/a[0][1],x/a[0][2],a[0][3],
-                 x/a[1][0],x/a[1][1],x/a[1][2],a[1][3],
-                 x/a[2][0],x/a[2][1],x/a[2][2],a[2][3],
-                 x/a[3][0],x/a[3][1],x/a[3][2],a[3][3]);
-  }
-
-
-// Divide matrix by scalar
-FXMat4f operator/(const FXMat4f& a,FXfloat x){
-  return FXMat4f(a[0][0]/x,a[0][1]/x,a[0][2]/x,a[0][3],
-                 a[1][0]/x,a[1][1]/x,a[1][2]/x,a[1][3],
-                 a[2][0]/x,a[2][1]/x,a[2][2]/x,a[2][3],
-                 a[3][0]/x,a[3][1]/x,a[3][2]/x,a[3][3]);
-  }
-
-
-// Matrix times vector
-FXVec4f FXMat4f::operator*(const FXVec4f& v) const {
-  register FXfloat x=v.x,y=v.y,z=v.z,w=v.w;
-  return FXVec4f(x*m[0][0]+y*m[0][1]+z*m[0][2]+w*m[0][3], x*m[1][0]+y*m[1][1]+z*m[1][2]+w*m[1][3], x*m[2][0]+y*m[2][1]+z*m[2][2]+w*m[2][3], x*m[3][0]+y*m[3][1]+z*m[3][2]+w*m[3][3]);
-  }
-
-
-// Matrix times vector
-FXVec3f FXMat4f::operator*(const FXVec3f& v) const {
-  register FXfloat x=v.x,y=v.y,z=v.z;
-  FXASSERT(m[0][3]==0.0f && m[1][3]==0.0f && m[2][3]==0.0f && m[3][3]==1.0f);
-  return FXVec3f(x*m[0][0]+y*m[0][1]+z*m[0][2]+m[0][3], x*m[1][0]+y*m[1][1]+z*m[1][2]+m[1][3], x*m[2][0]+y*m[2][1]+z*m[2][2]+m[2][3]);
-  }
-
-
-// Make unit matrix
-FXMat4f& FXMat4f::eye(){
+// Set to identity matrix
+FXMat4f& FXMat4f::identity(){
+#if defined(FOX_HAS_SSE)
+  _mm_storeu_ps(&m[0][0],_mm_set_ps(0.0f,0.0f,0.0f,1.0f));
+  _mm_storeu_ps(&m[1][0],_mm_set_ps(0.0f,0.0f,1.0f,0.0f));
+  _mm_storeu_ps(&m[2][0],_mm_set_ps(0.0f,1.0f,0.0f,0.0f));
+  _mm_storeu_ps(&m[3][0],_mm_set_ps(1.0f,0.0f,0.0f,0.0f));
+#else
   m[0][0]=1.0f; m[0][1]=0.0f; m[0][2]=0.0f; m[0][3]=0.0f;
   m[1][0]=0.0f; m[1][1]=1.0f; m[1][2]=0.0f; m[1][3]=0.0f;
   m[2][0]=0.0f; m[2][1]=0.0f; m[2][2]=1.0f; m[2][3]=0.0f;
   m[3][0]=0.0f; m[3][1]=0.0f; m[3][2]=0.0f; m[3][3]=1.0f;
+#endif
   return *this;
   }
 
 
-// Orthographic projection
-FXMat4f& FXMat4f::ortho(FXfloat left,FXfloat right,FXfloat bottom,FXfloat top,FXfloat hither,FXfloat yon){
-  register FXfloat x,y,z,tx,ty,tz,rl,tb,yh,r0,r1,r2,r3;
-  rl=right-left;
-  tb=top-bottom;
-  yh=yon-hither;
-  FXASSERT(rl && tb && yh);         // Throw exception in future
-  x= 2.0f/rl;
-  y= 2.0f/tb;
-  z=-2.0f/yh;
-  tx=-(right+left)/rl;
-  ty=-(top+bottom)/tb;
-  tz=-(yon+hither)/yh;
-  r0=m[0][0];
-  r1=m[1][0];
-  r2=m[2][0];
-  r3=m[3][0];
-  m[0][0]=x*r0;
-  m[1][0]=y*r1;
-  m[2][0]=z*r2;
-  m[3][0]=tx*r0+ty*r1+tz*r2+r3;
-  r0=m[0][1];
-  r1=m[1][1];
-  r2=m[2][1];
-  r3=m[3][1];
-  m[0][1]=x*r0;
-  m[1][1]=y*r1;
-  m[2][1]=z*r2;
-  m[3][1]=tx*r0+ty*r1+tz*r2+r3;
-  r0=m[0][2];
-  r1=m[1][2];
-  r2=m[2][2];
-  r3=m[3][2];
-  m[0][2]=x*r0;
-  m[1][2]=y*r1;
-  m[2][2]=z*r2;
-  m[3][2]=tx*r0+ty*r1+tz*r2+r3;
-  r0=m[0][3];
-  r1=m[1][3];
-  r2=m[2][3];
-  r3=m[3][3];
-  m[0][3]=x*r0;
-  m[1][3]=y*r1;
-  m[2][3]=z*r2;
-  m[3][3]=tx*r0+ty*r1+tz*r2+r3;
-  return *this;
+// Return true if identity matrix
+FXbool FXMat4f::isIdentity() const {
+  return m[0][0]==1.0f && m[0][1]==0.0f && m[0][2]==0.0f && m[0][3]==0.0f &&
+         m[1][0]==0.0f && m[1][1]==1.0f && m[1][2]==0.0f && m[1][3]==0.0f &&
+         m[2][0]==0.0f && m[2][1]==0.0f && m[2][2]==1.0f && m[2][3]==0.0f &&
+         m[3][0]==0.0f && m[3][1]==0.0f && m[3][2]==0.0f && m[3][3]==1.0f;
   }
 
 
-// Perspective projection
-FXMat4f& FXMat4f::frustum(FXfloat left,FXfloat right,FXfloat bottom,FXfloat top,FXfloat hither,FXfloat yon){
-  register FXfloat x,y,a,b,c,d,rl,tb,yh,r0,r1,r2,r3;
-  FXASSERT(0.0f<hither && hither<yon);  // Throw exception in future
-  rl=right-left;
-  tb=top-bottom;
-  yh=yon-hither;
-  FXASSERT(rl && tb);                   // Throw exception in future
-  x= 2.0f*hither/rl;
-  y= 2.0f*hither/tb;
-  a= (right+left)/rl;
-  b= (top+bottom)/tb;
-  c=-(yon+hither)/yh;
-  d=-(2.0f*yon*hither)/yh;
-  r0=m[0][0];
-  r1=m[1][0];
-  r2=m[2][0];
-  r3=m[3][0];
-  m[0][0]=x*r0;
-  m[1][0]=y*r1;
-  m[2][0]=a*r0+b*r1+c*r2-r3;
-  m[3][0]=d*r2;
-  r0=m[0][1];
-  r1=m[1][1];
-  r2=m[2][1];
-  r3=m[3][1];
-  m[0][1]=x*r0;
-  m[1][1]=y*r1;
-  m[2][1]=a*r0+b*r1+c*r2-r3;
-  m[3][1]=d*r2;
-  r0=m[0][2];
-  r1=m[1][2];
-  r2=m[2][2];
-  r3=m[3][2];
-  m[0][2]=x*r0;
-  m[1][2]=y*r1;
-  m[2][2]=a*r0+b*r1+c*r2-r3;
-  m[3][2]=d*r2;
-  r0=m[0][3];
-  r1=m[1][3];
-  r2=m[2][3];
-  r3=m[3][3];
-  m[0][3]=x*r0;
-  m[1][3]=y*r1;
-  m[2][3]=a*r0+b*r1+c*r2-r3;
-  m[3][3]=d*r2;
-  return *this;
+// Set orthographic projection from view volume
+FXMat4f& FXMat4f::setOrtho(FXfloat xlo,FXfloat xhi,FXfloat ylo,FXfloat yhi,FXfloat zlo,FXfloat zhi){
+  FXfloat rl=xhi-xlo;
+  FXfloat tb=yhi-ylo;
+  FXfloat yh=zhi-zlo;
+  return set(2.0f/rl,0.0f,0.0f,0.0f,0.0f,2.0f/tb,0.0f,0.0f,0.0f,0.0f,-2.0f/yh,0.0f,-(xhi+xlo)/rl,-(yhi+ylo)/tb,-(zhi+zlo)/yh,1.0f);
+  }
+
+
+// Get view volume from orthographic projection
+void FXMat4f::getOrtho(FXfloat& xlo,FXfloat& xhi,FXfloat& ylo,FXfloat& yhi,FXfloat& zlo,FXfloat& zhi) const {
+  zlo= (m[3][2]+1.0f)/m[2][2];
+  zhi= (m[3][2]-1.0f)/m[2][2];
+  xlo=-(1.0f+m[3][0])/m[0][0];
+  xhi= (1.0f-m[3][0])/m[0][0];
+  ylo=-(1.0f+m[3][1])/m[1][1];
+  yhi= (1.0f-m[3][1])/m[1][1];
+  }
+
+
+// Set to inverse orthographic projection
+FXMat4f& FXMat4f::setInverseOrtho(FXfloat xlo,FXfloat xhi,FXfloat ylo,FXfloat yhi,FXfloat zlo,FXfloat zhi){
+  FXfloat rl=xhi-xlo;
+  FXfloat tb=yhi-ylo;
+  FXfloat yh=zhi-zlo;
+  return set(0.5f*rl,0.0f,0.0f,0.0f,0.0f,0.5f*tb,0.0f,0.0f,0.0f,0.0f,-0.5f*yh,0.0f,0.5f*(xhi+xlo),0.5f*(yhi+ylo),0.5f*(zhi+zlo),1.0f);
+  }
+
+
+// Set to perspective projection from view volume
+FXMat4f& FXMat4f::setFrustum(FXfloat xlo,FXfloat xhi,FXfloat ylo,FXfloat yhi,FXfloat zlo,FXfloat zhi){
+  FXfloat rl=xhi-xlo;
+  FXfloat tb=yhi-ylo;
+  FXfloat yh=zhi-zlo;
+  return set(2.0f*zlo/rl,0.0f,0.0f,0.0f,0.0f,2.0f*zlo/tb,0.0f,0.0f,(xhi+xlo)/rl,(yhi+ylo)/tb,-(zhi+zlo)/yh,-1.0f,0.0f,0.0f,-2.0f*zhi*zlo/yh,0.0f);
+  }
+
+
+// Get view volume from perspective projection
+void FXMat4f::getFrustum(FXfloat& xlo,FXfloat& xhi,FXfloat& ylo,FXfloat& yhi,FXfloat& zlo,FXfloat& zhi) const {
+  zlo=m[3][2]/(m[2][2]-1.0f);
+  zhi=m[3][2]/(m[2][2]+1.0f);
+  xlo=zlo*(m[2][0]-1.0f)/m[0][0];
+  xhi=zlo*(m[2][0]+1.0f)/m[0][0];
+  yhi=zlo*(m[2][1]+1.0f)/m[1][1];
+  ylo=zlo*(m[2][1]-1.0f)/m[1][1];
+  }
+
+
+// Set to inverse perspective projection from view volume
+FXMat4f& FXMat4f::setInverseFrustum(FXfloat xlo,FXfloat xhi,FXfloat ylo,FXfloat yhi,FXfloat zlo,FXfloat zhi){
+  FXfloat rl=xhi-xlo;
+  FXfloat tb=yhi-ylo;
+  FXfloat yh=zhi-zlo;
+  return set(0.5f*rl/zlo,0.0f,0.0f,0.0f,0.0f,0.5f*tb/zlo,0.0f,0.0f,0.0f,0.0f,0.0f,-0.5f*yh/(zhi*zlo),0.5f*(xhi+xlo)/zlo,0.5f*(yhi+ylo)/zlo,-1.0f,0.5f*(zhi+zlo)/(zhi*zlo));
   }
 
 
@@ -459,14 +587,9 @@ FXMat4f& FXMat4f::left(){
   }
 
 
-// Rotate using quaternion
-FXMat4f& FXMat4f::rot(const FXQuatf& q){
-  register FXfloat x,y,z;
-
-  // Get rotation matrix
-  FXMat3f r(q);
-
-  // Pre-multiply
+// Multiply by rotation matrix
+FXMat4f& FXMat4f::rot(const FXMat3f& r){
+  FXfloat x,y,z;
   x=m[0][0]; y=m[1][0]; z=m[2][0];
   m[0][0]=x*r[0][0]+y*r[0][1]+z*r[0][2];
   m[1][0]=x*r[1][0]+y*r[1][1]+z*r[1][2];
@@ -487,220 +610,122 @@ FXMat4f& FXMat4f::rot(const FXQuatf& q){
   }
 
 
-// Rotate by angle (cos,sin) about arbitrary vector
-FXMat4f& FXMat4f::rot(const FXVec3f& v,FXfloat c,FXfloat s){
-  register FXfloat xx,yy,zz,xy,yz,zx,xs,ys,zs,t;
-  register FXfloat r00,r01,r02,r10,r11,r12,r20,r21,r22;
-  register FXfloat x=v.x;
-  register FXfloat y=v.y;
-  register FXfloat z=v.z;
-  register FXfloat mag=x*x+y*y+z*z;
-  FXASSERT(-1.00001f<c && c<1.00001f && -1.00001f<s && s<1.00001f);
-  if(mag<=1.0E-30f) return *this;         // Rotation about 0-length axis
-  mag=sqrtf(mag);
-  x/=mag;
-  y/=mag;
-  z/=mag;
-  xx=x*x;
-  yy=y*y;
-  zz=z*z;
-  xy=x*y;
-  yz=y*z;
-  zx=z*x;
-  xs=x*s;
-  ys=y*s;
-  zs=z*s;
-  t=1.0f-c;
-  r00=t*xx+c;  r10=t*xy-zs; r20=t*zx+ys;
-  r01=t*xy+zs; r11=t*yy+c;  r21=t*yz-xs;
-  r02=t*zx-ys; r12=t*yz+xs; r22=t*zz+c;
-  x=m[0][0];
-  y=m[1][0];
-  z=m[2][0];
-  m[0][0]=x*r00+y*r01+z*r02;
-  m[1][0]=x*r10+y*r11+z*r12;
-  m[2][0]=x*r20+y*r21+z*r22;
-  x=m[0][1];
-  y=m[1][1];
-  z=m[2][1];
-  m[0][1]=x*r00+y*r01+z*r02;
-  m[1][1]=x*r10+y*r11+z*r12;
-  m[2][1]=x*r20+y*r21+z*r22;
-  x=m[0][2];
-  y=m[1][2];
-  z=m[2][2];
-  m[0][2]=x*r00+y*r01+z*r02;
-  m[1][2]=x*r10+y*r11+z*r12;
-  m[2][2]=x*r20+y*r21+z*r22;
-  x=m[0][3];
-  y=m[1][3];
-  z=m[2][3];
-  m[0][3]=x*r00+y*r01+z*r02;
-  m[1][3]=x*r10+y*r11+z*r12;
-  m[2][3]=x*r20+y*r21+z*r22;
-  return *this;
+// Rotate using quaternion
+FXMat4f& FXMat4f::rot(const FXQuatf& q){
+  return rot(FXMat3f(q));
   }
 
 
-// Rotate by angle (in radians) about arbitrary vector
+// Multiply by rotation c,s about unit axis
+FXMat4f& FXMat4f::rot(const FXVec3f& v,FXfloat c,FXfloat s){
+  FXfloat xx=v.x*v.x;
+  FXfloat yy=v.y*v.y;
+  FXfloat zz=v.z*v.z;
+  FXfloat xy=v.x*v.y;
+  FXfloat yz=v.y*v.z;
+  FXfloat zx=v.z*v.x;
+  FXfloat xs=v.x*s;
+  FXfloat ys=v.y*s;
+  FXfloat zs=v.z*s;
+  FXfloat t=1.0f-c;
+  return rot(FXMat3f(t*xx+c,t*xy+zs,t*zx-ys,t*xy-zs,t*yy+c,t*yz+xs,t*zx+ys,t*yz-xs,t*zz+c));
+  }
+
+
+// Multiply by rotation of phi about unit axis
 FXMat4f& FXMat4f::rot(const FXVec3f& v,FXfloat phi){
-  return rot(v,cosf(phi),sinf(phi));
+  return rot(v,Math::cos(phi),Math::sin(phi));
   }
 
 
 // Rotate about x-axis
 FXMat4f& FXMat4f::xrot(FXfloat c,FXfloat s){
-  register FXfloat u,v;
-  FXASSERT(-1.00001f<c && c<1.00001f && -1.00001f<s && s<1.00001f);
+#if defined(FOX_HAS_SSE)
+  __m128 cc=_mm_set1_ps(c);
+  __m128 ss=_mm_set1_ps(s);
+  __m128 uu=_mm_loadu_ps(&m[1][0]);
+  __m128 vv=_mm_loadu_ps(&m[2][0]);
+  _mm_storeu_ps(m[1],_mm_add_ps(_mm_mul_ps(cc,uu),_mm_mul_ps(ss,vv)));
+  _mm_storeu_ps(m[2],_mm_sub_ps(_mm_mul_ps(cc,vv),_mm_mul_ps(ss,uu)));
+#else
+  FXfloat u,v;
   u=m[1][0]; v=m[2][0]; m[1][0]=c*u+s*v; m[2][0]=c*v-s*u;
   u=m[1][1]; v=m[2][1]; m[1][1]=c*u+s*v; m[2][1]=c*v-s*u;
   u=m[1][2]; v=m[2][2]; m[1][2]=c*u+s*v; m[2][2]=c*v-s*u;
   u=m[1][3]; v=m[2][3]; m[1][3]=c*u+s*v; m[2][3]=c*v-s*u;
+#endif
   return *this;
   }
 
 
 // Rotate by angle about x-axis
 FXMat4f& FXMat4f::xrot(FXfloat phi){
-  return xrot(cosf(phi),sinf(phi));
+  return xrot(Math::cos(phi),Math::sin(phi));
   }
 
 
 // Rotate about y-axis
 FXMat4f& FXMat4f::yrot(FXfloat c,FXfloat s){
-  register FXfloat u,v;
-  FXASSERT(-1.00001f<c && c<1.00001f && -1.00001f<s && s<1.00001f);
+#if defined(FOX_HAS_SSE)
+  __m128 cc=_mm_set1_ps(c);
+  __m128 ss=_mm_set1_ps(s);
+  __m128 uu=_mm_loadu_ps(&m[0][0]);
+  __m128 vv=_mm_loadu_ps(&m[2][0]);
+  _mm_storeu_ps(m[0],_mm_sub_ps(_mm_mul_ps(cc,uu),_mm_mul_ps(ss,vv)));
+  _mm_storeu_ps(m[2],_mm_add_ps(_mm_mul_ps(cc,vv),_mm_mul_ps(ss,uu)));
+#else
+  FXfloat u,v;
   u=m[0][0]; v=m[2][0]; m[0][0]=c*u-s*v; m[2][0]=c*v+s*u;
   u=m[0][1]; v=m[2][1]; m[0][1]=c*u-s*v; m[2][1]=c*v+s*u;
   u=m[0][2]; v=m[2][2]; m[0][2]=c*u-s*v; m[2][2]=c*v+s*u;
   u=m[0][3]; v=m[2][3]; m[0][3]=c*u-s*v; m[2][3]=c*v+s*u;
+#endif
   return *this;
   }
 
 
 // Rotate by angle about y-axis
 FXMat4f& FXMat4f::yrot(FXfloat phi){
-  return yrot(cosf(phi),sinf(phi));
+  return yrot(Math::cos(phi),Math::sin(phi));
   }
 
 
 // Rotate about z-axis
 FXMat4f& FXMat4f::zrot(FXfloat c,FXfloat s){
-  register FXfloat u,v;
-  FXASSERT(-1.00001f<c && c<1.00001f && -1.00001f<s && s<1.00001f);
+#if defined(FOX_HAS_SSE)
+  __m128 cc=_mm_set1_ps(c);
+  __m128 ss=_mm_set1_ps(s);
+  __m128 uu=_mm_loadu_ps(&m[0][0]);
+  __m128 vv=_mm_loadu_ps(&m[1][0]);
+  _mm_storeu_ps(m[0],_mm_add_ps(_mm_mul_ps(cc,uu),_mm_mul_ps(ss,vv)));
+  _mm_storeu_ps(m[1],_mm_sub_ps(_mm_mul_ps(cc,vv),_mm_mul_ps(ss,uu)));
+#else
+  FXfloat u,v;
   u=m[0][0]; v=m[1][0]; m[0][0]=c*u+s*v; m[1][0]=c*v-s*u;
   u=m[0][1]; v=m[1][1]; m[0][1]=c*u+s*v; m[1][1]=c*v-s*u;
   u=m[0][2]; v=m[1][2]; m[0][2]=c*u+s*v; m[1][2]=c*v-s*u;
   u=m[0][3]; v=m[1][3]; m[0][3]=c*u+s*v; m[1][3]=c*v-s*u;
+#endif
   return *this;
   }
 
 
 // Rotate by angle about z-axis
 FXMat4f& FXMat4f::zrot(FXfloat phi){
-  return zrot(cosf(phi),sinf(phi));
-  }
-
-
-// Translate
-FXMat4f& FXMat4f::trans(FXfloat tx,FXfloat ty,FXfloat tz){
-  m[3][0]=m[3][0]+tx*m[0][0]+ty*m[1][0]+tz*m[2][0];
-  m[3][1]=m[3][1]+tx*m[0][1]+ty*m[1][1]+tz*m[2][1];
-  m[3][2]=m[3][2]+tx*m[0][2]+ty*m[1][2]+tz*m[2][2];
-  m[3][3]=m[3][3]+tx*m[0][3]+ty*m[1][3]+tz*m[2][3];
-  return *this;
-  }
-
-
-// Translate over vector
-FXMat4f& FXMat4f::trans(const FXVec3f& v){
-  return trans(v[0],v[1],v[2]);
-  }
-
-
-// Scale unqual
-FXMat4f& FXMat4f::scale(FXfloat sx,FXfloat sy,FXfloat sz){
-  m[0][0]*=sx; m[0][1]*=sx; m[0][2]*=sx; m[0][3]*=sx;
-  m[1][0]*=sy; m[1][1]*=sy; m[1][2]*=sy; m[1][3]*=sy;
-  m[2][0]*=sz; m[2][1]*=sz; m[2][2]*=sz; m[2][3]*=sz;
-  return *this;
-  }
-
-
-// Scale uniform
-FXMat4f& FXMat4f::scale(FXfloat s){
-  return scale(s,s,s);
-  }
-
-
-// Scale matrix
-FXMat4f& FXMat4f::scale(const FXVec3f& v){
-  return scale(v[0],v[1],v[2]);
-  }
-
-
-// Calculate determinant
-FXfloat FXMat4f::det() const {
-  return DET4(m[0][0],m[0][1],m[0][2],m[0][3],
-              m[1][0],m[1][1],m[1][2],m[1][3],
-              m[2][0],m[2][1],m[2][2],m[2][3],
-              m[3][0],m[3][1],m[3][2],m[3][3]);
-  }
-
-
-// Transpose matrix
-FXMat4f FXMat4f::transpose() const {
-  return FXMat4f(m[0][0],m[1][0],m[2][0],m[3][0],
-                 m[0][1],m[1][1],m[2][1],m[3][1],
-                 m[0][2],m[1][2],m[2][2],m[3][2],
-                 m[0][3],m[1][3],m[2][3],m[3][3]);
-  }
-
-
-// Invert matrix
-FXMat4f FXMat4f::invert() const {
-  FXMat4f r(1.0f,0.0f,0.0f,0.0f,0.0f,1.0f,0.0f,0.0f,0.0f,0.0f,1.0f,0.0f,0.0f,0.0f,0.0f,1.0f);
-  FXMat4f x(*this);
-  register FXfloat pvv,t;
-  register int i,j,pvi;
-  for(i=0; i<4; i++){
-    pvv=x[i][i];
-    pvi=i;
-    for(j=i+1; j<4; j++){   // Find pivot (largest in column i)
-      if(fabsf(x[j][i])>fabsf(pvv)){
-        pvi=j;
-        pvv=x[j][i];
-        }
-      }
-    FXASSERT(pvv != 0.0f);  // Should not be singular
-    if(pvi!=i){             // Swap rows i and pvi
-      FXSWAP(r[i][0],r[pvi][0],t); FXSWAP(r[i][1],r[pvi][1],t); FXSWAP(r[i][2],r[pvi][2],t); FXSWAP(r[i][3],r[pvi][3],t);
-      FXSWAP(x[i][0],x[pvi][0],t); FXSWAP(x[i][1],x[pvi][1],t); FXSWAP(x[i][2],x[pvi][2],t); FXSWAP(x[i][3],x[pvi][3],t);
-      }
-    x[i][0]/=pvv; x[i][1]/=pvv; x[i][2]/=pvv; x[i][3]/=pvv;
-    r[i][0]/=pvv; r[i][1]/=pvv; r[i][2]/=pvv; r[i][3]/=pvv;
-    for(j=0; j<4; j++){     // Eliminate column i
-      if(j!=i){
-        t=x[j][i];
-        x[j][0]-=x[i][0]*t; x[j][1]-=x[i][1]*t; x[j][2]-=x[i][2]*t; x[j][3]-=x[i][3]*t;
-        r[j][0]-=r[i][0]*t; r[j][1]-=r[i][1]*t; r[j][2]-=r[i][2]*t; r[j][3]-=r[i][3]*t;
-        }
-      }
-    }
-  return r;
+  return zrot(Math::cos(phi),Math::sin(phi));
   }
 
 
 // Look at
-FXMat4f& FXMat4f::look(const FXVec3f& eye,const FXVec3f& cntr,const FXVec3f& vup){
-  register FXfloat x0,x1,x2,tx,ty,tz;
+FXMat4f& FXMat4f::look(const FXVec3f& from,const FXVec3f& to,const FXVec3f& up){
+  FXfloat x0,x1,x2,tx,ty,tz;
   FXVec3f rz,rx,ry;
-  rz=normalize(eye-cntr);
-  rx=normalize(vup^rz);
+  rz=normalize(from-to);
+  rx=normalize(up^rz);
   ry=normalize(rz^rx);
-  tx= -eye[0]*rx[0]-eye[1]*rx[1]-eye[2]*rx[2];
-  ty= -eye[0]*ry[0]-eye[1]*ry[1]-eye[2]*ry[2];
-  tz= -eye[0]*rz[0]-eye[1]*rz[1]-eye[2]*rz[2];
+  tx= -from[0]*rx[0]-from[1]*rx[1]-from[2]*rx[2];
+  ty= -from[0]*ry[0]-from[1]*ry[1]-from[2]*ry[2];
+  tz= -from[0]*rz[0]-from[1]*rz[1]-from[2]*rz[2];
   x0=m[0][0]; x1=m[0][1]; x2=m[0][2];
   m[0][0]=rx[0]*x0+rx[1]*x1+rx[2]*x2+tx*m[0][3];
   m[0][1]=ry[0]*x0+ry[1]*x1+ry[2]*x2+ty*m[0][3];
@@ -718,6 +743,544 @@ FXMat4f& FXMat4f::look(const FXVec3f& eye,const FXVec3f& cntr,const FXVec3f& vup
   m[3][1]=ry[0]*x0+ry[1]*x1+ry[2]*x2+ty*m[3][3];
   m[3][2]=rz[0]*x0+rz[1]*x1+rz[2]*x2+tz*m[3][3];
   return *this;
+  }
+
+
+// Translate
+FXMat4f& FXMat4f::trans(FXfloat tx,FXfloat ty,FXfloat tz){
+#if defined(FOX_HAS_SSE)
+  __m128 ttx=_mm_set1_ps(tx);
+  __m128 tty=_mm_set1_ps(ty);
+  __m128 ttz=_mm_set1_ps(tz);
+  __m128 r0=_mm_mul_ps(_mm_loadu_ps(&m[0][0]),ttx);
+  __m128 r1=_mm_mul_ps(_mm_loadu_ps(&m[1][0]),tty);
+  __m128 r2=_mm_mul_ps(_mm_loadu_ps(&m[2][0]),ttz);
+  __m128 r3=_mm_loadu_ps(&m[3][0]);
+  _mm_storeu_ps(&m[3][0],_mm_add_ps(_mm_add_ps(r0,r1),_mm_add_ps(r2,r3)));
+#else
+  m[3][0]=m[3][0]+tx*m[0][0]+ty*m[1][0]+tz*m[2][0];
+  m[3][1]=m[3][1]+tx*m[0][1]+ty*m[1][1]+tz*m[2][1];
+  m[3][2]=m[3][2]+tx*m[0][2]+ty*m[1][2]+tz*m[2][2];
+  m[3][3]=m[3][3]+tx*m[0][3]+ty*m[1][3]+tz*m[2][3];
+#endif
+  return *this;
+  }
+
+
+// Translate over vector
+FXMat4f& FXMat4f::trans(const FXVec3f& v){
+  return trans(v[0],v[1],v[2]);
+  }
+
+
+// Scale unqual
+FXMat4f& FXMat4f::scale(FXfloat sx,FXfloat sy,FXfloat sz){
+#if defined(FOX_HAS_SSE)
+  __m128 ssx=_mm_set1_ps(sx);
+  __m128 ssy=_mm_set1_ps(sy);
+  __m128 ssz=_mm_set1_ps(sz);
+  _mm_storeu_ps(&m[0][0],_mm_mul_ps(_mm_loadu_ps(&m[0][0]),ssx));
+  _mm_storeu_ps(&m[1][0],_mm_mul_ps(_mm_loadu_ps(&m[1][0]),ssy));
+  _mm_storeu_ps(&m[2][0],_mm_mul_ps(_mm_loadu_ps(&m[2][0]),ssz));
+#else
+  m[0][0]*=sx; m[0][1]*=sx; m[0][2]*=sx; m[0][3]*=sx;
+  m[1][0]*=sy; m[1][1]*=sy; m[1][2]*=sy; m[1][3]*=sy;
+  m[2][0]*=sz; m[2][1]*=sz; m[2][2]*=sz; m[2][3]*=sz;
+#endif
+  return *this;
+  }
+
+
+// Scale unqual
+FXMat4f& FXMat4f::scale(const FXVec3f& v){
+  return scale(v[0],v[1],v[2]);
+  }
+
+
+// Scale uniform
+FXMat4f& FXMat4f::scale(FXfloat s){
+  return scale(s,s,s);
+  }
+
+
+// Calculate determinant
+FXfloat FXMat4f::det() const {
+  return (m[0][0]*m[1][1]-m[0][1]*m[1][0]) * (m[2][2]*m[3][3]-m[2][3]*m[3][2]) -
+         (m[0][0]*m[1][2]-m[0][2]*m[1][0]) * (m[2][1]*m[3][3]-m[2][3]*m[3][1]) +
+         (m[0][0]*m[1][3]-m[0][3]*m[1][0]) * (m[2][1]*m[3][2]-m[2][2]*m[3][1]) +
+         (m[0][1]*m[1][2]-m[0][2]*m[1][1]) * (m[2][0]*m[3][3]-m[2][3]*m[3][0]) -
+         (m[0][1]*m[1][3]-m[0][3]*m[1][1]) * (m[2][0]*m[3][2]-m[2][2]*m[3][0]) +
+         (m[0][2]*m[1][3]-m[0][3]*m[1][2]) * (m[2][0]*m[3][1]-m[2][1]*m[3][0]);
+  }
+
+
+
+// Transpose matrix
+FXMat4f FXMat4f::transpose() const {
+#if defined(FOX_HAS_SSE)
+  FXMat4f r;
+  __m128 m0=_mm_loadu_ps(&m[0][0]);
+  __m128 m1=_mm_loadu_ps(&m[1][0]);
+  __m128 m2=_mm_loadu_ps(&m[2][0]);
+  __m128 m3=_mm_loadu_ps(&m[3][0]);
+  __m128 t0=_mm_unpacklo_ps(m0,m1);    // m11 m01 m10 m00
+  __m128 t1=_mm_unpacklo_ps(m2,m3);    // m31 m21 m30 m20
+  __m128 t2=_mm_unpackhi_ps(m0,m1);    // m13 m03 m12 m02
+  __m128 t3=_mm_unpackhi_ps(m2,m3);    // m33 m23 m32 m22
+  _mm_storeu_ps(r[0],_mm_movelh_ps(t0,t1));     // m30 m20 m10 m00
+  _mm_storeu_ps(r[1],_mm_movehl_ps(t1,t0));     // m31 m21 m11 m01
+  _mm_storeu_ps(r[2],_mm_movelh_ps(t2,t3));     // m32 m22 m12 m02
+  _mm_storeu_ps(r[3],_mm_movehl_ps(t3,t2));     // m33 m23 m13 m03
+  return r;
+#else
+  return FXMat4f(m[0][0],m[1][0],m[2][0],m[3][0],
+                 m[0][1],m[1][1],m[2][1],m[3][1],
+                 m[0][2],m[1][2],m[2][2],m[3][2],
+                 m[0][3],m[1][3],m[2][3],m[3][3]);
+#endif
+  }
+
+
+// Invert matrix
+FXMat4f FXMat4f::invert() const {
+  FXMat4f r;
+  FXfloat a0=m[0][0]*m[1][1]-m[0][1]*m[1][0];
+  FXfloat a1=m[0][0]*m[1][2]-m[0][2]*m[1][0];
+  FXfloat a2=m[0][0]*m[1][3]-m[0][3]*m[1][0];
+  FXfloat a3=m[0][1]*m[1][2]-m[0][2]*m[1][1];
+  FXfloat a4=m[0][1]*m[1][3]-m[0][3]*m[1][1];
+  FXfloat a5=m[0][2]*m[1][3]-m[0][3]*m[1][2];
+  FXfloat b0=m[2][0]*m[3][1]-m[2][1]*m[3][0];
+  FXfloat b1=m[2][0]*m[3][2]-m[2][2]*m[3][0];
+  FXfloat b2=m[2][0]*m[3][3]-m[2][3]*m[3][0];
+  FXfloat b3=m[2][1]*m[3][2]-m[2][2]*m[3][1];
+  FXfloat b4=m[2][1]*m[3][3]-m[2][3]*m[3][1];
+  FXfloat b5=m[2][2]*m[3][3]-m[2][3]*m[3][2];
+  FXfloat dd=a0*b5-a1*b4+a2*b3+a3*b2-a4*b1+a5*b0;
+  FXASSERT(dd!=0.0f);
+  dd=1.0f/dd;
+  r[0][0]=(m[1][1]*b5-m[1][2]*b4+m[1][3]*b3)*dd;
+  r[1][0]=(m[1][2]*b2-m[1][0]*b5-m[1][3]*b1)*dd;
+  r[2][0]=(m[1][0]*b4-m[1][1]*b2+m[1][3]*b0)*dd;
+  r[3][0]=(m[1][1]*b1-m[1][0]*b3-m[1][2]*b0)*dd;
+  r[0][1]=(m[0][2]*b4-m[0][1]*b5-m[0][3]*b3)*dd;
+  r[1][1]=(m[0][0]*b5-m[0][2]*b2+m[0][3]*b1)*dd;
+  r[2][1]=(m[0][1]*b2-m[0][0]*b4-m[0][3]*b0)*dd;
+  r[3][1]=(m[0][0]*b3-m[0][1]*b1+m[0][2]*b0)*dd;
+  r[0][2]=(m[3][1]*a5-m[3][2]*a4+m[3][3]*a3)*dd;
+  r[1][2]=(m[3][2]*a2-m[3][0]*a5-m[3][3]*a1)*dd;
+  r[2][2]=(m[3][0]*a4-m[3][1]*a2+m[3][3]*a0)*dd;
+  r[3][2]=(m[3][1]*a1-m[3][0]*a3-m[3][2]*a0)*dd;
+  r[0][3]=(m[2][2]*a4-m[2][1]*a5-m[2][3]*a3)*dd;
+  r[1][3]=(m[2][0]*a5-m[2][2]*a2+m[2][3]*a1)*dd;
+  r[2][3]=(m[2][1]*a2-m[2][0]*a4-m[2][3]*a0)*dd;
+  r[3][3]=(m[2][0]*a3-m[2][1]*a1+m[2][2]*a0)*dd;
+  return r;
+  }
+
+
+// Invert affine matrix
+FXMat4f FXMat4f::affineInvert() const {
+  FXfloat dd;
+  FXMat4f r;
+  r[0][0]=m[1][1]*m[2][2]-m[1][2]*m[2][1];
+  r[0][1]=m[0][2]*m[2][1]-m[0][1]*m[2][2];
+  r[0][2]=m[0][1]*m[1][2]-m[0][2]*m[1][1];
+  r[0][3]=0.0f;
+  r[1][0]=m[1][2]*m[2][0]-m[1][0]*m[2][2];
+  r[1][1]=m[0][0]*m[2][2]-m[0][2]*m[2][0];
+  r[1][2]=m[0][2]*m[1][0]-m[0][0]*m[1][2];
+  r[1][3]=0.0f;
+  r[2][0]=m[1][0]*m[2][1]-m[1][1]*m[2][0];
+  r[2][1]=m[0][1]*m[2][0]-m[0][0]*m[2][1];
+  r[2][2]=m[0][0]*m[1][1]-m[0][1]*m[1][0];
+  r[2][3]=0.0f;
+  dd=m[0][0]*r[0][0]+m[0][1]*r[1][0]+m[0][2]*r[2][0];
+  FXASSERT(dd!=0.0f);
+  dd=1.0f/dd;
+  r[0][0]*=dd;
+  r[0][1]*=dd;
+  r[0][2]*=dd;
+  r[1][0]*=dd;
+  r[1][1]*=dd;
+  r[1][2]*=dd;
+  r[2][0]*=dd;
+  r[2][1]*=dd;
+  r[2][2]*=dd;
+  r[3][0]=-(r[0][0]*m[3][0]+r[1][0]*m[3][1]+r[2][0]*m[3][2]);
+  r[3][1]=-(r[0][1]*m[3][0]+r[1][1]*m[3][1]+r[2][1]*m[3][2]);
+  r[3][2]=-(r[0][2]*m[3][0]+r[1][2]*m[3][1]+r[2][2]*m[3][2]);
+  r[3][3]=1.0f;
+  return r;
+  }
+
+
+// Invert rigid body transform matrix
+FXMat4f FXMat4f::rigidInvert() const {
+  FXfloat ss;
+  FXMat4f r;
+  ss=1.0f/(m[0][0]*m[0][0]+m[0][1]*m[0][1]+m[0][2]*m[0][2]);
+  r[0][0]=m[0][0]*ss;
+  r[0][1]=m[1][0]*ss;
+  r[0][2]=m[2][0]*ss;
+  r[0][3]=0.0f;
+  r[1][0]=m[0][1]*ss;
+  r[1][1]=m[1][1]*ss;
+  r[1][2]=m[2][1]*ss;
+  r[1][3]=0.0f;
+  r[2][0]=m[0][2]*ss;
+  r[2][1]=m[1][2]*ss;
+  r[2][2]=m[2][2]*ss;
+  r[2][3]=0.0f;
+  r[3][0]=-(r[0][0]*m[3][0]+r[1][0]*m[3][1]+r[2][0]*m[3][2]);
+  r[3][1]=-(r[0][1]*m[3][0]+r[1][1]*m[3][1]+r[2][1]*m[3][2]);
+  r[3][2]=-(r[0][2]*m[3][0]+r[1][2]*m[3][1]+r[2][2]*m[3][2]);
+  r[3][3]=1.0f;
+  return r;
+  }
+
+
+// Return normal-transformation matrix (inverse transpose of upper 3x3 block)
+FXMat3f FXMat4f::normalMatrix() const {
+  FXfloat dd;
+  FXMat3f res;
+  res[0][0]=m[1][1]*m[2][2]-m[1][2]*m[2][1];
+  res[0][1]=m[1][2]*m[2][0]-m[1][0]*m[2][2];
+  res[0][2]=m[1][0]*m[2][1]-m[1][1]*m[2][0];
+  res[1][0]=m[0][2]*m[2][1]-m[0][1]*m[2][2];
+  res[1][1]=m[0][0]*m[2][2]-m[0][2]*m[2][0];
+  res[1][2]=m[0][1]*m[2][0]-m[0][0]*m[2][1];
+  res[2][0]=m[0][1]*m[1][2]-m[0][2]*m[1][1];
+  res[2][1]=m[0][2]*m[1][0]-m[0][0]*m[1][2];
+  res[2][2]=m[0][0]*m[1][1]-m[0][1]*m[1][0];
+  dd=m[0][0]*res[0][0]+m[0][1]*res[0][1]+m[0][2]*res[0][2];
+  FXASSERT(dd!=0.0f);
+  dd=1.0f/dd;
+  res[0][0]*=dd;
+  res[0][1]*=dd;
+  res[0][2]*=dd;
+  res[1][0]*=dd;
+  res[1][1]*=dd;
+  res[1][2]*=dd;
+  res[2][0]*=dd;
+  res[2][1]*=dd;
+  res[2][2]*=dd;
+  return res;
+  }
+
+
+// Orthogonalize matrix
+// Uses Gram-Schmidt orthogonalization on a row-by-row basis
+FXMat4f orthogonalize(const FXMat4f& m){
+  FXMat4f result(m);
+  result[0]/=result[0].length();
+  result[1]-=result[0]*(result[1]*result[0]);
+  result[1]/=result[1].length();
+  result[2]-=result[0]*(result[2]*result[0]);
+  result[2]-=result[1]*(result[2]*result[1]);
+  result[2]/=result[2].length();
+  result[3]-=result[0]*(result[3]*result[0]);
+  result[3]-=result[1]*(result[3]*result[1]);
+  result[3]-=result[2]*(result[3]*result[2]);
+  result[3]/=result[3].length();
+  return result;
+  }
+
+
+// Matrix times vector
+FXVec3f operator*(const FXMat4f& m,const FXVec3f& v){
+#if defined(FOX_HAS_SSE3)
+  __m128 m0=_mm_loadu_ps(&m[0][0]);
+  __m128 m1=_mm_loadu_ps(&m[1][0]);
+  __m128 m2=_mm_loadu_ps(&m[2][0]);
+  __m128 vv=_mm_set_ps(1.0f,v[2],v[1],v[0]);
+  __m128 r0=_mm_mul_ps(m0,vv);         // m03 m02*v2 m01*v1 m00*v0
+  __m128 r1=_mm_mul_ps(m1,vv);         // m13 m12*v2 m11*v1 m10*v0
+  __m128 r2=_mm_mul_ps(m2,vv);         // m23 m22*v2 m21*v1 m20*v0
+  FXVec3f r;
+  r0=_mm_hadd_ps(r0,r1);        // m13+m12*v2  m11*v1+m10*v0  m03+m02*v2  m01*v1+m00*v0
+  r2=_mm_hadd_ps(r2,m0);        // **********  *************  m23+m22*v2  m21*v1+m20*v0
+  r0=_mm_hadd_ps(r0,r2);        // ************************  m23+m22*v2+m21*v1+m20*v0  m13+m12*v2+m11*v1+m10*v0  m03+m02*v2+m01*v1+m00*v0
+  _mm_storel_pi((__m64*)&r[0],r0);
+  _mm_store_ss(&r[2],_mm_movehl_ps(r0,r0));
+  return r;
+#else
+  return FXVec3f(m[0][0]*v[0]+m[0][1]*v[1]+m[0][2]*v[2]+m[0][3], m[1][0]*v[0]+m[1][1]*v[1]+m[1][2]*v[2]+m[1][3], m[2][0]*v[0]+m[2][1]*v[1]+m[2][2]*v[2]+m[2][3]);
+#endif
+  }
+
+
+// Matrix times vector
+FXVec4f operator*(const FXMat4f& m,const FXVec4f& v){
+#if defined(FOX_HAS_SSE3)
+  __m128 vv=_mm_loadu_ps(v);
+  __m128 r0=_mm_mul_ps(_mm_loadu_ps(&m[0][0]),vv);     // m03*v3 m02*v2 m01*v1 m00*v0
+  __m128 r1=_mm_mul_ps(_mm_loadu_ps(&m[1][0]),vv);     // m13*v3 m12*v2 m11*v1 m10*v0
+  __m128 r2=_mm_mul_ps(_mm_loadu_ps(&m[2][0]),vv);     // m23*v3 m22*v2 m21*v1 m20*v0
+  __m128 r3=_mm_mul_ps(_mm_loadu_ps(&m[3][0]),vv);     // m33*v3 m32*v2 m31*v1 m30*v0
+  FXVec4f r;
+  r0=_mm_hadd_ps(r0,r1);        // m13*v3+m12*v2  m11*v1+m10*v0  m03*v3+m02*v2  m01*v1+m00*v0
+  r2=_mm_hadd_ps(r2,r3);        // m33*v3+m32*v2  m31*v1+m30*v0  m23*v3+m22*v2  m21*v1+m20*v0
+  r0=_mm_hadd_ps(r0,r2);        // m33*v3+m32*v2+m31*v1+m30*v0  m23*v3+m22*v2+m21*v1+m20*v0  m13*v3+m12*v2+m11*v1+m10*v0  m03*v3+m02*v2+m01*v1+m00*v0
+  _mm_storeu_ps(&r[0],r0);
+  return r;
+#else
+  return FXVec4f(m[0][0]*v[0]+m[0][1]*v[1]+m[0][2]*v[2]+m[0][3]*v[3], m[1][0]*v[0]+m[1][1]*v[1]+m[1][2]*v[2]+m[1][3]*v[3], m[2][0]*v[0]+m[2][1]*v[1]+m[2][2]*v[2]+m[2][3]*v[3], m[3][0]*v[0]+m[3][1]*v[1]+m[3][2]*v[2]+m[3][3]*v[3]);
+#endif
+  }
+
+
+// Vector times matrix
+//
+//  v[0]*m[0][0] + v[1]*m[1][0] + v[2]*m[2][0] + m[3][0]
+//  v[0]*m[0][1] + v[1]*m[1][1] + v[2]*m[2][1] + m[3][1]
+//  v[0]*m[0][2] + v[1]*m[1][2] + v[2]*m[2][2] + m[3][2]
+//
+FXVec3f operator*(const FXVec3f& v,const FXMat4f& m){
+#if defined(FOX_HAS_SSE)
+  __m128 m0=_mm_loadu_ps(&m[0][0]);
+  __m128 m1=_mm_loadu_ps(&m[1][0]);
+  __m128 m2=_mm_loadu_ps(&m[2][0]);
+  __m128 m3=_mm_loadu_ps(&m[3][0]);
+  __m128 v0=_mm_set1_ps(v[0]);
+  __m128 v1=_mm_set1_ps(v[1]);
+  __m128 v2=_mm_set1_ps(v[2]);
+  __m128 rr=_mm_add_ps(_mm_add_ps(_mm_mul_ps(v0,m0),_mm_mul_ps(v1,m1)),_mm_add_ps(_mm_mul_ps(v2,m2),m3));
+  FXVec3f r;
+  _mm_storel_pi((__m64*)&r[0],rr);
+  _mm_store_ss(&r[2],_mm_movehl_ps(rr,rr));
+  return r;
+#else
+  return FXVec3f(v[0]*m[0][0]+v[1]*m[1][0]+v[2]*m[2][0]+m[3][0], v[0]*m[0][1]+v[1]*m[1][1]+v[2]*m[2][1]+m[3][1], v[0]*m[0][2]+v[1]*m[1][2]+v[2]*m[2][2]+m[3][2]);
+#endif
+  }
+
+
+// Vector times matrix
+//
+//  v[0]*m[0][0] + v[1]*m[1][0] + v[2]*m[2][0] + v[3]*m[3][0]
+//  v[0]*m[0][1] + v[1]*m[1][1] + v[2]*m[2][1] + v[3]*m[3][1]
+//  v[0]*m[0][2] + v[1]*m[1][2] + v[2]*m[2][2] + v[3]*m[3][2]
+//  v[0]*m[0][3] + v[1]*m[1][3] + v[2]*m[2][3] + v[3]*m[3][3]
+//
+FXVec4f operator*(const FXVec4f& v,const FXMat4f& m){
+#if defined(FOX_HAS_SSE)
+  __m128 m0=_mm_loadu_ps(&m[0][0]);
+  __m128 m1=_mm_loadu_ps(&m[1][0]);
+  __m128 m2=_mm_loadu_ps(&m[2][0]);
+  __m128 m3=_mm_loadu_ps(&m[3][0]);
+  __m128 v0=_mm_set1_ps(v[0]);
+  __m128 v1=_mm_set1_ps(v[1]);
+  __m128 v2=_mm_set1_ps(v[2]);
+  __m128 v3=_mm_set1_ps(v[3]);
+  FXVec4f r;
+  _mm_storeu_ps(&r[0],_mm_add_ps(_mm_add_ps(_mm_mul_ps(v0,m0),_mm_mul_ps(v1,m1)),_mm_add_ps(_mm_mul_ps(v2,m2),_mm_mul_ps(v3,m3))));
+  return r;
+#else
+  return FXVec4f(v[0]*m[0][0]+v[1]*m[1][0]+v[2]*m[2][0]+v[3]*m[3][0], v[0]*m[0][1]+v[1]*m[1][1]+v[2]*m[2][1]+v[3]*m[3][1], v[0]*m[0][2]+v[1]*m[1][2]+v[2]*m[2][2]+v[3]*m[3][2], v[0]*m[0][3]+v[1]*m[1][3]+v[2]*m[2][3]+v[3]*m[3][3]);
+#endif
+  }
+
+
+// Matrix and matrix add
+FXMat4f operator+(const FXMat4f& a,const FXMat4f& b){
+#if defined(FOX_HAS_SSE)
+  FXMat4f r;
+  _mm_storeu_ps(&r[0][0],_mm_add_ps(_mm_loadu_ps(&a[0][0]),_mm_loadu_ps(&b[0][0])));
+  _mm_storeu_ps(&r[1][0],_mm_add_ps(_mm_loadu_ps(&a[1][0]),_mm_loadu_ps(&b[1][0])));
+  _mm_storeu_ps(&r[2][0],_mm_add_ps(_mm_loadu_ps(&a[2][0]),_mm_loadu_ps(&b[2][0])));
+  _mm_storeu_ps(&r[3][0],_mm_add_ps(_mm_loadu_ps(&a[3][0]),_mm_loadu_ps(&b[3][0])));
+  return r;
+#else
+  return FXMat4f(a[0][0]+b[0][0],a[0][1]+b[0][1],a[0][2]+b[0][2],a[0][3]+b[0][3],
+                 a[1][0]+b[1][0],a[1][1]+b[1][1],a[1][2]+b[1][2],a[1][3]+b[1][3],
+                 a[2][0]+b[2][0],a[2][1]+b[2][1],a[2][2]+b[2][2],a[2][3]+b[2][3],
+                 a[3][0]+b[3][0],a[3][1]+b[3][1],a[3][2]+b[3][2],a[3][3]+b[3][3]);
+#endif
+  }
+
+
+// Matrix and matrix subtract
+FXMat4f operator-(const FXMat4f& a,const FXMat4f& b){
+#if defined(FOX_HAS_SSE)
+  FXMat4f r;
+  _mm_storeu_ps(&r[0][0],_mm_sub_ps(_mm_loadu_ps(&a[0][0]),_mm_loadu_ps(&b[0][0])));
+  _mm_storeu_ps(&r[1][0],_mm_sub_ps(_mm_loadu_ps(&a[1][0]),_mm_loadu_ps(&b[1][0])));
+  _mm_storeu_ps(&r[2][0],_mm_sub_ps(_mm_loadu_ps(&a[2][0]),_mm_loadu_ps(&b[2][0])));
+  _mm_storeu_ps(&r[3][0],_mm_sub_ps(_mm_loadu_ps(&a[3][0]),_mm_loadu_ps(&b[3][0])));
+  return r;
+#else
+  return FXMat4f(a[0][0]-b[0][0],a[0][1]-b[0][1],a[0][2]-b[0][2],a[0][3]-b[0][3],
+                 a[1][0]-b[1][0],a[1][1]-b[1][1],a[1][2]-b[1][2],a[1][3]-b[1][3],
+                 a[2][0]-b[2][0],a[2][1]-b[2][1],a[2][2]-b[2][2],a[2][3]-b[2][3],
+                 a[3][0]-b[3][0],a[3][1]-b[3][1],a[3][2]-b[3][2],a[3][3]-b[3][3]);
+#endif
+  }
+
+
+// Matrix and matrix multiply
+FXMat4f operator*(const FXMat4f& a,const FXMat4f& b){
+#if defined(FOX_HAS_SSE)
+  __m128 b0=_mm_loadu_ps(&b[0][0]);
+  __m128 b1=_mm_loadu_ps(&b[1][0]);
+  __m128 b2=_mm_loadu_ps(&b[2][0]);
+  __m128 b3=_mm_loadu_ps(&b[3][0]);
+  __m128 xx,yy,zz,ww;
+  FXMat4f r;
+  xx=_mm_set1_ps(a[0][0]);
+  yy=_mm_set1_ps(a[0][1]);
+  zz=_mm_set1_ps(a[0][2]);
+  ww=_mm_set1_ps(a[0][3]);
+  _mm_storeu_ps(r[0],_mm_add_ps(_mm_add_ps(_mm_mul_ps(b0,xx),_mm_mul_ps(b1,yy)),_mm_add_ps(_mm_mul_ps(b2,zz),_mm_mul_ps(b3,ww))));
+  xx=_mm_set1_ps(a[1][0]);
+  yy=_mm_set1_ps(a[1][1]);
+  zz=_mm_set1_ps(a[1][2]);
+  ww=_mm_set1_ps(a[1][3]);
+  _mm_storeu_ps(r[1],_mm_add_ps(_mm_add_ps(_mm_mul_ps(b0,xx),_mm_mul_ps(b1,yy)),_mm_add_ps(_mm_mul_ps(b2,zz),_mm_mul_ps(b3,ww))));
+  xx=_mm_set1_ps(a[2][0]);
+  yy=_mm_set1_ps(a[2][1]);
+  zz=_mm_set1_ps(a[2][2]);
+  ww=_mm_set1_ps(a[2][3]);
+  _mm_storeu_ps(r[2],_mm_add_ps(_mm_add_ps(_mm_mul_ps(b0,xx),_mm_mul_ps(b1,yy)),_mm_add_ps(_mm_mul_ps(b2,zz),_mm_mul_ps(b3,ww))));
+  xx=_mm_set1_ps(a[3][0]);
+  yy=_mm_set1_ps(a[3][1]);
+  zz=_mm_set1_ps(a[3][2]);
+  ww=_mm_set1_ps(a[3][3]);
+  _mm_storeu_ps(r[3],_mm_add_ps(_mm_add_ps(_mm_mul_ps(b0,xx),_mm_mul_ps(b1,yy)),_mm_add_ps(_mm_mul_ps(b2,zz),_mm_mul_ps(b3,ww))));
+  return r;
+#else
+  FXfloat x,y,z,w;
+  FXMat4f r;
+  x=a[0][0]; y=a[0][1]; z=a[0][2]; w=a[0][3];
+  r[0][0]=x*b[0][0]+y*b[1][0]+z*b[2][0]+w*b[3][0];
+  r[0][1]=x*b[0][1]+y*b[1][1]+z*b[2][1]+w*b[3][1];
+  r[0][2]=x*b[0][2]+y*b[1][2]+z*b[2][2]+w*b[3][2];
+  r[0][3]=x*b[0][3]+y*b[1][3]+z*b[2][3]+w*b[3][3];
+  x=a[1][0]; y=a[1][1]; z=a[1][2]; w=a[1][3];
+  r[1][0]=x*b[0][0]+y*b[1][0]+z*b[2][0]+w*b[3][0];
+  r[1][1]=x*b[0][1]+y*b[1][1]+z*b[2][1]+w*b[3][1];
+  r[1][2]=x*b[0][2]+y*b[1][2]+z*b[2][2]+w*b[3][2];
+  r[1][3]=x*b[0][3]+y*b[1][3]+z*b[2][3]+w*b[3][3];
+  x=a[2][0]; y=a[2][1]; z=a[2][2]; w=a[2][3];
+  r[2][0]=x*b[0][0]+y*b[1][0]+z*b[2][0]+w*b[3][0];
+  r[2][1]=x*b[0][1]+y*b[1][1]+z*b[2][1]+w*b[3][1];
+  r[2][2]=x*b[0][2]+y*b[1][2]+z*b[2][2]+w*b[3][2];
+  r[2][3]=x*b[0][3]+y*b[1][3]+z*b[2][3]+w*b[3][3];
+  x=a[3][0]; y=a[3][1]; z=a[3][2]; w=a[3][3];
+  r[3][0]=x*b[0][0]+y*b[1][0]+z*b[2][0]+w*b[3][0];
+  r[3][1]=x*b[0][1]+y*b[1][1]+z*b[2][1]+w*b[3][1];
+  r[3][2]=x*b[0][2]+y*b[1][2]+z*b[2][2]+w*b[3][2];
+  r[3][3]=x*b[0][3]+y*b[1][3]+z*b[2][3]+w*b[3][3];
+  return r;
+#endif
+  }
+
+
+// Multiply scalar by matrix
+FXMat4f operator*(FXfloat x,const FXMat4f& a){
+#if defined(FOX_HAS_SSE)
+  FXMat4f r;
+  _mm_storeu_ps(&r[0][0],_mm_mul_ps(_mm_set1_ps(x),_mm_loadu_ps(&a[0][0])));
+  _mm_storeu_ps(&r[1][0],_mm_mul_ps(_mm_set1_ps(x),_mm_loadu_ps(&a[1][0])));
+  _mm_storeu_ps(&r[2][0],_mm_mul_ps(_mm_set1_ps(x),_mm_loadu_ps(&a[2][0])));
+  _mm_storeu_ps(&r[3][0],_mm_mul_ps(_mm_set1_ps(x),_mm_loadu_ps(&a[3][0])));
+  return r;
+#else
+  return FXMat4f(x*a[0][0],x*a[0][1],x*a[0][2],a[0][3],
+                 x*a[1][0],x*a[1][1],x*a[1][2],a[1][3],
+                 x*a[2][0],x*a[2][1],x*a[2][2],a[2][3],
+                 x*a[3][0],x*a[3][1],x*a[3][2],a[3][3]);
+#endif
+  }
+
+
+// Multiply matrix by scalar
+FXMat4f operator*(const FXMat4f& a,FXfloat x){
+#if defined(FOX_HAS_SSE)
+  FXMat4f r;
+  _mm_storeu_ps(&r[0][0],_mm_mul_ps(_mm_loadu_ps(&a[0][0]),_mm_set1_ps(x)));
+  _mm_storeu_ps(&r[1][0],_mm_mul_ps(_mm_loadu_ps(&a[1][0]),_mm_set1_ps(x)));
+  _mm_storeu_ps(&r[2][0],_mm_mul_ps(_mm_loadu_ps(&a[2][0]),_mm_set1_ps(x)));
+  _mm_storeu_ps(&r[3][0],_mm_mul_ps(_mm_loadu_ps(&a[3][0]),_mm_set1_ps(x)));
+  return r;
+#else
+  return FXMat4f(a[0][0]*x,a[0][1]*x,a[0][2]*x,a[0][3],
+                 a[1][0]*x,a[1][1]*x,a[1][2]*x,a[1][3],
+                 a[2][0]*x,a[2][1]*x,a[2][2]*x,a[2][3],
+                 a[3][0]*x,a[3][1]*x,a[3][2]*x,a[3][3]);
+#endif
+  }
+
+
+// Divide scalar by matrix
+FXMat4f operator/(FXfloat x,const FXMat4f& a){
+#if defined(FOX_HAS_SSE)
+  FXMat4f r;
+  _mm_storeu_ps(&r[0][0],_mm_div_ps(_mm_set1_ps(x),_mm_loadu_ps(&a[0][0])));
+  _mm_storeu_ps(&r[1][0],_mm_div_ps(_mm_set1_ps(x),_mm_loadu_ps(&a[1][0])));
+  _mm_storeu_ps(&r[2][0],_mm_div_ps(_mm_set1_ps(x),_mm_loadu_ps(&a[2][0])));
+  _mm_storeu_ps(&r[3][0],_mm_div_ps(_mm_set1_ps(x),_mm_loadu_ps(&a[3][0])));
+  return r;
+#else
+  return FXMat4f(x/a[0][0],x/a[0][1],x/a[0][2],a[0][3],
+                 x/a[1][0],x/a[1][1],x/a[1][2],a[1][3],
+                 x/a[2][0],x/a[2][1],x/a[2][2],a[2][3],
+                 x/a[3][0],x/a[3][1],x/a[3][2],a[3][3]);
+#endif
+  }
+
+
+// Divide matrix by scalar
+FXMat4f operator/(const FXMat4f& a,FXfloat x){
+#if defined(FOX_HAS_SSE)
+  FXMat4f r;
+  _mm_storeu_ps(&r[0][0],_mm_div_ps(_mm_loadu_ps(&a[0][0]),_mm_set1_ps(x)));
+  _mm_storeu_ps(&r[1][0],_mm_div_ps(_mm_loadu_ps(&a[1][0]),_mm_set1_ps(x)));
+  _mm_storeu_ps(&r[2][0],_mm_div_ps(_mm_loadu_ps(&a[2][0]),_mm_set1_ps(x)));
+  _mm_storeu_ps(&r[3][0],_mm_div_ps(_mm_loadu_ps(&a[3][0]),_mm_set1_ps(x)));
+  return r;
+#else
+  return FXMat4f(a[0][0]/x,a[0][1]/x,a[0][2]/x,a[0][3],
+                 a[1][0]/x,a[1][1]/x,a[1][2]/x,a[1][3],
+                 a[2][0]/x,a[2][1]/x,a[2][2]/x,a[2][3],
+                 a[3][0]/x,a[3][1]/x,a[3][2]/x,a[3][3]);
+#endif
+  }
+
+
+// Matrix and matrix equality
+FXbool operator==(const FXMat4f& a,const FXMat4f& b){
+  return a[0]==b[0] && a[1]==b[1] && a[2]==b[2] && a[3]==b[3];
+  }
+
+
+// Matrix and matrix inequality
+FXbool operator!=(const FXMat4f& a,const FXMat4f& b){
+  return a[0]!=b[0] || a[1]!=b[1] || a[2]!=b[2] || a[3]!=b[3];
+  }
+
+
+// Matrix and scalar equality
+FXbool operator==(const FXMat4f& a,FXfloat n){
+  return a[0]==n && a[1]==n && a[2]==n && a[3]==n;
+  }
+
+
+// Scalar and matrix equality
+FXbool operator==(FXfloat n,const FXMat4f& a){
+  return n==a[0] && n==a[1] && n==a[2] && n==a[3];
+  }
+
+
+// Matrix and scalar inequality
+FXbool operator!=(const FXMat4f& a,FXfloat n){
+  return a[0]!=n || a[1]!=n || a[2]!=n || a[3]!=n;
+  }
+
+
+// Scalar and matrix inequality
+FXbool operator!=(FXfloat n,const FXMat4f& a){
+  return n!=a[0] || n!=a[1] || n!=a[2] || n!=a[3];
   }
 
 

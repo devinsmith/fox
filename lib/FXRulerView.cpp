@@ -3,38 +3,41 @@
 *                         R u l e r V i e w   W i d g e t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXRulerView.cpp,v 1.16 2006/01/28 20:29:30 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXScrollBar.h"
 #include "FXScrollArea.h"
 #include "FXRuler.h"
@@ -105,6 +108,18 @@ FXRulerView::FXRulerView(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts
   }
 
 
+// Get default width
+FXint FXRulerView::getDefaultWidth(){
+  return FXScrollArea::getDefaultWidth()+vruler->getDefaultWidth();
+  }
+
+
+// Get default height
+FXint FXRulerView::getDefaultHeight(){
+  return FXScrollArea::getDefaultHeight()+hruler->getDefaultHeight();
+  }
+
+
 // Get document position X
 FXint FXRulerView::getDocumentX() const {
   return vruler->getWidth()+hruler->getDocumentLower();
@@ -141,15 +156,27 @@ FXint FXRulerView::getDocumentHeight() const {
   }
 
 
-// Default viewport width
-FXint FXRulerView::getViewportWidth(){
-  return width-vruler->getDefaultWidth();
+// Return visible area x position
+FXint FXRulerView::getVisibleX() const {
+  return vruler->getDefaultWidth();
   }
 
 
-// Default viewport height
-FXint FXRulerView::getViewportHeight(){
-  return height-hruler->getDefaultHeight();
+// Return visible area y position
+FXint FXRulerView::getVisibleY() const {
+  return hruler->getDefaultHeight();
+  }
+
+
+// Return visible area width
+FXint FXRulerView::getVisibleWidth() const {
+  return width-vruler->getDefaultWidth()-vertical->getWidth();
+  }
+
+
+// Return visible area height
+FXint FXRulerView::getVisibleHeight() const {
+  return height-hruler->getDefaultHeight()-horizontal->getHeight();
   }
 
 
@@ -167,26 +194,23 @@ FXint FXRulerView::getContentHeight(){
 
 // Move content
 void FXRulerView::moveContents(FXint x,FXint y){
+  FXScrollArea::moveContents(x,y);
   hruler->setPosition(x);
   vruler->setPosition(y);
-  scroll(vruler->getDefaultWidth(),hruler->getDefaultHeight(),viewport_w,viewport_h,x-pos_x,y-pos_y);
-  pos_x=x;
-  pos_y=y;
   }
 
 
 // Recalculate layout
 void FXRulerView::layout(){
-  FXint vrw,hrh;
+  FXint vrw=vruler->getDefaultWidth();
+  FXint hrh=hruler->getDefaultHeight();
 
   // Layout scroll bars and viewport
-  FXScrollArea::layout();
+  placeScrollBars(width-vrw,height-hrh);
 
   // Place rulers
-  vrw=vruler->getDefaultWidth();
-  hrh=hruler->getDefaultHeight();
-  hruler->position(vrw,0,viewport_w,hrh);
-  vruler->position(0,hrh,vrw,viewport_h);
+  hruler->position(vrw,0,getVisibleWidth(),hrh);
+  vruler->position(0,hrh,vrw,getVisibleHeight());
   filler->position(0,0,vrw,hrh);
 
   // Redraw

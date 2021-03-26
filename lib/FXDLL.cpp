@@ -3,59 +3,59 @@
 *             D y n a m i c   L i n k   L i b r a r y   S u p p o r t           *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2002,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDLL.cpp,v 1.21 2006/03/01 02:13:21 fox Exp $                           *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXDLL.h"
 
-#ifndef WIN32
-#ifdef HAVE_SHL_LOAD
-#include <dl.h>                 // HP-UX
-#else
-#include <dlfcn.h>              // POSIX
-#endif
-#endif
-
 /*
   Notes:
+
   - Make sure it works on other unices.
+
+  - Get main executable handle like:
+
+      GetOwnModuleHandle();
+
+    or
+
+      dlopen(NULL,RTLD_NOW|RTLD_GLOBAL);
+
+  - Nice thing for tracing:
+
+      Dl_info dli;
+      dladdr(__builtin_return_address(0), &dli);
+      fprintf(stderr, "debug trace [%d]: %s called by %p [ %s(%p) %s(%p) ].\n",getpid(), __func__,__builtin_return_address(0),strrchr(dli.dli_fname, '/') ?strrchr(dli.dli_fname, '/')+1 : dli.dli_fname,dli.dli_fbase, dli.dli_sname, dli.dli_saddr);
+      dladdr(__builtin_return_address(1), &dli);
+      fprintf(stderr, "debug trace [%d]: %*s called by %p [ %s(%p) %s(%p) ].\n",getpid(), strlen(__func__), "...",__builtin_return_address(1),strrchr(dli.dli_fname, '/') ?strrchr(dli.dli_fname, '/')+1 : dli.dli_fname,dli.dli_fbase, dli.dli_sname, dli.dli_saddr);
+
+  - Some machines have dlinfo(); you can get directory from where DLL comes:
+
+      char directory[1024];
+      if(dlinfo(hnd,RTLD_DI_ORIGIN,directory)!=-1){
+        return directory;
+        }
+
 */
-
-
-#ifndef RTLD_GLOBAL
-#define RTLD_GLOBAL 0           // Does not exist on DEC
-#endif
-
-#ifdef HAVE_SHL_LOAD
-#ifndef	DYNAMIC_PATH            // HP-UX
-#define DYNAMIC_PATH 0
-#endif
-#ifndef	BIND_RESTRICTED
-#define BIND_RESTRICTED	0
-#endif
-#endif
-
 
 using namespace FX;
 
@@ -64,20 +64,37 @@ using namespace FX;
 namespace FX {
 
 
-// Open DLL and return dllhandle to it
-void* fxdllOpen(const FXchar *dllname){
-  if(dllname){
-#ifndef WIN32
-#ifdef HAVE_SHL_LOAD    // HP-UX
-    return shl_load(dllname,BIND_IMMEDIATE|BIND_NONFATAL|DYNAMIC_PATH,0L);
-#else
-#ifdef DL_LAZY		// OpenBSD
-    return dlopen(dllname,DL_LAZY);
-#else			// POSIX
-    return dlopen(dllname,RTLD_NOW|RTLD_GLOBAL);
+// Return the name of the library module
+FXString FXDLL::name() const {
+  if(hnd){
+#if defined(WIN32)              // WIN32
+    char buffer[1024];
+    if(GetModuleFileNameA((HINSTANCE)hnd,buffer,sizeof(buffer))){
+      return FXString(buffer);
+      }
+#elif defined(HAVE_SHL_LOAD)    // HP-UX
+    struct shl_descriptor desc;
+    if(shl_gethandle_r((shl_t)hnd,&desc)!=-1){
+      return FXString(desc.filename);
+      }
+#elif defined(__minix)          // MINIX
+    //// NOT SUPPORTED ////
+#else                           // POSIX
+    Dl_info info;
+    void *ptr=dlsym(hnd,"_init");       // FIXME any better way?
+    if(ptr && dladdr(ptr,&info)){
+      return FXString(info.dli_fname);
+      }
 #endif
-#endif
-#else                   // WIN32
+    }
+  return FXString::null;
+  }
+
+
+// Load the library module from the given name
+FXbool FXDLL::load(const FXString& nm){
+  if(!hnd && !nm.empty()){
+#if defined(WIN32)              // WIN32
     // Order of loading with LoadLibrary (or LoadLibraryEx with no
     // LOAD_WITH_ALTERED_SEARCH_PATH flag):
     //
@@ -98,67 +115,175 @@ void* fxdllOpen(const FXchar *dllname){
     // 6. Directories in the $PATH.
     //
     // We switched to the latter so sub-modules needed by a DLL are
-    // plucked from the same place as dllname (thanks to Rafael de
+    // plucked from the same place as name (thanks to Rafael de
     // Pelegrini Soares" <Rafael@enq.ufrgs.br>).
-    //return LoadLibrary(dllname);
-    return LoadLibraryExA(dllname,NULL,LOAD_WITH_ALTERED_SEARCH_PATH);
+    hnd=LoadLibraryExA(nm.text(),NULL,LOAD_WITH_ALTERED_SEARCH_PATH);
+#elif defined(HAVE_SHL_LOAD)    // HP-UX
+    hnd=shl_load(nm.text(),BIND_IMMEDIATE|BIND_NONFATAL|DYNAMIC_PATH,0L);
+#elif defined(__minix)          // MINIX
+    //// NOT SUPPORTED ////
+#else			        // POSIX
+    hnd=dlopen(nm.text(),RTLD_NOW|RTLD_GLOBAL);
+#endif
+    }
+  return hnd!=NULL;
+  }
+
+
+// Unload the library module
+void FXDLL::unload(){
+  if(hnd){
+#if defined(WIN32)              // WIN32
+    FreeLibrary((HMODULE)hnd);
+#elif defined(HAVE_SHL_LOAD)    // HP-UX
+    shl_unload((shl_t)hnd);
+#elif defined(__minix)          // MINIX
+    //// NOT SUPPORTED ////
+#else			        // POSIX
+    dlclose(hnd);
+#endif
+    hnd=NULL;
+    }
+  }
+
+
+// Return the address of the symbol in this library module
+void* FXDLL::address(const FXchar* sym) const {
+  if(hnd && sym && sym[0]){
+#if defined(WIN32)              // WIN32
+    return (void*)GetProcAddress((HMODULE)hnd,sym);
+#elif defined(HAVE_SHL_LOAD)    // HP-UX
+    void* ptr=NULL;
+    if(shl_findsym((shl_t*)&hnd,sym,TYPE_UNDEFINED,&ptr)==0) return ptr;
+#elif defined(__minix)          // MINIX
+    //// NOT SUPPORTED ////
+#else			        // POSIX
+    return dlsym(hnd,sym);
 #endif
     }
   return NULL;
   }
 
 
-// Close DLL of given dllhandle
-void fxdllClose(void* dllhandle){
-  if(dllhandle){
-#ifndef WIN32
-#ifdef HAVE_SHL_LOAD    // HP-UX
-    shl_unload((shl_t)dllhandle);
-#else			// POSIX
-    dlclose(dllhandle);
-#endif
-#else                   // WIN32
-    FreeLibrary((HMODULE)dllhandle);
-#endif
-    }
+// Return the address of the symbol in this library module
+void* FXDLL::address(const FXString& sym) const {
+  return address(sym.text());
   }
 
 
-// Return address of the given symbol in library dllhandle
-void* fxdllSymbol(void* dllhandle,const FXchar* dllsymbol){
-  if(dllhandle && dllsymbol){
-#ifndef WIN32
-#ifdef HAVE_SHL_LOAD    // HP-UX
-    void* address=NULL;
-    if(shl_findsym((shl_t*)&dllhandle,dllsymbol,TYPE_UNDEFINED,&address)==0) return address;
-#else			// POSIX
-    return dlsym(dllhandle,dllsymbol);
-#endif
-#else                   // WIN32
-    return (void*)GetProcAddress((HMODULE)dllhandle,dllsymbol);
-#endif
+// Return the symbol name of the given address
+FXString FXDLL::symbol(void *addr){
+#if defined(WIN32)              // WIN32
+  // FIXME //
+#elif defined(HAVE_SHL_LOAD)    // HP-UX
+  // FIXME //
+#elif defined(__minix)          // MINIX
+  //// NOT SUPPORTED ////
+#else                           // POSIX
+  Dl_info info;
+  if(dladdr(addr,&info)){
+    return FXString(info.dli_sname);
     }
-  return NULL;
-  }
-
-
-// Return the string error message when loading dll's.
-// Suggested by Rafael de Pelegrini Soares <rafael@enq.ufrgs.br>
-FXString fxdllError(){
-#ifndef WIN32
-#ifdef HAVE_SHL_LOAD    // HP-UX
+#endif
   return FXString::null;
-#else			// POSIX
-  return dlerror();
+  }
+
+
+// Return the name of the library module containing the address
+FXString FXDLL::name(void *addr){
+#if defined(WIN32)              // WIN32
+  MEMORY_BASIC_INFORMATION mbi;
+  if(VirtualQuery((const void*)addr,&mbi,sizeof(mbi))){
+    char buffer[1024];
+    if(GetModuleFileNameA((HINSTANCE)mbi.AllocationBase,buffer,sizeof(buffer))){
+      return FXString(buffer);
+      }
+//  FXnchar buffer[1024];
+//  if(GetModuleFileNameW((HINSTANCE)mbi.AllocationBase,buffer,sizeof(buffer))){
+//    return FXString(buffer);
+//    }
+    }
+#elif defined(HAVE_SHL_LOAD)    // HP-UX
+  // FIXME //
+#elif defined(__minix)          // MINIX
+  //// NOT SUPPORTED ////
+#else                           // POSIX
+  Dl_info info;
+  if(dladdr(addr,&info)){
+    return FXString(info.dli_fname);
+    }
 #endif
-#else                   // WIN32
+  return FXString::null;
+  }
+
+
+// Find DLL containing symbol
+FXDLL FXDLL::dll(void* addr){
+#if defined(WIN32)              // WIN32
+  MEMORY_BASIC_INFORMATION mbi;
+  if(VirtualQuery((const void*)addr,&mbi,sizeof(mbi))){
+    //FXTRACE((1,"BaseAddress       = %p\n",mbi.BaseAddress));
+    //FXTRACE((1,"AllocationBase    = %p\n",mbi.AllocationBase));
+    //FXTRACE((1,"AllocationProtect = 0x%x\n",mbi.AllocationProtect));
+    //FXTRACE((1,"RegionSize        = %d\n",mbi.RegionSize));
+    //FXTRACE((1,"State             = 0x%x\n",mbi.State));
+    //FXTRACE((1,"Protect           = 0x%x\n",mbi.Protect));
+    //FXTRACE((1,"Type              = 0x%x\n",mbi.Type));
+    return FXDLL(mbi.AllocationBase);
+    }
+#elif defined(HAVE_SHL_LOAD)    // HP-UX
+  // FIXME //
+#elif defined(__minix)          // MINIX
+  //// NOT SUPPORTED ////
+#else                           // POSIX
+  Dl_info info;
+  if(dladdr(addr,&info)){
+    //FXTRACE((1,"dli_fname = %s\n",info.dli_fname));
+    //FXTRACE((1,"dli_fbase = %p\n",info.dli_fbase));
+    //FXTRACE((1,"dli_sname = %s\n",info.dli_sname));
+    //FXTRACE((1,"dli_saddr = %p\n",info.dli_saddr));
+    return FXDLL(dlopen(info.dli_fname,RTLD_NOLOAD|RTLD_NOW|RTLD_GLOBAL));
+    }
+#endif
+  return FXDLL(NULL);
+  }
+
+
+// Find DLL of ourselves
+FXDLL FXDLL::dll(){
+  return dll((void*)FXDLL::error);
+  }
+
+
+// Return error message if error occurred loading the library module
+FXString FXDLL::error(){
+#if defined(WIN32)              // WIN32
   DWORD dw=GetLastError();
   FXchar buffer[512];
   FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM,NULL,dw,MAKELANGID(LANG_NEUTRAL,SUBLANG_DEFAULT),(LPTSTR)buffer,sizeof(buffer),NULL);
-  return buffer;
+  return FXString(buffer);
+#elif defined(HAVE_SHL_LOAD)    // HP-UX
+  return FXString::null;
+#elif defined(__minix)          // MINIX
+  //// NOT SUPPORTED ////
+#else			        // POSIX
+  return FXString(dlerror());
 #endif
   }
 
 
-}
+/*******************************************************************************/
 
+
+// Initialize by loading given library name
+FXAUTODLL::FXAUTODLL(const FXString& nm){
+  load(nm);
+  }
+
+
+// Unload library if we have one
+FXAUTODLL::~FXAUTODLL(){
+  unload();
+  }
+
+}

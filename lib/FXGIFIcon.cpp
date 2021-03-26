@@ -3,37 +3,39 @@
 *                        G I F   I c o n   O b j e c t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXGIFIcon.cpp,v 1.32 2006/01/22 17:58:27 fox Exp $                       *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXMemoryStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXGIFIcon.h"
 
@@ -68,17 +70,15 @@ FXIMPLEMENT(FXGIFIcon,FXIcon,NULL,0)
 // Initialize nicely
 FXGIFIcon::FXGIFIcon(FXApp* a,const void *pix,FXColor clr,FXuint opts,FXint w,FXint h):FXIcon(a,NULL,clr,opts,w,h){
   if(pix){
-    FXMemoryStream ms;
-    ms.open(FXStreamLoad,(FXuchar*)pix);
+    FXMemoryStream ms(FXStreamLoad,(FXuchar*)pix);
     loadPixels(ms);
-    ms.close();
     }
   }
 
 
 // Save object to stream
-bool FXGIFIcon::savePixels(FXStream& store) const {
-  if(fxsaveGIF(store,data,width,height)){
+FXbool FXGIFIcon::savePixels(FXStream& store) const {
+  if(fxsaveGIF(store,data,width,height,true)){
     return true;
     }
   return false;
@@ -86,11 +86,12 @@ bool FXGIFIcon::savePixels(FXStream& store) const {
 
 
 // Load object from stream
-bool FXGIFIcon::loadPixels(FXStream& store){
+FXbool FXGIFIcon::loadPixels(FXStream& store){
   FXColor *pixels; FXint w,h;
-  if(fxloadGIF(store,pixels,w,h)){
+  if(fxloadGIF(store,pixels,w,h,true)){
     setData(pixels,IMAGE_OWNED,w,h);
-    if(options&IMAGE_ALPHAGUESS) transp=guesstransp();
+    if(options&IMAGE_ALPHAGUESS) setTransparentColor(guesstransp());
+    if(options&IMAGE_THRESGUESS) setThresholdValue(guessthresh());
     return true;
     }
   return false;

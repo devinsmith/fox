@@ -3,27 +3,26 @@
 *                      C l i p p i n g   R e g i o n                            *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXRegion.cpp,v 1.31 2006/01/22 17:58:39 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXSize.h"
@@ -35,7 +34,6 @@
 /*
   Notes:
   - Add some more ways to create regions
-
 */
 
 
@@ -47,173 +45,170 @@ namespace FX {
 
 // Construct new empty region
 FXRegion::FXRegion(){
-#ifndef WIN32
-  region=XCreateRegion();
-#else
+#ifdef WIN32
   region=(void*)CreateRectRgn(0,0,0,0);
+#else
+  region=XCreateRegion();
 #endif
   }
 
 
 // Construct rectangle region
 FXRegion::FXRegion(FXint x,FXint y,FXint w,FXint h){
-#ifndef WIN32
+#ifdef WIN32
+  region=(void*)CreateRectRgn(x,y,x+w,y+h);
+#else
   XRectangle r;
   r.x=x; r.y=y; r.width=w; r.height=h;
   region=XCreateRegion();
   XUnionRectWithRegion(&r,(Region)region,(Region)region);
-#else
-  region=(void*)CreateRectRgn(x,y,x+w,y+h);
 #endif
   }
 
 
 // Construct new region from rectangle rect
 FXRegion::FXRegion(const FXRectangle& rect){
-#ifndef WIN32
+#ifdef WIN32
+  region=(void*)CreateRectRgn(rect.x,rect.y,rect.x+rect.w,rect.y+rect.h);
+#else
   region=XCreateRegion();
   XUnionRectWithRegion((XRectangle*)&rect,(Region)region,(Region)region);
-#else
-  region=(void*)CreateRectRgn(rect.x,rect.y,rect.x+rect.w,rect.y+rect.h);
 #endif
   }
 
 
 // Construct polygon region
-FXRegion::FXRegion(const FXPoint* points,FXuint npoints,bool winding){
-#ifndef WIN32
-  region=XPolygonRegion((XPoint*)points,npoints,winding?WindingRule:EvenOddRule);
-#else
-  register FXuint i;
+FXRegion::FXRegion(const FXPoint* points,FXuint npoints,FXbool winding){
+#ifdef WIN32
+  FXuint i;
   POINT pts[1024];
   for(i=0; i<npoints; i++){
     pts[i].x=points[i].x;
     pts[i].y=points[i].y;
     }
   region=(void*)CreatePolygonRgn(pts,npoints,winding?WINDING:ALTERNATE);
+#else
+  region=XPolygonRegion((XPoint*)points,npoints,winding?WindingRule:EvenOddRule);
 #endif
   }
 
 
 // Construct new region copied from region r
 FXRegion::FXRegion(const FXRegion& r){
-#ifndef WIN32
-  region=XCreateRegion();
-  XUnionRegion((Region)r.region,(Region)region,(Region)region);
-#else
+#ifdef WIN32
   region=(void*)CreateRectRgn(0,0,0,0);
   CombineRgn((HRGN)region,(HRGN)r.region,(HRGN)region,RGN_COPY);
+#else
+  region=XCreateRegion();
+  XUnionRegion((Region)r.region,(Region)region,(Region)region);
 #endif
   }
 
 
 // Assign region r to this one
 FXRegion& FXRegion::operator=(const FXRegion& r){
-#ifndef WIN32
+#ifdef WIN32
+  CombineRgn((HRGN)region,(HRGN)r.region,(HRGN)r.region,RGN_COPY);
+#else
   if(region!=r.region){
     XDestroyRegion((Region)region);
     region=XCreateRegion();
     XUnionRegion((Region)r.region,(Region)region,(Region)region);
     }
-#else
-  CombineRgn((HRGN)region,(HRGN)r.region,(HRGN)r.region,RGN_COPY);
 #endif
   return *this;
   }
 
 
-// Return TRUE if region is empty
-bool FXRegion::empty() const {
-#ifndef WIN32
-  return XEmptyRegion((Region)region);
-#else
+// Return true if region is empty
+FXbool FXRegion::empty() const {
+#ifdef WIN32
   return OffsetRgn((HRGN)region,0,0)==NULLREGION;
+#else
+  return XEmptyRegion((Region)region);
 #endif
   }
 
 
-// Return TRUE if region contains point
-bool FXRegion::contains(FXint x,FXint y) const {
-#ifndef WIN32
-  return XPointInRegion((Region)region,x,y);
-#else
+// Return true if region contains point
+FXbool FXRegion::contains(FXint x,FXint y) const {
+#ifdef WIN32
   return region && PtInRegion((HRGN)region,x,y);
+#else
+  return XPointInRegion((Region)region,x,y);
 #endif
   }
 
-// Return TRUE if region contains rectangle
+// Return true if region contains rectangle
 // Contributed by Daniel Gehriger <gehriger@linkcad.com>.
-bool FXRegion::contains(FXint x,FXint y,FXint w,FXint h) const {
-#ifndef WIN32
-  return XRectInRegion((Region)region,x,y,w,h);
-#else
+FXbool FXRegion::contains(FXint x,FXint y,FXint w,FXint h) const {
+#ifdef WIN32
   RECT rect;
   rect.left   = x;
   rect.top    = y;
   rect.right  = x + w;
   rect.bottom = y + h;
   return region && RectInRegion((HRGN)region,&rect);
+#else
+  return XRectInRegion((Region)region,x,y,w,h);
 #endif
   }
 
 
 // Return bounding box
 FXRectangle FXRegion::bounds() const {
-  FXRectangle result;
-#ifndef WIN32
-  XClipBox((Region)region,(XRectangle*)&result);
-#else
+#ifdef WIN32
   RECT rect;
   GetRgnBox((HRGN)region,&rect);
-  result.x=(FXshort)rect.left;
-  result.y=(FXshort)rect.top;
-  result.w=(FXshort)(rect.right-rect.left);
-  result.h=(FXshort)(rect.bottom-rect.top);
+  return FXRectangle((FXshort)rect.left,(FXshort)rect.top,(FXshort)(rect.right-rect.left),(FXshort)(rect.bottom-rect.top));
+#else
+  XRectangle rect;
+  XClipBox((Region)region,&rect);
+  return FXRectangle(rect.x,rect.y,rect.width,rect.height);
 #endif
-  return result;
   }
 
 
 // Offset region by dx,dy
 FXRegion& FXRegion::offset(FXint dx,FXint dy){
-#ifndef WIN32
-  XOffsetRegion((Region)region,dx,dy);
-#else
+#ifdef WIN32
   OffsetRgn((HRGN)region,dx,dy);
+#else
+  XOffsetRegion((Region)region,dx,dy);
 #endif
   return *this;
   }
 
 
-// Return TRUE if region equal to this one
-bool FXRegion::operator==(const FXRegion& r) const {
-#ifndef WIN32
-  return XEqualRegion((Region)region,(Region)r.region);
-#else
+// Return true if region equal to this one
+FXbool FXRegion::operator==(const FXRegion& r) const {
+#ifdef WIN32
   return EqualRgn((HRGN)region,(HRGN)r.region)!=0;
+#else
+  return XEqualRegion((Region)region,(Region)r.region);
 #endif
   }
 
 
-// Return TRUE if region not equal to this one
-bool FXRegion::operator!=(const FXRegion& r) const {
-#ifndef WIN32
-  return !XEqualRegion((Region)region,(Region)r.region);
-#else
+// Return true if region not equal to this one
+FXbool FXRegion::operator!=(const FXRegion& r) const {
+#ifdef WIN32
   return EqualRgn((HRGN)region,(HRGN)r.region)==0;
+#else
+  return !XEqualRegion((Region)region,(Region)r.region);
 #endif
   }
 
 
 // Union region r with this one
 FXRegion& FXRegion::operator+=(const FXRegion& r){
-#ifndef WIN32
+#ifdef WIN32
+  CombineRgn((HRGN)region,(HRGN)region,(HRGN)r.region,RGN_OR);
+#else
   Region res=XCreateRegion();
   XUnionRegion((Region)region,(Region)r.region,res);
   XDestroyRegion((Region)region);
   region=res;
-#else
-  CombineRgn((HRGN)region,(HRGN)region,(HRGN)r.region,RGN_OR);
 #endif
   return *this;
   }
@@ -221,27 +216,27 @@ FXRegion& FXRegion::operator+=(const FXRegion& r){
 
 // Intersect region r with this one
 FXRegion& FXRegion::operator*=(const FXRegion& r){
-#ifndef WIN32
+#ifdef WIN32
+  CombineRgn((HRGN)region,(HRGN)region,(HRGN)r.region,RGN_AND);
+#else
   Region res=XCreateRegion();
   XIntersectRegion((Region)region,(Region)r.region,res);
   XDestroyRegion((Region)region);
   region=res;
-#else
-  CombineRgn((HRGN)region,(HRGN)region,(HRGN)r.region,RGN_AND);
 #endif
   return *this;
   }
 
 
-// Substract region r from this one
+// Subtract region r from this one
 FXRegion& FXRegion::operator-=(const FXRegion& r){
-#ifndef WIN32
+#ifdef WIN32
+  CombineRgn((HRGN)region,(HRGN)region,(HRGN)r.region,RGN_DIFF);
+#else
   Region res=XCreateRegion();
   XSubtractRegion((Region)region,(Region)r.region,res);
   XDestroyRegion((Region)region);
   region=res;
-#else
-  CombineRgn((HRGN)region,(HRGN)region,(HRGN)r.region,RGN_DIFF);
 #endif
   return *this;
   }
@@ -249,13 +244,13 @@ FXRegion& FXRegion::operator-=(const FXRegion& r){
 
 // Xor region r with this one
 FXRegion& FXRegion::operator^=(const FXRegion& r){
-#ifndef WIN32
+#ifdef WIN32
+  CombineRgn((HRGN)region,(HRGN)region,(HRGN)r.region,RGN_XOR);
+#else
   Region res=XCreateRegion();
   XXorRegion((Region)region,(Region)r.region,res);
   XDestroyRegion((Region)region);
   region=res;
-#else
-  CombineRgn((HRGN)region,(HRGN)region,(HRGN)r.region,RGN_XOR);
 #endif
   return *this;
   }
@@ -264,10 +259,10 @@ FXRegion& FXRegion::operator^=(const FXRegion& r){
 // Union region r with this one
 FXRegion FXRegion::operator+(const FXRegion& r) const {
   FXRegion res;
-#ifndef WIN32
-  XUnionRegion((Region)region,(Region)r.region,(Region)res.region);
-#else
+#ifdef WIN32
   CombineRgn((HRGN)res.region,(HRGN)region,(HRGN)r.region,RGN_OR);
+#else
+  XUnionRegion((Region)region,(Region)r.region,(Region)res.region);
 #endif
   return res;
   }
@@ -276,10 +271,10 @@ FXRegion FXRegion::operator+(const FXRegion& r) const {
 // Intersect region r with this one
 FXRegion FXRegion::operator*(const FXRegion& r) const {
   FXRegion res;
-#ifndef WIN32
-  XIntersectRegion((Region)region,(Region)r.region,(Region)res.region);
-#else
+#ifdef WIN32
   CombineRgn((HRGN)res.region,(HRGN)region,(HRGN)r.region,RGN_AND);
+#else
+  XIntersectRegion((Region)region,(Region)r.region,(Region)res.region);
 #endif
   return res;
   }
@@ -288,10 +283,10 @@ FXRegion FXRegion::operator*(const FXRegion& r) const {
 // Subtract region r from this one
 FXRegion FXRegion::operator-(const FXRegion& r) const {
   FXRegion res;
-#ifndef WIN32
-  XSubtractRegion((Region)region,(Region)r.region,(Region)res.region);
-#else
+#ifdef WIN32
   CombineRgn((HRGN)res.region,(HRGN)region,(HRGN)r.region,RGN_DIFF);
+#else
+  XSubtractRegion((Region)region,(Region)r.region,(Region)res.region);
 #endif
   return res;
   }
@@ -300,10 +295,10 @@ FXRegion FXRegion::operator-(const FXRegion& r) const {
 // Xor region r with this one
 FXRegion FXRegion::operator^(const FXRegion& r) const {
   FXRegion res;
-#ifndef WIN32
-  XXorRegion((Region)region,(Region)r.region,(Region)res.region);
-#else
+#ifdef WIN32
   CombineRgn((HRGN)res.region,(HRGN)region,(HRGN)r.region,RGN_XOR);
+#else
+  XXorRegion((Region)region,(Region)r.region,(Region)res.region);
 #endif
   return res;
   }
@@ -311,22 +306,22 @@ FXRegion FXRegion::operator^(const FXRegion& r) const {
 
 // Reset region to empty
 void FXRegion::reset(){
-#ifndef WIN32
-  XDestroyRegion((Region)region);
-  region=XCreateRegion();
-#else
+#ifdef WIN32
   DeleteObject((HRGN)region);
   region=(void*)CreateRectRgn(0,0,0,0);
+#else
+  XDestroyRegion((Region)region);
+  region=XCreateRegion();
 #endif
   }
 
 
 // Destroy region
 FXRegion::~FXRegion(){
-#ifndef WIN32
-  XDestroyRegion((Region)region);
-#else
+#ifdef WIN32
   DeleteObject((HRGN)region);
+#else
+  XDestroyRegion((Region)region);
 #endif
   }
 

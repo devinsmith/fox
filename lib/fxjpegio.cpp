@@ -3,30 +3,31 @@
 *                      J P E G    I n p u t / O u t p u t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2006 by David Tyree.   All Rights Reserved.                *
+* Copyright (C) 2000,2020 by David Tyree.   All Rights Reserved.                *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxjpegio.cpp,v 1.53 2006/01/22 17:58:53 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
+#include "FXElement.h"
 #include "FXStream.h"
 #ifdef HAVE_JPEG_H
+#include <setjmp.h>
 #undef FAR
 extern "C" {
 /* Theo Veenker <Theo.Veenker@let.uu.nl> says this is needed for CYGWIN */
@@ -45,11 +46,10 @@ typedef int INT32;
 }
 #endif
 
-#include <setjmp.h>
 
 
 /*
-  To Do:
+  Notes:
   - Add more options for fast jpeg loading.
   - Write a more detailed class that offers more options.
   - Add the ability to load jpegs in the background.
@@ -72,9 +72,11 @@ using namespace FX;
 namespace FX {
 
 
-extern FXAPI bool fxcheckJPG(FXStream& store);
-extern FXAPI bool fxloadJPG(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint& quality);
-extern FXAPI bool fxsaveJPG(FXStream& store,const FXColor* data,FXint width,FXint height,FXint quality);
+#ifndef FXLOADJPG
+extern FXAPI FXbool fxcheckJPG(FXStream& store);
+extern FXAPI FXbool fxloadJPG(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint& quality);
+extern FXAPI FXbool fxsaveJPG(FXStream& store,const FXColor* data,FXint width,FXint height,FXint quality);
+#endif
 
 
 #ifdef HAVE_JPEG_H
@@ -161,24 +163,23 @@ static void term_source(j_decompress_ptr){
 
 
 // Check if stream contains a JPG
-bool fxcheckJPG(FXStream& store){
-  FXuchar signature[2];
-  store.load(signature,2);
-  store.position(-2,FXFromCurrent);
-  return signature[0]==0xFF && signature[1]==0xD8;
+FXbool fxcheckJPG(FXStream& store){
+  FXuchar signature[3];
+  store.load(signature,3);
+  store.position(-3,FXFromCurrent);
+  return signature[0]==0xFF && signature[1]==0xD8 && signature[2]==0xFF;
   }
 
 
-
 // Load a JPEG image
-bool fxloadJPG(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint&){
+FXbool fxloadJPG(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint&){
   jpeg_decompress_struct srcinfo;
   FOX_jpeg_error_mgr jerr;
   FOX_jpeg_source_mgr src;
   JSAMPLE *buffer[1];
-  register FXColor *pp;
-  register JSAMPLE *qq;
-  int row_stride;
+  FXColor *pp;
+  JSAMPLE *qq;
+  int row_stride,color,i;
 
   // Null out
   data=NULL;
@@ -199,7 +200,7 @@ bool fxloadJPG(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint&)
   // Set error handling
   if(setjmp(jerr.jmpbuf)){
     jpeg_destroy_decompress(&srcinfo);
-    return FALSE;
+    return false;
     }
 
   // setup our src manager
@@ -212,13 +213,13 @@ bool fxloadJPG(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint&)
   src.pub.next_input_byte=NULL;
   src.stream=&store;
 
-  // set our src manager
+  // Set our src manager
   srcinfo.src=&src.pub;
 
   // read the header from the jpg;
   jpeg_read_header(&srcinfo,TRUE);
 
-  // output format supported by libjpeg-9a
+  // Output format supported by libjpeg
   switch (srcinfo.jpeg_color_space) {
     case JCS_GRAYSCALE: // 1
     case JCS_RGB:       // 2
@@ -227,11 +228,10 @@ bool fxloadJPG(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint&)
       break;
     case JCS_CMYK:      // 4
     case JCS_YCCK:      // 5
-      // jpeglib can't convert to rgb
       srcinfo.out_color_space=JCS_CMYK;
       break;
     default:
-    return false;
+      return false;
     }
 
   jpeg_start_decompress(&srcinfo);
@@ -239,7 +239,7 @@ bool fxloadJPG(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint&)
   row_stride=srcinfo.output_width*srcinfo.output_components;
 
   // Data to receive
-  if(!FXMALLOC(&data,FXColor,srcinfo.image_height*srcinfo.image_width)){
+  if(!allocElms(data,srcinfo.image_height*srcinfo.image_width)){
     jpeg_destroy_decompress(&srcinfo);
     return false;
     }
@@ -248,47 +248,39 @@ bool fxloadJPG(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint&)
   width=srcinfo.image_width;
 
   // Sample buffer
-  if(!FXMALLOC(&buffer[0],JSAMPLE,row_stride)){
-    FXFREE(&data);
+  if(!allocElms(buffer[0],row_stride)){
+    freeElms(data);
     jpeg_destroy_decompress(&srcinfo);
     return false;
     }
 
   // Read the jpeg data
   pp=data;
-  int color = srcinfo.out_color_space;
+  color=srcinfo.out_color_space;
   while(srcinfo.output_scanline<srcinfo.output_height){
     jpeg_read_scanlines(&srcinfo,buffer,1);
     qq=buffer[0];
-//    for(FXint i=0; i<width; i++,pp++){
-//      ((FXuchar*)pp)[0]=*qq++;
-//      ((FXuchar*)pp)[1]=*qq++;
-//      ((FXuchar*)pp)[2]=*qq++;
-//      ((FXuchar*)pp)[3]=255;
-//      }
     if(color==JCS_RGB){
-      for(FXint i=0; i<width; i++,pp++){
-        ((FXuchar*)pp)[0]=*qq++;
-        ((FXuchar*)pp)[1]=*qq++;
-        ((FXuchar*)pp)[2]=*qq++;
+      for(i=0; i<width; i++,pp++){
         ((FXuchar*)pp)[3]=255;
+        ((FXuchar*)pp)[2]=*qq++;
+        ((FXuchar*)pp)[1]=*qq++;
+        ((FXuchar*)pp)[0]=*qq++;
         }
       }
     else{
-      for(FXint i=0; i<width; i++,pp++){
+      for(i=0; i<width; i++,pp++){
+        ((FXuchar*)pp)[3]=255;
         if(qq[3]==255){
-          // No black
-          ((FXuchar*)pp)[0] = qq[0];
-          ((FXuchar*)pp)[1] = qq[1];
-          ((FXuchar*)pp)[2] = qq[2];
+          ((FXuchar*)pp)[2]=qq[0];                      // No black
+          ((FXuchar*)pp)[1]=qq[1];
+          ((FXuchar*)pp)[0]=qq[2];
           }
         else{
-          // Approximated CMYK -> RGB
-          ((FXuchar*)pp)[0]=qq[0] * qq[3] / 255;
-          ((FXuchar*)pp)[1]=qq[1] * qq[3] / 255;
-          ((FXuchar*)pp)[2]=qq[2] * qq[3] / 255;
+          ((FXuchar*)pp)[2]=(qq[0]*qq[3])/255;          // Approximated CMYK -> RGB
+          ((FXuchar*)pp)[1]=(qq[1]*qq[3])/255;
+          ((FXuchar*)pp)[0]=(qq[2]*qq[3])/255;
           }
-        ((FXuchar*)pp)[3]=255;
         qq+=4;
         }
       }
@@ -297,8 +289,7 @@ bool fxloadJPG(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint&)
   // Clean up
   jpeg_finish_decompress(&srcinfo);
   jpeg_destroy_decompress(&srcinfo);
-
-  FXFREE(&buffer[0]);
+  freeElms(buffer[0]);
   return true;
   }
 
@@ -332,19 +323,19 @@ static void term_destination(j_compress_ptr cinfo){
 
 
 // Save a JPEG image
-bool fxsaveJPG(FXStream& store,const FXColor* data,FXint width,FXint height,FXint quality){
+FXbool fxsaveJPG(FXStream& store,const FXColor* data,FXint width,FXint height,FXint quality){
   jpeg_compress_struct dstinfo;
   FOX_jpeg_error_mgr jerr;
   FOX_jpeg_dest_mgr dst;
   JSAMPLE *buffer[1];
-  register const FXColor *pp;
-  register JSAMPLE *qq;
+  const FXColor *pp;
+  JSAMPLE *qq;
 
   // Must make sense
   if(!data || width<=0 || height<=0 || quality<=0 || 100<quality) return false;
 
   // Row buffer
-  if(!FXMALLOC(&buffer,JSAMPLE,width*3)) return false;
+  if(!allocElms(buffer[0],width*3)) return false;
 
   // Specify the error manager
   memset(&dstinfo,0,sizeof(dstinfo));
@@ -353,7 +344,7 @@ bool fxsaveJPG(FXStream& store,const FXColor* data,FXint width,FXint height,FXin
 
   // Set error handling
   if(setjmp(jerr.jmpbuf)){
-    FXFREE(&buffer[0]);
+    freeElms(buffer[0]);
     jpeg_destroy_compress(&dstinfo);
     return false;
     }
@@ -385,9 +376,9 @@ bool fxsaveJPG(FXStream& store,const FXColor* data,FXint width,FXint height,FXin
   while(dstinfo.next_scanline<dstinfo.image_height){
     qq=buffer[0];
     for(FXint i=0; i<width; i++,pp++){
-      *qq++=((FXuchar*)pp)[0];
-      *qq++=((FXuchar*)pp)[1];
       *qq++=((FXuchar*)pp)[2];
+      *qq++=((FXuchar*)pp)[1];
+      *qq++=((FXuchar*)pp)[0];
       }
     jpeg_write_scanlines(&dstinfo,buffer,1);
     }
@@ -395,7 +386,7 @@ bool fxsaveJPG(FXStream& store,const FXColor* data,FXint width,FXint height,FXin
   // Clean up
   jpeg_finish_compress(&dstinfo);
   jpeg_destroy_compress(&dstinfo);
-  FXFREE(&buffer[0]);
+  freeElms(buffer[0]);
   return true;
   }
 
@@ -407,14 +398,15 @@ bool fxsaveJPG(FXStream& store,const FXColor* data,FXint width,FXint height,FXin
 
 
 // Check if stream contains a JPG
-bool fxcheckJPG(FXStream&){
+FXbool fxcheckJPG(FXStream&){
   return false;
   }
 
 
 // Stub routine
-bool fxloadJPG(FXStream&,FXColor*& data,FXint& width,FXint& height,FXint& quality){
-  static const FXuchar jpeg_bits[] = {
+FXbool fxloadJPG(FXStream&,FXColor*& data,FXint& width,FXint& height,FXint& quality){
+  static const FXColor color[2]={FXRGB(0,0,0),FXRGB(255,255,255)};
+  static const FXuchar jpeg_bits[]={
    0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x80, 0xfd, 0xff, 0xff, 0xbf,
    0x05, 0x00, 0x00, 0xa0, 0x05, 0x00, 0x00, 0xa0, 0x05, 0x00, 0x00, 0xa0,
    0x05, 0x00, 0x00, 0xa0, 0x05, 0x00, 0x00, 0xa0, 0x05, 0x00, 0x00, 0xa0,
@@ -426,10 +418,9 @@ bool fxloadJPG(FXStream&,FXColor*& data,FXint& width,FXint& height,FXint& qualit
    0xe5, 0x04, 0x9f, 0xa3, 0x05, 0x00, 0x00, 0xa0, 0x05, 0x00, 0x00, 0xa0,
    0x05, 0x00, 0x00, 0xa0, 0x05, 0x00, 0x00, 0xa0, 0xfd, 0xff, 0xff, 0xbf,
    0x01, 0x00, 0x00, 0x80, 0xff, 0xff, 0xff, 0xff};
-  register FXint p;
-  FXMALLOC(&data,FXColor,32*32);
-  for(p=0; p<32*32; p++){
-    data[p]=(jpeg_bits[p>>3]&(1<<(p&7))) ? FXRGB(0,0,0) : FXRGB(255,255,255);
+  allocElms(data,32*32);
+  for(FXint p=0; p<32*32; p++){
+    data[p]=color[(jpeg_bits[p>>3]>>(p&7))&1];
     }
   width=32;
   height=32;
@@ -439,7 +430,7 @@ bool fxloadJPG(FXStream&,FXColor*& data,FXint& width,FXint& height,FXint& qualit
 
 
 // Stub routine
-bool fxsaveJPG(FXStream&,const FXColor*,FXint,FXint,FXint){
+FXbool fxsaveJPG(FXStream&,const FXColor*,FXint,FXint,FXint){
   return false;
   }
 

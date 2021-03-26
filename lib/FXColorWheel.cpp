@@ -3,48 +3,54 @@
 *                        C o l o r W h e e l   W i d g e t                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2001,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2001,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXColorWheel.cpp,v 1.49 2006/01/22 17:58:20 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXImage.h"
 #include "FXColorWheel.h"
 
 /*
   Notes:
   - We assume the dial is round.
+
+  - Dial can now be justified inside its box.
 */
 
 #define WHEELDIAMETER  60   // Default Wheel diameter
+
+#define JUSTIFY_MASK   (JUSTIFY_HZ_APART|JUSTIFY_VT_APART)
 
 using namespace FX;
 
@@ -87,8 +93,7 @@ FXColorWheel::FXColorWheel(){
 
 
 // Make a color wheel
-FXColorWheel::FXColorWheel(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
+FXColorWheel::FXColorWheel(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
   flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
@@ -132,17 +137,26 @@ FXint FXColorWheel::getDefaultHeight(){
 
 // Resize the dial
 void FXColorWheel::layout(){
-  register FXint ww,hh,ss;
-  ww=width-padleft-padright-(border<<1);
-  hh=height-padtop-padbottom-(border<<1);
-  ss=FXMAX(3,FXMIN(ww,hh));
-  dialx=border+padleft+(ww-ss)/2;
-  dialy=border+padtop+(hh-ss)/2;
+  FXint ww=width-padleft-padright-(border<<1);
+  FXint hh=height-padtop-padbottom-(border<<1);
+  FXint ss=FXMAX(3,FXMIN(ww,hh));
+
+  // New dial location in widget
+  if(options&JUSTIFY_LEFT) dialx=padleft+border;
+  else if(options&JUSTIFY_RIGHT) dialx=width-padright-border-ss;
+  else dialx=border+padleft+(ww-ss)/2;
+  if(options&JUSTIFY_TOP) dialy=padtop+border;
+  else if(options&JUSTIFY_BOTTOM) dialy=height-padbottom-border-ss;
+  else dialy=border+padtop+(hh-ss)/2;
+
+  // Do work if size changed or marked dirty
   if((dial->getWidth()!=ss) || (flags&FLAG_DIRTY)){
     if(dial->getWidth()!=ss) dial->resize(ss,ss);
     updatedial();
     dial->render();
     }
+
+  // Update spot position
   hstoxy(spotx,spoty,hsv[0],hsv[1]);
   flags&=~FLAG_DIRTY;
   }
@@ -150,39 +164,39 @@ void FXColorWheel::layout(){
 
 // Compute x,y location from hue and saturation
 FXbool FXColorWheel::hstoxy(FXint& x,FXint& y,FXfloat h,FXfloat s) const {
-  register FXfloat r=dial->getWidth()*0.5f;
-  register FXfloat a=(h-180.0f)*DTOR;
-  x=(FXint)(s*r*cosf(a)+r+0.5f);
-  y=(FXint)(s*r*sinf(a)+r+0.5f);
-  return TRUE;
+  FXfloat r=dial->getWidth()*0.5f;
+  FXfloat a=(h-180.0f)*DTOR;
+  x=(FXint)(s*r*Math::cos(a)+r+0.5f);
+  y=(FXint)(s*r*Math::sin(a)+r+0.5f);
+  return true;
   }
 
 
-// Compute hue and saturation from x,y, return FALSE if outside of dial
+// Compute hue and saturation from x,y, return false if outside of dial
 FXbool FXColorWheel::xytohs(FXfloat& h,FXfloat& s,FXint x,FXint y) const {
-  register FXfloat r=dial->getWidth()*0.5f;
-  register FXfloat rx=x-r;
-  register FXfloat ry=y-r;
-  register FXfloat v=sqrtf(rx*rx+ry*ry);
+  FXfloat r=dial->getWidth()*0.5f;
+  FXfloat rx=x-r;
+  FXfloat ry=y-r;
+  FXfloat v=Math::sqrt(rx*rx+ry*ry);
   h=0.0f;
   s=0.0f;
   if(0.0f<v){
-    h=atan2f(ry,rx)*RTOD+180.0f;
+    h=Math::atan2(ry,rx)*RTOD+180.0f;
     if(v<r){
       s=v/r;
-      return TRUE;
+      return true;
       }
     s=1.0f;
     }
-  return FALSE;
+  return false;
   }
 
 
 // Recompute the dial image
 void FXColorWheel::updatedial(){
   FXfloat h,s,r,g,b;
-  for(register FXint y=0; y<dial->getHeight(); y++){
-    for(register FXint x=0; x<dial->getWidth(); x++){
+  for(FXint y=0; y<dial->getHeight(); y++){
+    for(FXint x=0; x<dial->getWidth(); x++){
       if(xytohs(h,s,x,y)){
         fxhsv_to_rgb(r,g,b,h,s,hsv[2]);
         dial->setPixel(x,y,FXRGB(255.0f*r,255.0f*g,255.0f*b));
@@ -236,7 +250,7 @@ long FXColorWheel::onCmdGetTip(FXObject*,FXSelector,void* ptr){
 
 // We were asked about tip text
 long FXColorWheel::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryTip(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryTip(sender,sel,ptr)) return 1;
   if((flags&FLAG_TIP) && !tip.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&tip);
     return 1;
@@ -247,7 +261,7 @@ long FXColorWheel::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
 
 // We were asked about status text
 long FXColorWheel::onQueryHelp(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryHelp(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryHelp(sender,sel,ptr)) return 1;
   if((flags&FLAG_HELP) && !help.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&help);
     return 1;
@@ -338,7 +352,7 @@ long FXColorWheel::onMouseWheel(FXObject*,FXSelector,void* ptr){
   FXfloat amount=((FXEvent*)ptr)->code/12.0f;
   if(isEnabled()){
     if(((FXEvent*)ptr)->state&CONTROLMASK) amount*=0.1f;
-    setHue(fmodf(hsv[0]+amount+360.0f,360.0f));
+    setHue(Math::fmod(hsv[0]+amount+360.0f,360.0f));
     if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)hsv);
     return 1;
     }
@@ -348,7 +362,7 @@ long FXColorWheel::onMouseWheel(FXObject*,FXSelector,void* ptr){
 
 // Change hue
 void FXColorWheel::setHue(FXfloat h){
-  h=FXCLAMP(0.0f,h,360.0f);
+  h=Math::fclamp(0.0f,h,360.0f);
   if(h!=hsv[0]){
     hsv[0]=h;
     update(dialx+spotx-4,dialy+spoty-4,9,9);
@@ -360,7 +374,7 @@ void FXColorWheel::setHue(FXfloat h){
 
 // Change saturation
 void FXColorWheel::setSat(FXfloat s){
-  s=FXCLAMP(0.0f,s,1.0f);
+  s=Math::fclamp(0.0f,s,1.0f);
   if(s!=hsv[1]){
     hsv[1]=s;
     update(dialx+spotx-4,dialy+spoty-4,9,9);
@@ -372,7 +386,7 @@ void FXColorWheel::setSat(FXfloat s){
 
 // Change saturation
 void FXColorWheel::setVal(FXfloat v){
-  v=FXCLAMP(0.0f,v,1.0f);
+  v=Math::fclamp(0.0f,v,1.0f);
   if(v!=hsv[2]){
     hsv[2]=v;
     recalc();
@@ -384,9 +398,9 @@ void FXColorWheel::setVal(FXfloat v){
 void FXColorWheel::setHueSatVal(FXfloat h,FXfloat s,FXfloat v){
 
   // Clamp
-  h=FXCLAMP(0.0f,h,360.0f);
-  s=FXCLAMP(0.0f,s,1.0f);
-  v=FXCLAMP(0.0f,v,1.0f);
+  h=Math::fclamp(0.0f,h,360.0f);
+  s=Math::fclamp(0.0f,s,1.0f);
+  v=Math::fclamp(0.0f,v,1.0f);
 
   // Changed after clamping?
   if(hsv[0]!=h || hsv[1]!=s || hsv[2]!=v){
@@ -406,6 +420,22 @@ void FXColorWheel::setHueSatVal(FXfloat h,FXfloat s,FXfloat v){
       recalc();
       }
     }
+  }
+
+
+// Set text justify style
+void FXColorWheel::setJustify(FXuint style){
+  FXuint opts=(options&~JUSTIFY_MASK) | (style&JUSTIFY_MASK);
+  if(options!=opts){
+    options=opts;
+    recalc();
+    }
+  }
+
+
+// Get text justify style
+FXuint FXColorWheel::getJustify() const {
+  return (options&JUSTIFY_MASK);
   }
 
 

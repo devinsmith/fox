@@ -3,38 +3,41 @@
 *                  R a d i o   B u t t o n    O b j e c t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXRadioButton.cpp,v 1.64 2006/01/22 17:58:38 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXRadioButton.h"
 
 /*
@@ -60,8 +63,8 @@ namespace FX {
 
 // Map
 FXDEFMAP(FXRadioButton) FXRadioButtonMap[]={
-  FXMAPFUNC(SEL_PAINT,0,FXRadioButton::onPaint),
   FXMAPFUNC(SEL_UPDATE,0,FXRadioButton::onUpdate),
+  FXMAPFUNC(SEL_PAINT,0,FXRadioButton::onPaint),
   FXMAPFUNC(SEL_ENTER,0,FXRadioButton::onEnter),
   FXMAPFUNC(SEL_LEAVE,0,FXRadioButton::onLeave),
   FXMAPFUNC(SEL_FOCUSIN,0,FXRadioButton::onFocusIn),
@@ -90,25 +93,24 @@ FXIMPLEMENT(FXRadioButton,FXLabel,FXRadioButtonMap,ARRAYNUMBER(FXRadioButtonMap)
 FXRadioButton::FXRadioButton(){
   radioColor=0;
   diskColor=0;
-  check=FALSE;
-  oldcheck=FALSE;
+  check=false;
+  oldcheck=false;
   }
 
 
 // Make a check button
-FXRadioButton::FXRadioButton(FXComposite* p,const FXString& text,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXLabel(p,text,NULL,opts,x,y,w,h,pl,pr,pt,pb){
+FXRadioButton::FXRadioButton(FXComposite* p,const FXString& text,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXLabel(p,text,NULL,opts,x,y,w,h,pl,pr,pt,pb){
   radioColor=getApp()->getForeColor();
   diskColor=getApp()->getBackColor();
   target=tgt;
   message=sel;
-  check=FALSE;
-  oldcheck=FALSE;
+  check=false;
+  oldcheck=false;
   }
 
 
 // If window can have focus
-bool FXRadioButton::canFocus() const { return true; }
+FXbool FXRadioButton::canFocus() const { return true; }
 
 
 // Get default width
@@ -135,7 +137,7 @@ FXint FXRadioButton::getDefaultHeight(){
 
 
 // Check button
-void FXRadioButton::setCheck(FXbool s,FXbool notify){
+void FXRadioButton::setCheck(FXuchar s,FXbool notify){
   if(check!=s){
     check=s;
     update();
@@ -146,35 +148,35 @@ void FXRadioButton::setCheck(FXbool s,FXbool notify){
 
 // Change state to checked
 long FXRadioButton::onCheck(FXObject*,FXSelector,void*){
-  setCheck(TRUE);
+  setCheck(true);
   return 1;
   }
 
 
 // Change state to unchecked
 long FXRadioButton::onUncheck(FXObject*,FXSelector,void*){
-  setCheck(FALSE);
+  setCheck(false);
   return 1;
   }
 
 
 // Change state to indeterminate
 long FXRadioButton::onUnknown(FXObject*,FXSelector,void*){
-  setCheck(MAYBE);
+  setCheck(maybe);
   return 1;
   }
 
 
 // Update value from a message
 long FXRadioButton::onCmdSetValue(FXObject*,FXSelector,void* ptr){
-  setCheck((FXbool)(FXuval)ptr);
+  setCheck((FXuchar)(FXuval)ptr);
   return 1;
   }
 
 
 // Update value from a message
 long FXRadioButton::onCmdSetIntValue(FXObject*,FXSelector,void* ptr){
-  setCheck((FXbool)*((FXint*)ptr));
+  setCheck((FXuchar)*((FXint*)ptr));
   return 1;
   }
 
@@ -215,7 +217,7 @@ long FXRadioButton::onFocusOut(FXObject* sender,FXSelector sel,void* ptr){
 // Entered button
 long FXRadioButton::onEnter(FXObject* sender,FXSelector sel,void* ptr){
   FXLabel::onEnter(sender,sel,ptr);
-  if(isEnabled() && (flags&FLAG_PRESSED)) setCheck(TRUE);
+  if(isEnabled() && (flags&FLAG_PRESSED)) setCheck(true);
   return 1;
   }
 
@@ -236,7 +238,7 @@ long FXRadioButton::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
     grab();
     if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONPRESS,message),ptr)) return 1;
     oldcheck=check;
-    setCheck(TRUE);
+    setCheck(true);
     flags|=FLAG_PRESSED;
     flags&=~FLAG_UPDATE;
     return 1;
@@ -252,7 +254,7 @@ long FXRadioButton::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
     if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONRELEASE,message),ptr)) return 1;
     flags|=FLAG_UPDATE;
     flags&=~FLAG_PRESSED;
-    if(check!=oldcheck && target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)TRUE);
+    if(check!=oldcheck && target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)true);
     return 1;
     }
   return 0;
@@ -273,11 +275,11 @@ long FXRadioButton::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
 long FXRadioButton::onKeyPress(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   flags&=~FLAG_TIP;
-  if(isEnabled() && !(flags&FLAG_PRESSED)){
+  if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr)) return 1;
-    if(event->code==KEY_space || event->code==KEY_KP_Space){
+    if(!(flags&FLAG_PRESSED) && (event->code==KEY_space || event->code==KEY_KP_Space)){
       oldcheck=check;
-      setCheck(TRUE);
+      setCheck(true);
       flags|=FLAG_PRESSED;
       flags&=~FLAG_UPDATE;
       return 1;
@@ -290,12 +292,12 @@ long FXRadioButton::onKeyPress(FXObject*,FXSelector,void* ptr){
 // Key Release
 long FXRadioButton::onKeyRelease(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
-  if(isEnabled() && (flags&FLAG_PRESSED)){
+  if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr)) return 1;
-    if(event->code==KEY_space || event->code==KEY_KP_Space){
+    if((flags&FLAG_PRESSED) && (event->code==KEY_space || event->code==KEY_KP_Space)){
       flags|=FLAG_UPDATE;
       flags&=~FLAG_PRESSED;
-      if(check!=oldcheck && target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)TRUE);
+      if(check!=oldcheck && target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)true);
       return 1;
       }
     }
@@ -309,7 +311,7 @@ long FXRadioButton::onHotKeyPress(FXObject*,FXSelector,void* ptr){
   flags&=~FLAG_TIP;
   if(isEnabled() && !(flags&FLAG_PRESSED)){
     oldcheck=check;
-    setCheck(TRUE);
+    setCheck(true);
     flags|=FLAG_PRESSED;
     flags&=~FLAG_UPDATE;
     }
@@ -323,7 +325,7 @@ long FXRadioButton::onHotKeyRelease(FXObject*,FXSelector,void*){
   if(isEnabled() && (flags&FLAG_PRESSED)){
     flags|=FLAG_UPDATE;
     flags&=~FLAG_PRESSED;
-    if(check!=oldcheck && target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)TRUE);
+    if(check!=oldcheck && target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)true);
     }
   return 1;
   }
@@ -420,7 +422,7 @@ long FXRadioButton::onPaint(FXObject*,FXSelector,void* ptr){
   dc.fillRectangles(recs,6);
 
   // Ball inside
-  if(check!=FALSE){
+  if(check!=false){
     recs[0].x=ix+5; recs[0].y=iy+4; recs[0].w=2; recs[0].h=1;
     recs[1].x=ix+4; recs[1].y=iy+5; recs[1].w=4; recs[1].h=2;
     recs[2].x=ix+5; recs[2].y=iy+7; recs[2].w=2; recs[2].h=1;

@@ -3,39 +3,41 @@
 *                                D i a l   W i d g e t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDial.cpp,v 1.50.2.1 2007/09/22 04:28:37 fox Exp $                          *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXDial.h"
 
 
@@ -49,6 +51,7 @@
   - Keep notchangle>=0, as % of negative numbers is implementation defined.
   - Not yet happy with keyboard/wheel mode valuator.
   - Visual cue for focus:- please no ugly border!
+  - Maybe add some delta-mode whereby we report changes?
 */
 
 #define DIALWIDTH     12
@@ -76,8 +79,10 @@ FXDEFMAP(FXDial) FXDialMap[]={
   FXMAPFUNC(SEL_QUERY_HELP,0,FXDial::onQueryHelp),
   FXMAPFUNC(SEL_COMMAND,FXDial::ID_SETVALUE,FXDial::onCmdSetValue),
   FXMAPFUNC(SEL_COMMAND,FXDial::ID_SETINTVALUE,FXDial::onCmdSetIntValue),
-  FXMAPFUNC(SEL_COMMAND,FXDial::ID_SETREALVALUE,FXDial::onCmdSetRealValue),
   FXMAPFUNC(SEL_COMMAND,FXDial::ID_GETINTVALUE,FXDial::onCmdGetIntValue),
+  FXMAPFUNC(SEL_COMMAND,FXDial::ID_SETLONGVALUE,FXDial::onCmdSetLongValue),
+  FXMAPFUNC(SEL_COMMAND,FXDial::ID_GETLONGVALUE,FXDial::onCmdGetLongValue),
+  FXMAPFUNC(SEL_COMMAND,FXDial::ID_SETREALVALUE,FXDial::onCmdSetRealValue),
   FXMAPFUNC(SEL_COMMAND,FXDial::ID_GETREALVALUE,FXDial::onCmdGetRealValue),
   FXMAPFUNC(SEL_COMMAND,FXDial::ID_SETINTRANGE,FXDial::onCmdSetIntRange),
   FXMAPFUNC(SEL_COMMAND,FXDial::ID_GETINTRANGE,FXDial::onCmdGetIntRange),
@@ -95,33 +100,32 @@ FXIMPLEMENT(FXDial,FXFrame,FXDialMap,ARRAYNUMBER(FXDialMap))
 
 FXDial::FXDial(){
   flags|=FLAG_ENABLED;
+  notchAngle=0;
+  notchSpacing=0;
+  notchOffset=0;
+  notchColor=0;
+  dragPoint=0;
+  dragPos=0;
   range[0]=0;
   range[1]=0;
-  notchangle=0;
-  notchspacing=0;
-  notchoffset=0;
-  notchColor=0;
-  dragpoint=0;
-  dragpos=0;
   incr=0;
   pos=0;
   }
 
 
 // Make a window
-FXDial::FXDial(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
+FXDial::FXDial(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
   flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
+  notchAngle=0;
+  notchSpacing=90;
+  notchOffset=0;
+  notchColor=FXRGB(255,128,0);
+  dragPoint=0;
+  dragPos=0;
   range[0]=0;
   range[1]=359;
-  notchangle=0;
-  notchspacing=90;
-  notchoffset=0;
-  notchColor=FXRGB(255,128,0);
-  dragpoint=0;
-  dragpos=0;
   incr=360;
   pos=0;
   }
@@ -129,20 +133,20 @@ FXDial::FXDial(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,F
 
 // Get minimum width
 FXint FXDial::getDefaultWidth(){
-  register FXint w=(options&DIAL_HORIZONTAL)?DIALDIAMETER:DIALWIDTH;
+  FXint w=(options&DIAL_HORIZONTAL)?DIALDIAMETER:DIALWIDTH;
   return w+padleft+padright+(border<<1);
   }
 
 
 // Get minimum height
 FXint FXDial::getDefaultHeight(){
-  register FXint h=(options&DIAL_HORIZONTAL)?DIALWIDTH:DIALDIAMETER;
+  FXint h=(options&DIAL_HORIZONTAL)?DIALWIDTH:DIALDIAMETER;
   return h+padtop+padbottom+(border<<1);
   }
 
 
 // Returns true because a dial can receive focus
-bool FXDial::canFocus() const { return true; }
+FXbool FXDial::canFocus() const { return true; }
 
 
 // Set help using a message
@@ -175,7 +179,7 @@ long FXDial::onCmdGetTip(FXObject*,FXSelector,void* ptr){
 
 // We were asked about tip text
 long FXDial::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryTip(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryTip(sender,sel,ptr)) return 1;
   if((flags&FLAG_TIP) && !tip.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&tip);
     return 1;
@@ -186,7 +190,7 @@ long FXDial::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
 
 // We were asked about status text
 long FXDial::onQueryHelp(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryHelp(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryHelp(sender,sel,ptr)) return 1;
   if((flags&FLAG_HELP) && !help.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&help);
     return 1;
@@ -209,16 +213,30 @@ long FXDial::onCmdSetIntValue(FXObject*,FXSelector,void* ptr){
   }
 
 
-// Update value from a message
-long FXDial::onCmdSetRealValue(FXObject*,FXSelector,void* ptr){
-  setValue((FXint)*((FXdouble*)ptr));
+// Obtain value from text field
+long FXDial::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
+  *((FXint*)ptr)=getValue();
   return 1;
   }
 
 
-// Obtain value from text field
-long FXDial::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
-  *((FXint*)ptr) = getValue();
+// Update value from a message
+long FXDial::onCmdSetLongValue(FXObject*,FXSelector,void* ptr){
+  setValue((FXint)*((FXlong*)ptr));
+  return 1;
+  }
+
+
+// Obtain value with a message
+long FXDial::onCmdGetLongValue(FXObject*,FXSelector,void* ptr){
+  *((FXlong*)ptr)=(FXlong)getValue();
+  return 1;
+  }
+
+
+// Update value from a message
+long FXDial::onCmdSetRealValue(FXObject*,FXSelector,void* ptr){
+  setValue((FXint)*((FXdouble*)ptr));
   return 1;
   }
 
@@ -268,10 +286,10 @@ long FXDial::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
     grab();
     if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONPRESS,message),ptr)) return 1;
     if(options&DIAL_HORIZONTAL)
-      dragpoint=event->win_x;
+      dragPoint=event->win_x;
     else
-      dragpoint=event->win_y;
-    dragpos=pos;
+      dragPoint=event->win_y;
+    dragPos=pos;
     flags|=FLAG_PRESSED;
     flags&=~FLAG_UPDATE;
     return 1;
@@ -313,29 +331,29 @@ long FXDial::onMotion(FXObject*,FXSelector,void* ptr){
   if(flags&FLAG_PRESSED){
     if(options&DIAL_HORIZONTAL){
       size=width-(border<<1);
-      travel=event->win_x-dragpoint;
+      travel=event->win_x-dragPoint;
       }
     else{
       size=height-(border<<1);
-      travel=dragpoint-event->win_y;
+      travel=dragPoint-event->win_y;
       }
     if(size<100) size=100;
     if(travel){
       delta=(incr*travel)/(2*size);
       if(options&DIAL_CYCLIC){
-        tmp=dragpos+delta-range[0];
+        tmp=dragPos+delta-range[0];
         while(tmp<0) tmp+=(range[1]-range[0]+1);
         newpos=range[0]+tmp%(range[1]-range[0]+1);
         }
       else{
-        if(dragpos+delta<range[0]) newpos=range[0];
-        else if(dragpos+delta>range[1]) newpos=range[1];
-        else newpos=dragpos+delta;
+        if(dragPos+delta<range[0]) newpos=range[0];
+        else if(dragPos+delta>range[1]) newpos=range[1];
+        else newpos=dragPos+delta;
         }
       if(pos!=newpos){
         pos=newpos;
         FXASSERT(range[0]<=pos && pos<=range[1]);
-        notchangle=(notchoffset+(3600*(pos-range[0]))/incr)%3600;
+        notchAngle=(notchOffset+(3600*(pos-range[0]))/incr)%3600;
         update(border+padleft+1,border+padtop+1,width-(border<<1)-padleft-padright-2,height-(border<<1)-padtop-padbottom-2);
         flags|=FLAG_CHANGED;
         if(target) target->tryHandle(this,FXSEL(SEL_CHANGED,message),(void*)(FXival)pos);
@@ -372,7 +390,7 @@ long FXDial::onMouseWheel(FXObject*,FXSelector,void* ptr){
   if(pos!=newpos){
     pos=newpos;
     FXASSERT(range[0]<=pos && pos<=range[1]);
-    notchangle=(notchoffset+(3600*(pos-range[0]))/incr)%3600;
+    notchAngle=(notchOffset+(3600*(pos-range[0]))/incr)%3600;
     update(border+padleft+1,border+padtop+1,width-(border<<1)-padleft-padright-2,height-(border<<1)-padtop-padbottom-2);
     if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXival)pos);
     }
@@ -404,11 +422,11 @@ long FXDial::onKeyPress(FXObject*,FXSelector,void* ptr){
         break;
       case KEY_plus:
       case KEY_KP_Add:
-inc:    setValue(pos+1,TRUE);
+inc:    setValue(pos+1,true);
         return 1;
       case KEY_minus:
       case KEY_KP_Subtract:
-dec:    setValue(pos-1,TRUE);
+dec:    setValue(pos-1,true);
         return 1;
       }
     }
@@ -459,9 +477,9 @@ long FXDial::onPaint(FXObject*,FXSelector,void* ptr){
   dc.setForeground(backColor);
   dc.fillRectangle(0,0,width,height);
 
-  off=(notchangle+3600)%notchspacing;
-  fm=off/notchspacing;
-  to=(off+1800-notchspacing+1)/notchspacing;
+  off=(notchAngle+3600)%notchSpacing;
+  fm=off/notchSpacing;
+  to=(off+1800-notchSpacing+1)/notchSpacing;
 
   // Rectangle of dial
   lt=border+padleft+1;
@@ -483,9 +501,9 @@ long FXDial::onPaint(FXObject*,FXSelector,void* ptr){
     r=size/2-1;
     mid=0.5*(lt+rt);
     for(i=fm; i<=to; i++){
-      ang=i*notchspacing+off;
-      t=(FXint)(mid-r*cos(0.1*DTOR*ang));
-      if((options&DIAL_HAS_NOTCH) && (ang+3600)%3600==notchangle){
+      ang=i*notchSpacing+off;
+      t=(FXint)(mid-r*Math::cos(0.1*DTOR*ang));
+      if((options&DIAL_HAS_NOTCH) && (ang+3600)%3600==notchAngle){
         dc.setForeground(hiliteColor);
         dc.drawLine(t-1,tp,t-1,bm);
         dc.setForeground(notchColor);
@@ -541,7 +559,7 @@ long FXDial::onPaint(FXObject*,FXSelector,void* ptr){
     lu=lt;
     ld=rt;
     for(i=0; i<NUMSIDECOLORS; i++){
-      tmp=r*cos(fac*i);
+      tmp=r*Math::cos(fac*i);
       u=(FXint)(mid-tmp);
       d=(FXint)(mid+tmp);
       red=(rmax*i)/(NUMSIDECOLORS-1);
@@ -565,9 +583,9 @@ long FXDial::onPaint(FXObject*,FXSelector,void* ptr){
     r=size/2-1;
     mid=0.5*(tp+bm);
     for(i=fm; i<=to; i++){
-      ang=i*notchspacing+off;
-      t=(FXint)(mid+r*cos(0.1*DTOR*ang));
-      if((options&DIAL_HAS_NOTCH) && (ang+3600)%3600==notchangle){
+      ang=i*notchSpacing+off;
+      t=(FXint)(mid+r*Math::cos(0.1*DTOR*ang));
+      if((options&DIAL_HAS_NOTCH) && (ang+3600)%3600==notchAngle){
         dc.setForeground(hiliteColor);
         dc.drawLine(lt,t-1,rt,t-1);
         dc.setForeground(notchColor);
@@ -623,7 +641,7 @@ long FXDial::onPaint(FXObject*,FXSelector,void* ptr){
     lu=tp;
     ld=bm;
     for(i=0; i<NUMSIDECOLORS; i++){
-      tmp=r*cos(fac*i);
+      tmp=r*Math::cos(fac*i);
       u=(FXint)(mid-tmp);
       d=(FXint)(mid+tmp);
       red=(rmax*i)/(NUMSIDECOLORS-1);
@@ -664,12 +682,12 @@ void FXDial::setRange(FXint lo,FXint hi,FXbool notify){
 
 // Set dial value
 void FXDial::setValue(FXint p,FXbool notify){
-  register FXint n;
+  FXint n;
   if(p<range[0]) p=range[0];
   if(p>range[1]) p=range[1];
-  n=(notchoffset+(3600*(p-range[0]))/incr)%3600;
-  if(n!=notchangle){
-    notchangle=n;
+  n=(notchOffset+(3600*(p-range[0]))/incr)%3600;
+  if(n!=notchAngle){
+    notchAngle=n;
     update();
     }
   if(p!=pos){
@@ -682,7 +700,7 @@ void FXDial::setValue(FXint p,FXbool notify){
 // Change increment, i.e. the amount of pos change per revolution
 void FXDial::setRevolutionIncrement(FXint i){
   incr=FXMAX(1,i);
-  notchangle=(notchoffset+(3600*(pos-range[0]))/incr)%3600;
+  notchAngle=(notchOffset+(3600*(pos-range[0]))/incr)%3600;
   update();
   }
 
@@ -692,8 +710,8 @@ void FXDial::setNotchSpacing(FXint spacing){
   if(spacing<1) spacing=1;
   if(spacing>3600) spacing=3600;
   while(3600%spacing) spacing--;    // Should be a divisor of 3600
-  if(notchspacing!=spacing){
-    notchspacing=spacing;
+  if(notchSpacing!=spacing){
+    notchSpacing=spacing;
     update();
     }
   }
@@ -704,9 +722,9 @@ void FXDial::setNotchOffset(FXint offset){
   if(offset>3600) offset=3600;
   if(offset<-3600) offset=-3600;
   offset=(offset+3600)%3600;
-  if(offset!=notchoffset){
-    notchoffset=offset;
-    notchangle=(notchoffset+(3600*(pos-range[0]))/incr)%3600;
+  if(offset!=notchOffset){
+    notchOffset=offset;
+    notchAngle=(notchOffset+(3600*(pos-range[0]))/incr)%3600;
     update();
     }
   }
@@ -731,11 +749,12 @@ void FXDial::setDialStyle(FXuint style){
 // Save object to stream
 void FXDial::save(FXStream& store) const {
   FXFrame::save(store);
-  store << range[0] << range[1];
+  store << notchAngle;
+  store << notchSpacing;
+  store << notchOffset;
   store << notchColor;
-  store << notchangle;
-  store << notchspacing;
-  store << notchoffset;
+  store << range[0];
+  store << range[1];
   store << incr;
   store << pos;
   store << help;
@@ -746,11 +765,12 @@ void FXDial::save(FXStream& store) const {
 // Load object from stream
 void FXDial::load(FXStream& store){
   FXFrame::load(store);
-  store >> range[0] >> range[1];
+  store >> notchAngle;
+  store >> notchSpacing;
+  store >> notchOffset;
   store >> notchColor;
-  store >> notchangle;
-  store >> notchspacing;
-  store >> notchoffset;
+  store >> range[0];
+  store >> range[1];
   store >> incr;
   store >> pos;
   store >> help;

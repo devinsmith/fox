@@ -3,38 +3,40 @@
 *                C o m p o s i t e   W i n d o w   O b j e c t                  *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXComposite.cpp,v 1.54.2.2 2007/04/29 14:31:43 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXComposite.h"
 
@@ -80,19 +82,17 @@ FXComposite::FXComposite(FXApp* a,FXVisual *vis):FXWindow(a,vis){
 
 
 // Only used for Shell Window
-FXComposite::FXComposite(FXApp* a,FXWindow* own,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXWindow(a,own,opts,x,y,w,h){
+FXComposite::FXComposite(FXApp* a,FXWindow* own,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXWindow(a,own,opts,x,y,w,h){
   }
 
 
 // Create empty composite window
-FXComposite::FXComposite(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXWindow(p,opts,x,y,w,h){
+FXComposite::FXComposite(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXWindow(p,opts,x,y,w,h){
   }
 
 
 // Is widget a composite
-bool FXComposite::isComposite() const {
+FXbool FXComposite::isComposite() const {
   return true;
   }
 
@@ -120,9 +120,8 @@ void FXComposite::destroy(){
 
 // Get width
 FXint FXComposite::getDefaultWidth(){
-  register FXWindow *child;
-  FXint t,w=0;
-  for(child=getFirst(); child; child=child->getNext()){
+  FXint w=0,t;
+  for(FXWindow *child=getFirst(); child; child=child->getNext()){
     if(child->shown()){
       t=child->getX()+child->getWidth();
       if(w<t) w=t;
@@ -134,9 +133,8 @@ FXint FXComposite::getDefaultWidth(){
 
 // Get height
 FXint FXComposite::getDefaultHeight(){
-  register FXWindow *child;
-  FXint t,h=0;
-  for(child=getFirst(); child; child=child->getNext()){
+  FXint h=0,t;
+  for(FXWindow *child=getFirst(); child; child=child->getNext()){
     if(child->shown()){
       t=child->getY()+child->getHeight();
       if(h<t) h=t;
@@ -148,10 +146,9 @@ FXint FXComposite::getDefaultHeight(){
 
 // Get maximum child width
 FXint FXComposite::maxChildWidth() const {
-  register FXWindow* child;
-  register FXuint hints;
-  register FXint t,m;
-  for(m=0,child=getFirst(); child; child=child->getNext()){
+  FXuint hints;
+  FXint m=0,t;
+  for(FXWindow *child=getFirst(); child; child=child->getNext()){
     if(child->shown()){
       hints=child->getLayoutHints();
       if(hints&LAYOUT_FIX_WIDTH) t=child->getWidth();
@@ -165,10 +162,9 @@ FXint FXComposite::maxChildWidth() const {
 
 // Get maximum child height
 FXint FXComposite::maxChildHeight() const {
-  register FXWindow* child;
-  register FXuint hints;
-  register FXint t,m;
-  for(m=0,child=getFirst(); child; child=child->getNext()){
+  FXuint hints;
+  FXint m=0,t;
+  for(FXWindow *child=getFirst(); child; child=child->getNext()){
     if(child->shown()){
       hints=child->getLayoutHints();
       if(hints&LAYOUT_FIX_HEIGHT) t=child->getHeight();
@@ -182,8 +178,7 @@ FXint FXComposite::maxChildHeight() const {
 
 // Just tell server where the windows are!
 void FXComposite::layout(){
-  register FXWindow *child;
-  for(child=getFirst(); child; child=child->getNext()){
+  for(FXWindow *child=getFirst(); child; child=child->getNext()){
     if(child->shown()){
       child->position(child->getX(),child->getY(),child->getWidth(),child->getHeight());
       }
@@ -194,9 +189,8 @@ void FXComposite::layout(){
 
 // Update all subwindows
 long FXComposite::onCmdUpdate(FXObject* sender,FXSelector,void* ptr){
-  register FXWindow *child;
   update();
-  for(child=getFirst(); child; child=child->getNext()){
+  for(FXWindow *child=getFirst(); child; child=child->getNext()){
     if(child->shown()) child->handle(sender,FXSEL(SEL_COMMAND,ID_UPDATE),ptr);
     }
   return 1;
@@ -241,7 +235,7 @@ long FXComposite::onFocusPrev(FXObject*,FXSelector sel,void* ptr){
 
 // Keyboard press
 long FXComposite::onKeyPress(FXObject* sender,FXSelector sel,void* ptr){
-  register FXEvent* event=(FXEvent*)ptr;
+  FXEvent* event=(FXEvent*)ptr;
 
   FXTRACE((200,"%p->%s::onKeyPress keysym=0x%04x state=%04x\n",this,getClassName(),((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
 
@@ -261,8 +255,8 @@ long FXComposite::onKeyPress(FXObject* sender,FXSelector sel,void* ptr){
       return handle(this,FXSEL(SEL_FOCUS_NEXT,0),ptr);
     case KEY_Prior:
     case KEY_ISO_Left_Tab:
-    case MKUINT(KEY_ISO_Left_Tab,SHIFTMASK): 
-    case MKUINT(KEY_Tab,SHIFTMASK):    
+    case MKUINT(KEY_ISO_Left_Tab,SHIFTMASK):
+    case MKUINT(KEY_Tab,SHIFTMASK):
       return handle(this,FXSEL(SEL_FOCUS_PREV,0),ptr);
     case KEY_Up:
     case KEY_KP_Up:

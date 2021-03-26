@@ -3,39 +3,42 @@
 *                   T o g g l e    B u t t o n    O b j e c t                   *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXToggleButton.cpp,v 1.63.2.1 2006/12/11 15:57:26 fox Exp $                  *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXToggleButton.h"
 
@@ -90,26 +93,25 @@ FXIMPLEMENT(FXToggleButton,FXLabel,FXToggleButtonMap,ARRAYNUMBER(FXToggleButtonM
 // Deserialization
 FXToggleButton::FXToggleButton(){
   alticon=(FXIcon*)-1L;
-  state=FALSE;
-  down=FALSE;
+  state=false;
+  down=false;
   }
 
 
 // Construct and init
-FXToggleButton::FXToggleButton(FXComposite* p,const FXString& text1,const FXString& text2,FXIcon* icon1,FXIcon* icon2,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXLabel(p,text1,icon1,opts,x,y,w,h,pl,pr,pt,pb){
+FXToggleButton::FXToggleButton(FXComposite* p,const FXString& text1,const FXString& text2,FXIcon* icon1,FXIcon* icon2,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXLabel(p,text1,icon1,opts,x,y,w,h,pl,pr,pt,pb){
   FXString string=text2.section('\t',0);
-  target=tgt;
-  message=sel;
+  althotkey=parseHotKey(string);
   altlabel=stripHotKey(string);
+  althotoff=findHotKey(string);
   alttip=text2.section('\t',1);
   althelp=text2.section('\t',2);
   alticon=icon2;
-  althotkey=parseHotKey(string);
-  althotoff=findHotKey(string);
   addHotKey(althotkey);
-  state=FALSE;
-  down=FALSE;
+  target=tgt;
+  message=sel;
+  state=false;
+  down=false;
   }
 
 
@@ -164,7 +166,7 @@ FXint FXToggleButton::getDefaultHeight(){
 
 
 // Set button state
-void FXToggleButton::setState(FXbool s,FXbool notify){
+void FXToggleButton::setState(FXuchar s,FXbool notify){
   if(state!=s){
     state=s;
     update();
@@ -174,7 +176,7 @@ void FXToggleButton::setState(FXbool s,FXbool notify){
 
 
 // Press button
-void FXToggleButton::press(FXbool dn){
+void FXToggleButton::press(FXuchar dn){
   if(down!=dn){
     down=dn;
     update();
@@ -183,7 +185,7 @@ void FXToggleButton::press(FXbool dn){
 
 
 // If window can have focus
-bool FXToggleButton::canFocus() const { return true; }
+FXbool FXToggleButton::canFocus() const { return true; }
 
 
 // Update value from a message
@@ -209,14 +211,14 @@ long FXToggleButton::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
 
 // Check the menu button
 long FXToggleButton::onCheck(FXObject*,FXSelector,void*){
-  setState(TRUE);
+  setState(true);
   return 1;
   }
 
 
 // Check the menu button
 long FXToggleButton::onUncheck(FXObject*,FXSelector,void*){
-  setState(FALSE);
+  setState(false);
   return 1;
   }
 
@@ -251,7 +253,7 @@ long FXToggleButton::onFocusOut(FXObject* sender,FXSelector sel,void* ptr){
 long FXToggleButton::onEnter(FXObject* sender,FXSelector sel,void* ptr){
   FXLabel::onEnter(sender,sel,ptr);
   if(isEnabled()){
-    if(flags&FLAG_PRESSED) press(TRUE);
+    if(flags&FLAG_PRESSED) press(true);
     if(options&TOGGLEBUTTON_TOOLBAR) update();
     }
   return 1;
@@ -262,7 +264,7 @@ long FXToggleButton::onEnter(FXObject* sender,FXSelector sel,void* ptr){
 long FXToggleButton::onLeave(FXObject* sender,FXSelector sel,void* ptr){
   FXLabel::onLeave(sender,sel,ptr);
   if(isEnabled()){
-    if(flags&FLAG_PRESSED) press(FALSE);
+    if(flags&FLAG_PRESSED) press(false);
     if(options&TOGGLEBUTTON_TOOLBAR) update();
     }
   return 1;
@@ -276,7 +278,7 @@ long FXToggleButton::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
   if(isEnabled() && !(flags&FLAG_PRESSED)){
     grab();
     if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONPRESS,message),ptr)) return 1;
-    press(TRUE);
+    press(true);
     flags|=FLAG_PRESSED;
     flags&=~FLAG_UPDATE;
     return 1;
@@ -287,13 +289,13 @@ long FXToggleButton::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
 
 // Released mouse button
 long FXToggleButton::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
-  FXbool click=down;
+  FXuchar click=down;
   if(isEnabled() && (flags&FLAG_PRESSED)){
     ungrab();
     flags|=FLAG_UPDATE;
     flags&=~FLAG_PRESSED;
     if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONRELEASE,message),ptr)) return 1;
-    press(FALSE);
+    press(false);
     if(click){
       setState(!state);
       if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)state);
@@ -307,7 +309,7 @@ long FXToggleButton::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
 // The widget lost the grab for some reason
 long FXToggleButton::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
   FXLabel::onUngrabbed(sender,sel,ptr);
-  press(FALSE);
+  press(false);
   flags&=~FLAG_PRESSED;
   flags|=FLAG_UPDATE;
   return 1;
@@ -318,10 +320,10 @@ long FXToggleButton::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
 long FXToggleButton::onKeyPress(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   flags&=~FLAG_TIP;
-  if(isEnabled() && !(flags&FLAG_PRESSED)){
+  if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr)) return 1;
-    if(event->code==KEY_space || event->code==KEY_KP_Space){
-      press(TRUE);
+    if(!(flags&FLAG_PRESSED) && (event->code==KEY_space || event->code==KEY_KP_Space)){
+      press(true);
       flags|=FLAG_PRESSED;
       flags&=~FLAG_UPDATE;
       return 1;
@@ -334,10 +336,10 @@ long FXToggleButton::onKeyPress(FXObject*,FXSelector,void* ptr){
 // Key Release
 long FXToggleButton::onKeyRelease(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
-  if(isEnabled() && (flags&FLAG_PRESSED)){
+  if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr)) return 1;
-    if(event->code==KEY_space || event->code==KEY_KP_Space){
-      press(FALSE);
+    if((flags&FLAG_PRESSED) && (event->code==KEY_space || event->code==KEY_KP_Space)){
+      press(false);
       setState(!state);
       flags|=FLAG_UPDATE;
       flags&=~FLAG_PRESSED;
@@ -353,9 +355,8 @@ long FXToggleButton::onKeyRelease(FXObject*,FXSelector,void* ptr){
 long FXToggleButton::onHotKeyPress(FXObject*,FXSelector,void* ptr){
   handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
   flags&=~FLAG_TIP;
-  FXTRACE((100,"FXToggleButton::onHotKeyPress\n"));
   if(isEnabled() && !(flags&FLAG_PRESSED)){
-    press(TRUE);
+    press(true);
     flags|=FLAG_PRESSED;
     flags&=~FLAG_UPDATE;
     }
@@ -365,11 +366,10 @@ long FXToggleButton::onHotKeyPress(FXObject*,FXSelector,void* ptr){
 
 // Hot key combination released
 long FXToggleButton::onHotKeyRelease(FXObject*,FXSelector,void*){
-  FXTRACE((100,"FXToggleButton::onHotKeyRelease\n"));
   if(isEnabled() && (flags&FLAG_PRESSED)){
     flags|=FLAG_UPDATE;
     flags&=~FLAG_PRESSED;
-    press(FALSE);
+    press(false);
     setState(!state);
     if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)state);
     }

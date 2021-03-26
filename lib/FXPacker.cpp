@@ -3,37 +3,40 @@
 *                P a c k e r   C o n t a i n e r   O b j e c t                  *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXPacker.cpp,v 1.46 2006/01/22 17:58:37 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXPacker.h"
 
 
@@ -43,6 +46,8 @@
   - LAYOUT_FIX_WIDTH and LAYOUT_FIX_HEIGHT take precedence over PACK_UNIFORM_WIDTH and
     PACK_UNIFORM_HEIGHT!
   - Tabbing order takes widget layout into account
+  - FIXME possible new layout flag: place a widget, but don't subtract its space.
+    This is useful for underlay/overlay widgets...
 */
 
 // Side layout modes
@@ -83,8 +88,7 @@ FXPacker::FXPacker(){
 
 
 // Create child frame window
-FXPacker::FXPacker(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXComposite(p,opts,x,y,w,h){
+FXPacker::FXPacker(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXComposite(p,opts,x,y,w,h){
   flags|=FLAG_SHOWN;
   baseColor=getApp()->getBaseColor();
   hiliteColor=getApp()->getHiliteColor();
@@ -493,9 +497,9 @@ long FXPacker::onFocusRight(FXObject*,FXSelector,void* ptr){
 
 // Compute minimum width based on child layout hints
 FXint FXPacker::getDefaultWidth(){
-  register FXint w,wcum,wmax,mw;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint w,wcum,wmax,mw;
+  FXWindow* child;
+  FXuint hints;
   wmax=wcum=mw=0;
   if(options&PACK_UNIFORM_WIDTH) mw=maxChildWidth();
   for(child=getLast(); child; child=child->getPrev()){
@@ -512,7 +516,7 @@ FXint FXPacker::getDefaultWidth(){
         if(child->getNext()) wcum+=hspacing;
         wcum+=w;
         }
-      else{
+      else{                                                     // Top or bottom
         if(w>wcum) wcum=w;
         }
       }
@@ -524,9 +528,9 @@ FXint FXPacker::getDefaultWidth(){
 
 // Compute minimum height based on child layout hints
 FXint FXPacker::getDefaultHeight(){
-  register FXint h,hcum,hmax,mh;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint h,hcum,hmax,mh;
+  FXWindow* child;
+  FXuint hints;
   hmax=hcum=mh=0;
   if(options&PACK_UNIFORM_HEIGHT) mh=maxChildHeight();
   for(child=getLast(); child; child=child->getPrev()){
@@ -543,7 +547,7 @@ FXint FXPacker::getDefaultHeight(){
         if(child->getNext()) hcum+=vspacing;
         hcum+=h;
         }
-      else{
+      else{                                                     // Left or right
         if(h>hcum) hcum=h;
         }
       }
@@ -555,10 +559,10 @@ FXint FXPacker::getDefaultHeight(){
 
 // Recalculate layout
 void FXPacker::layout(){
-  register FXint left,right,top,bottom,x,y,w,h;
-  register FXint mw=0,mh=0;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint left,right,top,bottom,x,y,w,h;
+  FXint mw=0,mh=0;
+  FXWindow* child;
+  FXuint hints;
 
   // Placement rectangle; right/bottom non-inclusive
   left=border+padleft;
@@ -589,7 +593,7 @@ void FXPacker::layout(){
       else if(hints&LAYOUT_FILL_X) w=right-left;
       else w=child->getDefaultWidth();
 
-      // Vertical
+      // Left or right
       if(hints&LAYOUT_SIDE_LEFT){
 
         // Y
@@ -613,7 +617,7 @@ void FXPacker::layout(){
           }
         }
 
-      // Horizontal
+      // Top or bottom
       else{
 
         // X

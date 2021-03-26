@@ -3,39 +3,41 @@
 *                    C h e c k   B u t t o n    O b j e c t                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXCheckButton.cpp,v 1.58 2006/01/22 17:58:20 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXCheckButton.h"
 
 /*
@@ -54,8 +56,8 @@ namespace FX {
 
 // Map
 FXDEFMAP(FXCheckButton) FXCheckButtonMap[]={
-  FXMAPFUNC(SEL_PAINT,0,FXCheckButton::onPaint),
   FXMAPFUNC(SEL_UPDATE,0,FXCheckButton::onUpdate),
+  FXMAPFUNC(SEL_PAINT,0,FXCheckButton::onPaint),
   FXMAPFUNC(SEL_ENTER,0,FXCheckButton::onEnter),
   FXMAPFUNC(SEL_LEAVE,0,FXCheckButton::onLeave),
   FXMAPFUNC(SEL_FOCUSIN,0,FXCheckButton::onFocusIn),
@@ -85,25 +87,24 @@ FXIMPLEMENT(FXCheckButton,FXLabel,FXCheckButtonMap,ARRAYNUMBER(FXCheckButtonMap)
 FXCheckButton::FXCheckButton(){
   checkColor=0;
   boxColor=0;
-  check=FALSE;
-  oldcheck=FALSE;
+  check=false;
+  oldcheck=false;
   }
 
 
 // Make a check button
-FXCheckButton::FXCheckButton(FXComposite* p,const FXString& text,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXLabel(p,text,NULL,opts,x,y,w,h,pl,pr,pt,pb){
+FXCheckButton::FXCheckButton(FXComposite* p,const FXString& text,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXLabel(p,text,NULL,opts,x,y,w,h,pl,pr,pt,pb){
   checkColor=getApp()->getForeColor();
   boxColor=getApp()->getBackColor();
   target=tgt;
   message=sel;
-  check=FALSE;
-  oldcheck=FALSE;
+  check=false;
+  oldcheck=false;
   }
 
 
 // If window can have focus
-bool FXCheckButton::canFocus() const { return true; }
+FXbool FXCheckButton::canFocus() const { return true; }
 
 
 // Get default width
@@ -130,7 +131,7 @@ FXint FXCheckButton::getDefaultHeight(){
 
 
 // Check button
-void FXCheckButton::setCheck(FXbool state,FXbool notify){
+void FXCheckButton::setCheck(FXuchar state,FXbool notify){
   if(check!=state){
     check=state;
     update();
@@ -141,35 +142,35 @@ void FXCheckButton::setCheck(FXbool state,FXbool notify){
 
 // Change state to checked
 long FXCheckButton::onCheck(FXObject*,FXSelector,void*){
-  setCheck(TRUE);
+  setCheck(true);
   return 1;
   }
 
 
 // Change state to unchecked
 long FXCheckButton::onUncheck(FXObject*,FXSelector,void*){
-  setCheck(FALSE);
+  setCheck(false);
   return 1;
   }
 
 
 // Change state to indeterminate
 long FXCheckButton::onUnknown(FXObject*,FXSelector,void*){
-  setCheck(MAYBE);
+  setCheck(maybe);
   return 1;
   }
 
 
 // Update value from a message
 long FXCheckButton::onCmdSetValue(FXObject*,FXSelector,void* ptr){
-  setCheck((FXbool)(FXuval)ptr);
+  setCheck((FXuchar)(FXuval)ptr);
   return 1;
   }
 
 
 // Update value from a message
 long FXCheckButton::onCmdSetIntValue(FXObject*,FXSelector,void* ptr){
-  setCheck((FXbool)*((FXint*)ptr));
+  setCheck((FXuchar)*((FXint*)ptr));
   return 1;
   }
 
@@ -268,9 +269,9 @@ long FXCheckButton::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
 long FXCheckButton::onKeyPress(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   flags&=~FLAG_TIP;
-  if(isEnabled() && !(flags&FLAG_PRESSED)){
+  if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr)) return 1;
-    if(event->code==KEY_space || event->code==KEY_KP_Space){
+    if(!(flags&FLAG_PRESSED) && (event->code==KEY_space || event->code==KEY_KP_Space)){
       oldcheck=check;
       setCheck(!oldcheck);
       flags|=FLAG_PRESSED;
@@ -285,9 +286,9 @@ long FXCheckButton::onKeyPress(FXObject*,FXSelector,void* ptr){
 // Key Release
 long FXCheckButton::onKeyRelease(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
-  if(isEnabled() && (flags&FLAG_PRESSED)){
+  if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr)) return 1;
-    if(event->code==KEY_space || event->code==KEY_KP_Space){
+    if((flags&FLAG_PRESSED) && (event->code==KEY_space || event->code==KEY_KP_Space)){
       flags|=FLAG_UPDATE;
       flags&=~FLAG_PRESSED;
       if(check!=oldcheck && target){ target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)check); }
@@ -344,7 +345,7 @@ long FXCheckButton::onPaint(FXObject*,FXSelector,void* ptr){
   dc.fillRectangle(ev->rect.x,ev->rect.y,ev->rect.w,ev->rect.h);
 
   // Check background
-  if(check==MAYBE || !isEnabled())
+  if(check==maybe || !isEnabled())
     dc.setForeground(baseColor);
   else
     dc.setForeground(boxColor);
@@ -371,14 +372,14 @@ long FXCheckButton::onPaint(FXObject*,FXSelector,void* ptr){
     }
 
   // Check color
-  if(check==MAYBE || !isEnabled())
+  if(check==maybe || !isEnabled())
     dc.setForeground(shadowColor);
   else
     dc.setForeground(checkColor);
 
   // Show as +
   if(options&CHECKBUTTON_PLUS){
-    if(check!=TRUE){
+    if(check!=true){
       dc.fillRectangle(ix+6,iy+4,1,5);
       }
     dc.fillRectangle(ix+4,iy+6,5,1);
@@ -386,22 +387,22 @@ long FXCheckButton::onPaint(FXObject*,FXSelector,void* ptr){
 
   // Show as v
   else{
-    if(check!=FALSE){
+    if(check!=false){
       FXSegment seg[6];
-#ifndef WIN32
-      seg[0].x1=3+ix; seg[0].y1=5+iy; seg[0].x2=5+ix; seg[0].y2=7+iy;
-      seg[1].x1=3+ix; seg[1].y1=6+iy; seg[1].x2=5+ix; seg[1].y2=8+iy;
-      seg[2].x1=3+ix; seg[2].y1=7+iy; seg[2].x2=5+ix; seg[2].y2=9+iy;
-      seg[3].x1=5+ix; seg[3].y1=7+iy; seg[3].x2=9+ix; seg[3].y2=3+iy;
-      seg[4].x1=5+ix; seg[4].y1=8+iy; seg[4].x2=9+ix; seg[4].y2=4+iy;
-      seg[5].x1=5+ix; seg[5].y1=9+iy; seg[5].x2=9+ix; seg[5].y2=5+iy;
-#else
+#ifdef WIN32
       seg[0].x1=3+ix; seg[0].y1=5+iy; seg[0].x2=5+ix; seg[0].y2=7+iy;
       seg[1].x1=3+ix; seg[1].y1=6+iy; seg[1].x2=5+ix; seg[1].y2=8+iy;
       seg[2].x1=3+ix; seg[2].y1=7+iy; seg[2].x2=5+ix; seg[2].y2=9+iy;
       seg[3].x1=5+ix; seg[3].y1=7+iy; seg[3].x2=10+ix; seg[3].y2=2+iy;
       seg[4].x1=5+ix; seg[4].y1=8+iy; seg[4].x2=10+ix; seg[4].y2=3+iy;
       seg[5].x1=5+ix; seg[5].y1=9+iy; seg[5].x2=10+ix; seg[5].y2=4+iy;
+#else
+      seg[0].x1=3+ix; seg[0].y1=5+iy; seg[0].x2=5+ix; seg[0].y2=7+iy;
+      seg[1].x1=3+ix; seg[1].y1=6+iy; seg[1].x2=5+ix; seg[1].y2=8+iy;
+      seg[2].x1=3+ix; seg[2].y1=7+iy; seg[2].x2=5+ix; seg[2].y2=9+iy;
+      seg[3].x1=5+ix; seg[3].y1=7+iy; seg[3].x2=9+ix; seg[3].y2=3+iy;
+      seg[4].x1=5+ix; seg[4].y1=8+iy; seg[4].x2=9+ix; seg[4].y2=4+iy;
+      seg[5].x1=5+ix; seg[5].y1=9+iy; seg[5].x2=9+ix; seg[5].y2=5+iy;
 #endif
       dc.drawLineSegments(seg,6);
       }

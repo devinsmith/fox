@@ -3,28 +3,26 @@
 *                     F S   C o l o r   Q u a n t i z a t i o n                 *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxfsquantize.cpp,v 1.5 2006/01/22 17:58:52 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
-#include "fxpriv.h"
+#include "fxmath.h"
+#include "FXElement.h"
 
 
 /*
@@ -51,18 +49,21 @@ using namespace FX;
 namespace FX {
 
 
+extern FXbool fxfsquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& actualcolors,FXint w,FXint h,FXint maxcolors);
+
+
 // Floyd-Steinberg quantization full 32 bpp to less than or equal to maxcolors
 FXbool fxfsquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& actualcolors,FXint w,FXint h,FXint){
-  register FXint i,j,val,r1,g1,b1,*cr,*cg,*cb,*nr,*ng,*nb,*p;
+  FXint i,j,val,r1,g1,b1,*cr,*cg,*cb,*nr,*ng,*nb,*p;
   FXint *begin;
 
   // Fill colormap
   for(r1=i=0; r1<8; r1++){
     for(g1=0; g1<8; g1++){
       for(b1=0; b1<4; b1++){
-        ((FXuchar*)(colormap+i))[0]=(r1*255+3)/7;
+        ((FXuchar*)(colormap+i))[0]=(b1*255+1)/3;
         ((FXuchar*)(colormap+i))[1]=(g1*255+3)/7;
-        ((FXuchar*)(colormap+i))[2]=(b1*255+1)/3;
+        ((FXuchar*)(colormap+i))[2]=(r1*255+3)/7;
         ((FXuchar*)(colormap+i))[3]=255;
         i++;
         }
@@ -70,7 +71,9 @@ FXbool fxfsquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& act
     }
 
   // Temporary storage
-  if(!FXMALLOC(&begin,FXint,w*2*3)) return FALSE;
+  if(!allocElms(begin,w*2*3)) return false;
+
+  // Set up rows
   cr=begin;
   cg=cr+w;
   cb=cg+w;
@@ -80,9 +83,9 @@ FXbool fxfsquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& act
 
   // Get first line of picture
   for(j=0; j<w; j++){
-    nr[j]=((const FXuchar*)(src+j))[0];
+    nr[j]=((const FXuchar*)(src+j))[2];
     ng[j]=((const FXuchar*)(src+j))[1];
-    nb[j]=((const FXuchar*)(src+j))[2];
+    nb[j]=((const FXuchar*)(src+j))[0];
     }
   src+=w;
 
@@ -97,9 +100,9 @@ FXbool fxfsquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& act
     // Get next line
     if(i!=h-1){
       for(j=0; j<w; j++){
-        nr[j]=((const FXuchar*)(src+j))[0];
+        nr[j]=((const FXuchar*)(src+j))[2];
         ng[j]=((const FXuchar*)(src+j))[1];
-        nb[j]=((const FXuchar*)(src+j))[2];
+        nb[j]=((const FXuchar*)(src+j))[0];
         }
       src+=w;
       }
@@ -115,9 +118,9 @@ FXbool fxfsquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& act
       *dst++=val;
 
       // compute color errors
-      r1-=((FXuchar*)(colormap+val))[0];
+      r1-=((FXuchar*)(colormap+val))[2];
       g1-=((FXuchar*)(colormap+val))[1];
-      b1-=((FXuchar*)(colormap+val))[2];
+      b1-=((FXuchar*)(colormap+val))[0];
 
       // Add fractions of errors to adjacent pixels
       if(j!=w-1){                       // Adjust RIGHT pixel
@@ -142,9 +145,9 @@ FXbool fxfsquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& act
         }
       }
     }
-  FXFREE(&begin);
+  freeElms(begin);
   actualcolors=256;
-  return TRUE;
+  return true;
   }
 
 

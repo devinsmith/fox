@@ -40,6 +40,10 @@ set(HEADERS
   ../include/FXArray.h
   ../include/FXArrowButton.h
   ../include/fxascii.h
+  ../include/FXAtomic.h
+  ../include/FXAutoPtr.h
+  ../include/FXAutoThreadStorageKey.h
+  ../include/FXBarrier.h
   ../include/FXBitmapFrame.h
   ../include/FXBitmap.h
   ../include/FXBitmapView.h
@@ -47,6 +51,9 @@ set(HEADERS
   ../include/FXBMPImage.h
   ../include/FXButton.h
   ../include/FXBZFileStream.h
+  ../include/FXCalendar.h
+  ../include/FXCalendarView.h
+  ../include/FXCallback.h
   ../include/FXCanvas.h
   ../include/FXCheckButton.h
   ../include/FXChoiceBox.h
@@ -55,11 +62,17 @@ set(HEADERS
   ../include/FXColorList.h
   ../include/FXColorRing.h
   ../include/FXColorSelector.h
+  ../include/FXColors.h
   ../include/FXColorWell.h
   ../include/FXColorWheel.h
   ../include/FXComboBox.h
+  ../include/FXCompletion.h
+  ../include/FXComplexd.h
+  ../include/FXComplexf.h
   ../include/FXComposeContext.h
   ../include/FXComposite.h
+  ../include/FXCondition.h
+  ../include/FXConsole.h
   ../include/FXCP1250Codec.h
   ../include/FXCP1251Codec.h
   ../include/FXCP1252Codec.h
@@ -84,6 +97,7 @@ set(HEADERS
   ../include/FXCP866Codec.h
   ../include/FXCP869Codec.h
   ../include/FXCP874Codec.h
+  ../include/fxcpuid.h
   ../include/FXCURCursor.h
   ../include/FXCursor.h
   ../include/FXDataTarget.h
@@ -91,17 +105,24 @@ set(HEADERS
   ../include/FXDC.h
   ../include/FXDCPrint.h
   ../include/FXDCWindow.h
+  ../include/FXDDSIcon.h
+  ../include/FXDDSImage.h
   ../include/FXDebugTarget.h
   ../include/fxdefs.h
   ../include/FXDelegator.h
   ../include/FXDial.h
   ../include/FXDialogBox.h
-  ../include/FXDict.h
+  ../include/FXDictionary.h
+  ../include/FXDictionaryOf.h
   ../include/FXDirBox.h
   ../include/FXDirDialog.h
   ../include/FXDir.h
   ../include/FXDirList.h
   ../include/FXDirSelector.h
+  ../include/FXDirVisitor.h
+  ../include/FXDirWatch.h
+  ../include/FXDispatcher.h
+  ../include/FXDisplay.h
   ../include/FXDLL.h
   ../include/FXDockBar.h
   ../include/FXDockHandler.h
@@ -112,14 +133,21 @@ set(HEADERS
   ../include/FXDrawable.h
   ../include/FXDriveBox.h
   ../include/FXElement.h
+  ../include/fxendian.h
+  ../include/FXEvent.h
+  ../include/FXEventDispatcher.h
+  ../include/FXEventLoop.h
   ../include/FXException.h
+  ../include/FXEXEIcon.h
+  ../include/FXEXEImage.h
   ../include/FXExpression.h
   ../include/FXExtentd.h
   ../include/FXExtentf.h
+  ../include/FXFileAssociations.h
   ../include/FXFileDialog.h
-  ../include/FXFileDict.h
   ../include/FXFile.h
   ../include/FXFileList.h
+  ../include/FXFileProgressDialog.h
   ../include/FXFileSelector.h
   ../include/FXFileStream.h
   ../include/FXFoldingList.h
@@ -127,31 +155,27 @@ set(HEADERS
   ../include/FXFont.h
   ../include/FXFontSelector.h
   ../include/FXFrame.h
+  ../include/FXGauge.h
   ../include/FXGIFCursor.h
   ../include/FXGIFIcon.h
   ../include/FXGIFImage.h
   ../include/FXGLCanvas.h
-  ../include/FXGLCone.h
   ../include/FXGLContext.h
-  ../include/FXGLCube.h
-  ../include/FXGLCylinder.h
   ../include/FXGLObject.h
-  ../include/FXGLShape.h
-  ../include/FXGLSphere.h
-  ../include/FXGLTriangleMesh.h
   ../include/FXGLViewer.h
   ../include/FXGLVisual.h
   ../include/FXGradientBar.h
   ../include/FXGroupBox.h
-  ../include/FXGUISignal.h
   ../include/FXGZFileStream.h
   ../include/fx.h
+  ../include/FXhalf.h
   ../include/FXHash.h
+  ../include/FXHashOf.h
   ../include/FXHeader.h
   ../include/FXHorizontalFrame.h
   ../include/FXICOIcon.h
   ../include/FXICOImage.h
-  ../include/FXIconDict.h
+  ../include/FXIconCache.h
   ../include/FXIcon.h
   ../include/FXIconList.h
   ../include/FXIconSource.h
@@ -162,20 +186,32 @@ set(HEADERS
   ../include/FXImage.h
   ../include/FXImageView.h
   ../include/FXInputDialog.h
+  ../include/FXIOBuffer.h
+  ../include/FXIODevice.h
   ../include/FXIO.h
+  ../include/FXJP2Icon.h
+  ../include/FXJP2Image.h
   ../include/FXJPGIcon.h
   ../include/FXJPGImage.h
+  ../include/FXJSON.h
+  ../include/FXJSONFile.h
+  ../include/FXJSONString.h
   ../include/fxkeys.h
   ../include/FXKnob.h
   ../include/FXKOI8RCodec.h
   ../include/FXLabel.h
+  ../include/FXLFQueue.h
   ../include/FXListBox.h
   ../include/FXList.h
+  ../include/FXLocale.h
   ../include/FXMainWindow.h
+  ../include/FXMat2d.h
+  ../include/FXMat2f.h
   ../include/FXMat3d.h
   ../include/FXMat3f.h
   ../include/FXMat4d.h
   ../include/FXMat4f.h
+  ../include/fxmath.h
   ../include/FXMatrix.h
   ../include/FXMDIButton.h
   ../include/FXMDIChild.h
@@ -193,10 +229,14 @@ set(HEADERS
   ../include/FXMenuSeparator.h
   ../include/FXMenuTitle.h
   ../include/FXMessageBox.h
+  ../include/FXMessageChannel.h
+  ../include/FXMetaClass.h
+  ../include/FXMutex.h
   ../include/FXObject.h
   ../include/FXObjectList.h
   ../include/FXOptionMenu.h
   ../include/FXPacker.h
+  ../include/FXParallel.h
   ../include/FXPath.h
   ../include/FXPCXIcon.h
   ../include/FXPCXImage.h
@@ -209,33 +249,47 @@ set(HEADERS
   ../include/FXPPMIcon.h
   ../include/FXPPMImage.h
   ../include/FXPrintDialog.h
+  ../include/FXProcess.h
   ../include/FXProgressBar.h
   ../include/FXProgressDialog.h
+  ../include/FXPtrList.h
+  ../include/FXPtrQueue.h
   ../include/FXQuatd.h
   ../include/FXQuatf.h
   ../include/FXRadioButton.h
+  ../include/FXRandom.h
   ../include/FXRanged.h
   ../include/FXRangef.h
+  ../include/FXRangeSlider.h
   ../include/FXRASIcon.h
   ../include/FXRASImage.h
+  ../include/FXReactor.h
+  ../include/FXReadWriteLock.h
   ../include/FXRealSlider.h
   ../include/FXRealSpinner.h
   ../include/FXRecentFiles.h
   ../include/FXRectangle.h
+  ../include/FXRefPtr.h
   ../include/FXRegion.h
   ../include/FXRegistry.h
   ../include/FXReplaceDialog.h
+  ../include/FXReverseDictionary.h
+  ../include/FXReverseDictionaryOf.h
   ../include/FXRex.h
   ../include/FXRGBIcon.h
   ../include/FXRGBImage.h
   ../include/FXRootWindow.h
   ../include/FXRuler.h
   ../include/FXRulerView.h
+  ../include/FXRunnable.h
+  ../include/FXScopedThread.h
   ../include/FXScrollArea.h
   ../include/FXScrollBar.h
   ../include/FXScrollPane.h
   ../include/FXScrollWindow.h
   ../include/FXSearchDialog.h
+  ../include/FXSemaphore.h
+  ../include/FXSemaQueue.h
   ../include/FXSeparator.h
   ../include/FXSettings.h
   ../include/FXShell.h
@@ -245,6 +299,7 @@ set(HEADERS
   ../include/FXSocket.h
   ../include/FXSphered.h
   ../include/FXSpheref.h
+  ../include/FXSpinLock.h
   ../include/FXSpinner.h
   ../include/FXSplashWindow.h
   ../include/FXSplitter.h
@@ -253,7 +308,7 @@ set(HEADERS
   ../include/FXStatusBar.h
   ../include/FXStatusLine.h
   ../include/FXStream.h
-  ../include/FXStringDict.h
+  ../include/FXStringDictionary.h
   ../include/FXString.h
   ../include/FXSwitcher.h
   ../include/FXSystem.h
@@ -261,12 +316,14 @@ set(HEADERS
   ../include/FXTabBook.h
   ../include/FXTabItem.h
   ../include/FXTable.h
+  ../include/FXTaskGroup.h
   ../include/FXTextCodec.h
   ../include/FXTextField.h
   ../include/FXText.h
   ../include/FXTGAIcon.h
   ../include/FXTGAImage.h
   ../include/FXThread.h
+  ../include/FXThreadPool.h
   ../include/FXTIFIcon.h
   ../include/FXTIFImage.h
   ../include/FXToggleButton.h
@@ -286,6 +343,9 @@ set(HEADERS
   ../include/FXUTF16Codec.h
   ../include/FXUTF32Codec.h
   ../include/FXUTF8Codec.h
+  ../include/FXVariantArray.h
+  ../include/FXVariant.h
+  ../include/FXVariantMap.h
   ../include/FXVec2d.h
   ../include/FXVec2f.h
   ../include/FXVec3d.h
@@ -295,14 +355,20 @@ set(HEADERS
   ../include/fxver.h
   ../include/FXVerticalFrame.h
   ../include/FXVisual.h
+  ../include/FXWEBPIcon.h
+  ../include/FXWEBPImage.h
   ../include/FXWindow.h
   ../include/FXWizard.h
+  ../include/FXWorker.h
+  ../include/FXWSQueue.h
   ../include/FXXBMIcon.h
   ../include/FXXBMImage.h
+  ../include/FXXML.h
+  ../include/FXXMLFile.h
+  ../include/FXXMLString.h
   ../include/FXXPMIcon.h
   ../include/FXXPMImage.h
-  ../include/xincs.h
-  fxpriv.h)
+  ../include/xincs.h)
 
 set(SOURCES
   FX4Splitter.cpp
@@ -324,8 +390,14 @@ set(SOURCES
   FX88599Codec.cpp
   FXAccelTable.cpp
   FXApp.cpp
+  FXArray.cpp
   FXArrowButton.cpp
   fxascii.cpp
+  FXAtomic.cpp
+  FXAutoThreadStorageKey.cpp
+  FXBarrier.cpp
+  fxbase64.cpp
+  fxbase85.cpp
   FXBitmap.cpp
   FXBitmapFrame.cpp
   FXBitmapView.cpp
@@ -340,14 +412,19 @@ set(SOURCES
   FXColorBar.cpp
   FXColorDialog.cpp
   FXColorList.cpp
-  FXColorNames.cpp
   FXColorRing.cpp
+  FXColors.cpp
   FXColorSelector.cpp
   FXColorWell.cpp
   FXColorWheel.cpp
   FXComboBox.cpp
+  FXCompletion.cpp
+  FXComplexd.cpp
+  FXComplexf.cpp
   FXComposeContext.cpp
+  fxcompose.cpp
   FXComposite.cpp
+  FXCondition.cpp
   FXCP1250Codec.cpp
   FXCP1251Codec.cpp
   FXCP1252Codec.cpp
@@ -372,6 +449,7 @@ set(SOURCES
   FXCP866Codec.cpp
   FXCP869Codec.cpp
   FXCP874Codec.cpp
+  fxcpuid.cpp
   FXCURCursor.cpp
   FXCursor.cpp
   FXDataTarget.cpp
@@ -379,35 +457,46 @@ set(SOURCES
   FXDC.cpp
   FXDCPrint.cpp
   FXDCWindow.cpp
+  FXDDSIcon.cpp
+  FXDDSImage.cpp
+  fxddsio.cpp
   FXDebugTarget.cpp
   FXDelegator.cpp
   FXDial.cpp
   FXDialogBox.cpp
-  FXDict.cpp
+  FXDictionary.cpp
   FXDirBox.cpp
   FXDir.cpp
   FXDirDialog.cpp
   FXDirList.cpp
   FXDirSelector.cpp
+  FXDirVisitor.cpp
+  FXDirWatch.cpp
+  FXDispatcher.cpp
+  FXDisplay.cpp
   FXDLL.cpp
   FXDockBar.cpp
   FXDockHandler.cpp
   FXDockSite.cpp
-  FXDockTitle.cpp
   FXDocument.cpp
   FXDragCorner.cpp
   FXDrawable.cpp
   FXDriveBox.cpp
+  fxescape.cpp
+  FXEventDispatcher.cpp
+  FXEventLoop.cpp
   FXException.cpp
+  FXEXEIcon.cpp
+  FXEXEImage.cpp
+  fxexeio.cpp
   FXExpression.cpp
   FXExtentd.cpp
   FXExtentf.cpp
   fxezquantize.cpp
+  FXFileAssociations.cpp
   FXFile.cpp
   FXFileDialog.cpp
-  FXFileDict.cpp
   FXFileList.cpp
-  fxfilematch.cpp
   FXFileSelector.cpp
   FXFileStream.cpp
   FXFoldingList.cpp
@@ -416,33 +505,25 @@ set(SOURCES
   FXFontSelector.cpp
   FXFrame.cpp
   fxfsquantize.cpp
+  fxgetticks.cpp
   FXGIFCursor.cpp
   FXGIFIcon.cpp
   FXGIFImage.cpp
   fxgifio.cpp
   FXGLCanvas.cpp
-  FXGLCone.cpp
   FXGLContext.cpp
-  FXGLCube.cpp
-  FXGLCylinder.cpp
-  FXGLObject.cpp
-  FXGLShape.cpp
-  FXGLSphere.cpp
-  FXGLTriangleMesh.cpp
-  FXGLViewer.cpp
   FXGLVisual.cpp
   FXGradientBar.cpp
   FXGroupBox.cpp
-  FXGUISignal.cpp
   FXGZFileStream.cpp
+  FXhalf.cpp
   FXHash.cpp
   FXHeader.cpp
   FXHorizontalFrame.cpp
   FXICOIcon.cpp
   FXICOImage.cpp
-  fxicoio.cpp
+  FXIconCache.cpp
   FXIcon.cpp
-  FXIconDict.cpp
   FXIconList.cpp
   FXIconSource.cpp
   FXId.cpp
@@ -453,26 +534,30 @@ set(SOURCES
   FXImageFrame.cpp
   FXImageView.cpp
   FXInputDialog.cpp
+  FXIOBuffer.cpp
   FXIO.cpp
+  FXIODevice.cpp
+  FXJP2Icon.cpp
+  FXJP2Image.cpp
+  fxjp2io.cpp
   fxjpegio.cpp
   FXJPGIcon.cpp
   FXJPGImage.cpp
+  FXJSON.cpp
+  FXJSONFile.cpp
+  FXJSONString.cpp
   fxkeyboard.cpp
   fxkeysym.cpp
-  FXKnob.cpp
   FXKOI8RCodec.cpp
   FXLabel.cpp
+  fxleaps.cpp
+  FXLFQueue.cpp
   FXListBox.cpp
   FXList.cpp
+  FXLocale.cpp
   FXMainWindow.cpp
-  FXMat3d.cpp
-  FXMat3f.cpp
-  FXMat4d.cpp
-  FXMat4f.cpp
+  fxmath.cpp
   FXMatrix.cpp
-  FXMDIButton.cpp
-  FXMDIChild.cpp
-  FXMDIClient.cpp
   FXMemMap.cpp
   FXMemoryStream.cpp
   FXMenuBar.cpp
@@ -486,6 +571,10 @@ set(SOURCES
   FXMenuSeparator.cpp
   FXMenuTitle.cpp
   FXMessageBox.cpp
+  FXMessageChannel.cpp
+  FXMetaClass.cpp
+  FXMutex.cpp
+  fxntp.cpp
   FXObject.cpp
   FXObjectList.cpp
   FXOptionMenu.cpp
@@ -506,18 +595,22 @@ set(SOURCES
   FXPPMImage.cpp
   fxppmio.cpp
   FXPrintDialog.cpp
+  fxprintf.cpp
   fxpriv.cpp
+  FXProcess.cpp
   FXProgressBar.cpp
   FXProgressDialog.cpp
   fxpsio.cpp
-  FXQuatd.cpp
-  FXQuatf.cpp
+  FXPtrList.cpp
+  FXPtrQueue.cpp
+  FXReactor.cpp
   FXRadioButton.cpp
-  FXRanged.cpp
-  FXRangef.cpp
+  FXRandom.cpp
+  FXRangeSlider.cpp
   FXRASIcon.cpp
   FXRASImage.cpp
   fxrasio.cpp
+  FXReadWriteLock.cpp
   FXRealSlider.cpp
   FXRealSpinner.cpp
   FXRecentFiles.cpp
@@ -525,6 +618,7 @@ set(SOURCES
   FXRegion.cpp
   FXRegistry.cpp
   FXReplaceDialog.cpp
+  FXReverseDictionary.cpp
   FXRex.cpp
   FXRGBIcon.cpp
   FXRGBImage.cpp
@@ -532,20 +626,22 @@ set(SOURCES
   FXRootWindow.cpp
   FXRuler.cpp
   FXRulerView.cpp
+  fxscanf.cpp
+  FXScopedThread.cpp
   FXScrollArea.cpp
   FXScrollBar.cpp
   FXScrollPane.cpp
   FXScrollWindow.cpp
   FXSearchDialog.cpp
+  FXSemaphore.cpp
+  FXSemaQueue.cpp
   FXSeparator.cpp
   FXSettings.cpp
   FXShell.cpp
   FXShutter.cpp
   FXSize.cpp
   FXSlider.cpp
-  FXSocket.cpp
-  FXSphered.cpp
-  FXSpheref.cpp
+  FXSpinLock.cpp
   FXSpinner.cpp
   FXSplashWindow.cpp
   FXSplitter.cpp
@@ -555,20 +651,29 @@ set(SOURCES
   FXStatusLine.cpp
   FXStream.cpp
   FXString.cpp
-  FXStringDict.cpp
+  FXStringDictionary.cpp
+  fxstrtod.cpp
+  fxstrtoll.cpp
+  fxstrtoull.cpp
   FXSwitcher.cpp
   FXSystem.cpp
+  FXSystemTime.cpp
+  FXSystemTimeFormat.cpp
+  FXSystemTimeParse.cpp
+  fxtabbify.cpp
   FXTabBar.cpp
   FXTabBook.cpp
   FXTabItem.cpp
   FXTable.cpp
   fxtargaio.cpp
+  FXTaskGroup.cpp
   FXTextCodec.cpp
   FXText.cpp
   FXTextField.cpp
   FXTGAIcon.cpp
   FXTGAImage.cpp
   FXThread.cpp
+  FXThreadPool.cpp
   FXTIFIcon.cpp
   FXTIFImage.cpp
   fxtifio.cpp
@@ -590,26 +695,30 @@ set(SOURCES
   FXUTF32Codec.cpp
   FXUTF8Codec.cpp
   fxutils.cpp
-  FXVec2d.cpp
-  FXVec2f.cpp
-  FXVec3d.cpp
+  FXVariantArray.cpp
+  FXVariant.cpp
+  FXVariantMap.cpp
   FXVec3f.cpp
-  FXVec4d.cpp
   FXVec4f.cpp
   FXVerticalFrame.cpp
   FXVisual.cpp
+  FXWEBPIcon.cpp
+  FXWEBPImage.cpp
+  fxwebpio.cpp
   FXWindow.cpp
-  FXWizard.cpp
+  FXWorker.cpp
+  FXWSQueue.cpp
   fxwuquantize.cpp
   FXXBMIcon.cpp
   FXXBMImage.cpp
   fxxbmio.cpp
+  FXXML.cpp
+  FXXMLFile.cpp
+  FXXMLString.cpp
   FXXPMIcon.cpp
   FXXPMImage.cpp
   fxxpmio.cpp
-  icons.cpp
-  strtoll.cpp
-  vsscanf.cpp)
+  icons.cpp)
 
 set(ICONS
 arrownext.gif
@@ -620,35 +729,42 @@ bigcomputer.gif
 bigdesktop.gif
 bigdoc.gif
 bigfloppy.gif
+bigfloppy3.gif
+bigfloppy5.gif
 bigfolder.gif
 bigfolderopen.gif
+bigharddisk.gif
 bignetdrive.gif
 bignethood.gif
-bookclr.gif
 bookset.gif
+bookclr.gif
+bookadd.bmp
+bookdel.bmp
+clearentry.gif
 cmymode.gif
-deleteicon.gif
 dialmode.gif
 dirupicon.gif
+deleteicon.gif
+docktop.gif
 dockbottom.gif
-dockflip.gif
-dockfree.gif
 dockleft.gif
 dockright.gif
-docktop.gif
+dockfree.gif
+dockflip.gif
 entericon.gif
 erroricon.gif
 eyedrop.gif
+filecancel.gif
+fileaccept.gif
 filecopy.gif
-filedelete.gif
+filemove.gif
 filehidden.gif
 filelink.gif
-filemove.gif
 filerename.gif
+filedelete.gif
 fileshown.gif
 foldernew.gif
 gotohome.gif
-gotoicon.gif
 gotowork.gif
 hsvmode.gif
 infoicon.gif
@@ -660,12 +776,15 @@ minicomputer.gif
 minidesktop.gif
 minidoc.gif
 minifloppy.gif
+minifloppy3.gif
+minifloppy5.gif
 minifolder.gif
 minifolderopen.gif
 miniharddisk.gif
 mininetdrive.gif
 mininethood.gif
 minizipdrive.gif
+newfolder.bmp
 portrait.gif
 questionicon.gif
 rgbmode.gif
@@ -673,6 +792,8 @@ searchicon.gif
 showbigicons.gif
 showdetails.gif
 showsmallicons.gif
+sorting.bmp
+undo_gif.gif
 warningicon.gif
 winclose.gif
 winmaximize.gif
@@ -794,6 +915,11 @@ if(HAVE_TIMERFD_CREATE)
   add_definitions(-DHAVE_TIMERFD_CREATE)
 endif()
 
+check_cxx_symbol_exists(inotify_init1 "sys/inotify.h" HAVE_INOTIFY_INIT1)
+if(HAVE_INOTIFY_INIT1)
+  add_definitions(-DHAVE_INOTIFY_INIT1)
+endif()
+
 check_cxx_symbol_exists(statvfs "sys/statvfs.h" HAVE_STATVFS)
 if(HAVE_STATVFS)
   add_definitions(-DHAVE_STATVFS)
@@ -872,16 +998,6 @@ else()
       endif()
     endif()
   endif()
-endif()
-
-check_cxx_source_compiles("#include <stdlib.h>\nint main(int argc, char *argv[]) { long long int x = strtoll(\"1234\", NULL, 10); return 0;}" HAVE_STRTOLL)
-if (HAVE_STRTOLL)
-  add_definitions(-DHAVE_STRTOLL)
-endif()
-
-check_cxx_source_compiles("#include <stdlib.h>\nint main(int argc, char *argv[]) { long long int x = strtoull(\"1234\", NULL, 10); return 0;}" HAVE_STRTOULL)
-if (HAVE_STRTOULL)
-  add_definitions(-DHAVE_STRTOULL)
 endif()
 
 #
@@ -972,6 +1088,11 @@ if(HAVE_SYS_PSTAT_H)
   add_definitions(-DHAVE_SYS_PSTAT_H)
 endif()
 
+check_include_file_cxx(sys/inotify.h HAVE_SYS_INOTIFY_H)
+if(HAVE_SYS_INOTIFY_H)
+  add_definitions(-DHAVE_SYS_INOTIFY_H)
+endif()
+
 if(WITH_JPEG)
   find_package(JPEG)
   if(JPEG_FOUND)
@@ -1058,8 +1179,8 @@ target_link_libraries(fox PRIVATE ${X11_LIBRARIES} ${LIBRARIES} ${CMAKE_THREAD_L
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/icons.cpp ${CMAKE_CURRENT_SOURCE_DIR}/icons.h
-  COMMAND reswrap -i -n FX -o icons.h ${ICONS}
-  COMMAND reswrap -e -n FX -o icons.cpp ${ICONS}
+  COMMAND reswrap -nc -h -n FX -o icons.h ${ICONS}
+  COMMAND reswrap -nc -i icons.h -n FX -o icons.cpp ${ICONS}
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS reswrap
   VERBATIM

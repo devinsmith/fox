@@ -3,39 +3,43 @@
 *                         C o l o r   L i s t   W i d g e t                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXColorList.cpp,v 1.4 2006/01/22 17:58:20 fox Exp $                      *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
+#include "FXColors.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXObjectList.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXFont.h"
 #include "FXIcon.h"
 #include "FXScrollBar.h"
@@ -69,9 +73,9 @@ FXIMPLEMENT(FXColorItem,FXListItem,NULL,0)
 
 
 // Draw item
-void FXColorItem::draw(const FXList* list,FXDC& dc,FXint xx,FXint yy,FXint ww,FXint hh){
-  register FXFont *font=list->getFont();
-  register FXint th=0;
+void FXColorItem::draw(const FXList* list,FXDC& dc,FXint xx,FXint yy,FXint ww,FXint hh) const {
+  FXFont *font=list->getFont();
+  FXint th=0;
   if(!label.empty()) th=font->getFontHeight();
   if(isSelected())
     dc.setForeground(list->getSelBackColor());
@@ -102,8 +106,8 @@ void FXColorItem::draw(const FXList* list,FXDC& dc,FXint xx,FXint yy,FXint ww,FX
 
 // See if item got hit, and where: 0 is outside, 1 is icon, 2 is text
 FXint FXColorItem::hitItem(const FXList* list,FXint xx,FXint yy) const {
-  register FXint tw=0,th=0,ix,iy,tx,ty,h;
-  register FXFont *font=list->getFont();
+  FXint tw=0,th=0,ix,iy,tx,ty,h;
+  FXFont *font=list->getFont();
   if(!label.empty()){
     tw=4+font->getTextWidth(label);
     th=4+font->getFontHeight();
@@ -127,8 +131,8 @@ FXint FXColorItem::hitItem(const FXList* list,FXint xx,FXint yy) const {
 
 // Get width of item
 FXint FXColorItem::getWidth(const FXList* list) const {
-  register FXFont *font=list->getFont();
-  register FXint w=SWATCH_WIDTH;
+  FXFont *font=list->getFont();
+  FXint w=SWATCH_WIDTH;
   if(!label.empty()) w+=ICON_SPACING+font->getTextWidth(label);
   return SIDE_SPACING+w;
   }
@@ -136,8 +140,8 @@ FXint FXColorItem::getWidth(const FXList* list) const {
 
 // Get height of item
 FXint FXColorItem::getHeight(const FXList* list) const {
-  register FXFont *font=list->getFont();
-  register FXint h=0;
+  FXFont *font=list->getFont();
+  FXint h=0;
   if(!label.empty()) h=font->getFontHeight();
   return LINE_SPACING+FXMAX(h,SWATCH_HEIGHT);
   }
@@ -162,8 +166,8 @@ FXListItem *FXColorList::createItem(const FXString& text,FXIcon*,void* ptr){
 
 
 // Fill list by appending color items from array of strings and array of colors
-FXint FXColorList::fillItems(const FXchar** strings,FXColor *colors,void* ptr,FXbool notify){
-  register FXint n=0;
+FXint FXColorList::fillItems(const FXchar *const *strings,FXColor *colors,void* ptr,FXbool notify){
+  FXint n=0;
   if(strings){
     while(strings[n]){
       appendItem(strings[n],colors[n],ptr,notify);

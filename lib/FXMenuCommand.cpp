@@ -3,40 +3,43 @@
 *                         M e n u   C o m m a n d    W i d g e t                *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMenuCommand.cpp,v 1.72 2006/01/22 17:58:36 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXMenuCommand.h"
 
@@ -47,7 +50,7 @@
   - When menu label changes, hotkey might have to be adjusted.
   - Fix it so menu stays up when after Alt-F, you press Alt-E.
   - MenuItems should be derived from FXLabel.
-  - FXMenuCascade should send ID_POST/IDUNPOST to self.
+  - FXMenuCascade should send ID_POST/ID_UNPOST to self.
   - Look into SEL_FOCUS_SELF some more...
   - We handle left, middle, right mouse buttons exactly the same;
     this permits popup menus posted by any mouse button.
@@ -96,20 +99,17 @@ FXMenuCommand::FXMenuCommand(){
 
 
 // Command menu item
-FXMenuCommand::FXMenuCommand(FXComposite* p,const FXString& text,FXIcon* ic,FXObject* tgt,FXSelector sel,FXuint opts):
-  FXMenuCaption(p,text,ic,opts){
-  FXAccelTable *table;
-  FXWindow *own;
-  flags|=FLAG_ENABLED;
+FXMenuCommand::FXMenuCommand(FXComposite* p,const FXString& text,FXIcon* ic,FXObject* tgt,FXSelector sel,FXuint opts):FXMenuCaption(p,text,ic,opts){
   defaultCursor=getApp()->getDefaultCursor(DEF_RARROW_CURSOR);
+  flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
   accel=text.section('\t',1);
-  acckey=parseAccel(accel);
+  acckey=FXAccelTable::parseAccel(accel);
   if(acckey){
-    own=getShell()->getOwner();
+    FXWindow *own=getShell()->getOwner();
     if(own){
-      table=own->getAccelTable();
+      FXAccelTable *table=own->getAccelTable();
       if(table){
         table->addAccel(acckey,this,FXSEL(SEL_COMMAND,ID_ACCEL));
         }
@@ -141,7 +141,7 @@ FXint FXMenuCommand::getDefaultHeight(){
 
 
 // If window can have focus
-bool FXMenuCommand::canFocus() const { return true; }
+FXbool FXMenuCommand::canFocus() const { return true; }
 
 
 // Enter
@@ -330,8 +330,22 @@ long FXMenuCommand::onPaint(FXObject*,FXSelector,void* ptr){
 // Change accelerator text; note this just changes the text!
 // This is because the accelerator's target may be different from
 // the MenuCommands and we don't want to blow it away.
-void FXMenuCommand::setAccelText(const FXString& text){
+void FXMenuCommand::setAccelText(const FXString& text,FXbool acc){
   if(accel!=text){
+    if(acc){
+      FXHotKey yekcca=FXAccelTable::parseAccel(text);
+      if(acckey || yekcca){
+        FXWindow *own=getShell()->getOwner();
+        if(own){
+          FXAccelTable *table=own->getAccelTable();
+          if(table){
+            table->removeAccel(acckey);
+            table->addAccel(yekcca,this,FXSEL(SEL_COMMAND,ID_ACCEL));
+            }
+          }
+        }
+      acckey=yekcca;
+      }
     accel=text;
     recalc();
     update();
@@ -357,12 +371,10 @@ void FXMenuCommand::load(FXStream& store){
 
 // Need to uninstall accelerator
 FXMenuCommand::~FXMenuCommand(){
-  FXAccelTable *table;
-  FXWindow *own;
   if(acckey){
-    own=getShell()->getOwner();
+    FXWindow *own=getShell()->getOwner();
     if(own){
-      table=own->getAccelTable();
+      FXAccelTable *table=own->getAccelTable();
       if(table){
         table->removeAccel(acckey);
         }

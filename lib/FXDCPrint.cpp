@@ -3,43 +3,43 @@
 *           D e v i c e   C o n t e x t   F o r   P r i n t i n g               *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDCPrint.cpp,v 1.54 2006/01/22 17:58:21 fox Exp $                       *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXId.h"
 #include "FXFont.h"
 #include "FXCursor.h"
-#include "FXDrawable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXApp.h"
 #include "FXImage.h"
 #include "FXBitmap.h"
 #include "FXIcon.h"
@@ -49,7 +49,6 @@
 #include "FXRootWindow.h"
 #include "FXShell.h"
 #include "FXRegion.h"
-#include "FXDC.h"
 #include "FXDCPrint.h"
 
 
@@ -151,7 +150,7 @@ FXbool FXDCPrint::setContentRange(FXint pxminArg, FXint pyminArg, FXint pxmaxArg
     pxmax=pxmaxArg;
     pymax=pymaxArg;
     }
-  return TRUE;    // Should we check for appropriate ranges?
+  return true;    // Should we check for appropriate ranges?
   }
 
 
@@ -213,7 +212,7 @@ FXbool FXDCPrint::beginPrint(FXPrinter& job){
   // Print to file
   if(job.flags&PRINT_DEST_FILE){
     psout=fopen(job.name.text(),"w");
-    if(!psout) return FALSE;
+    if(!psout) return false;
     }
 
   // Print to printer
@@ -234,7 +233,7 @@ FXbool FXDCPrint::beginPrint(FXPrinter& job){
 #else
     psout=popen(buffer,"w");
 #endif
-    if(!psout) return FALSE;
+    if(!psout) return false;
     }
 
   // Copy flags
@@ -450,7 +449,7 @@ FXbool FXDCPrint::beginPrint(FXPrinter& job){
   // Keep track of #pages
   pagecount=0;
 
-  return TRUE;
+  return true;
   }
 
 
@@ -476,7 +475,7 @@ FXbool FXDCPrint::endPrint(){
   // Done!
   outf("%%%%EOF\n");
   fclose((FILE*)psout);
-  return TRUE;
+  return true;
   }
 
 
@@ -515,7 +514,7 @@ FXbool FXDCPrint::beginPage(FXuint page){
     outf("90 rotate\n");
     }
 
-  return TRUE;
+  return true;
   }
 
 
@@ -553,7 +552,7 @@ FXbool FXDCPrint::endPage(){
   outf("showpage\n");
   outf("grestore\n");
   pagecount++;
-  return TRUE;
+  return true;
   }
 
 
@@ -569,7 +568,7 @@ void FXDCPrint::drawPoint(FXint x,FXint y){
 // Draw points in the current pen color.
 // Each point's position is relative to the drawable's origin (as usual).
 void FXDCPrint::drawPoints(const FXPoint* points,FXuint npoints){
-  register FXuint i;
+  FXuint i;
   FXfloat xx,yy;
   for(i=0; i<npoints; i++){
     tfm(xx,yy,points[i].x,points[i].y);
@@ -601,7 +600,7 @@ void FXDCPrint::drawLine(FXint x1,FXint y1,FXint x2,FXint y2){
 // Draw multiple lines. All points are drawn connected.
 // Each point is specified relative to Drawable's origin.
 void FXDCPrint::drawLines(const FXPoint* points,FXuint npoints){
-  register FXuint i;
+  FXuint i;
   FXfloat xx,yy;
   if(npoints<2) return;
   tfm(xx,yy,points[0].x,points[0].y);
@@ -620,7 +619,7 @@ void FXDCPrint::drawLines(const FXPoint* points,FXuint npoints){
 // First point's coordinate is relative to drawable's origin, but
 // subsequent points' coordinates are relative to previous point.
 void FXDCPrint::drawLinesRel(const FXPoint* points,FXuint npoints){
-  register FXuint i,x,y;
+  FXuint i,x,y;
   FXfloat xx,yy;
   if(npoints<2) return;
   x=points[0].x;
@@ -641,7 +640,7 @@ void FXDCPrint::drawLinesRel(const FXPoint* points,FXuint npoints){
 
 // Draw unconnected line segments
 void FXDCPrint::drawLineSegments(const FXSegment* segments,FXuint nsegments){
-  register FXuint i;
+  FXuint i;
   for(i=0; i<=nsegments; i++)
     outf(" %d %d %d %d",
 		segments[i].x1,Yr-segments[i].y1,
@@ -663,7 +662,7 @@ void FXDCPrint::drawRectangle(FXint x,FXint y,FXint w,FXint h){
 
 // Draw unfilled rectangles
 void FXDCPrint::drawRectangles(const FXRectangle* rectangles,FXuint nrectangles){
-  register FXuint i;
+  FXuint i;
   for(i=0; i<nrectangles; i++){
     drawRectangle(rectangles[i].x,rectangles[i].y,rectangles[i].w,rectangles[i].h);
     }
@@ -710,7 +709,7 @@ void FXDCPrint::fillRectangle(FXint x,FXint y,FXint w,FXint h){
 
 // Filled rectangles
 void FXDCPrint::fillRectangles(const FXRectangle* rectangles,FXuint nrectangles){
-  register FXuint i;
+  FXuint i;
   for(i=0; i<nrectangles; i++){
     fillRectangle(rectangles[i].x,rectangles[i].y,rectangles[i].w,rectangles[i].h);
     }
@@ -750,7 +749,7 @@ void FXDCPrint::fillEllipse(FXint,FXint,FXint,FXint){
 
 // Filled simple polygon
 void FXDCPrint::fillPolygon(const FXPoint* points,FXuint npoints){
-  register FXuint i;
+  FXuint i;
   FXfloat xx,yy;
   if(npoints<2) return;
   tfm(xx,yy,points[0].x,points[0].y);
@@ -933,6 +932,7 @@ void FXDCPrint::drawImage(const FXImage *img,FXint dx,FXint dy){
     FXint    hh = img->getHeight();
     FXuchar *buffer = (FXuchar*)img->getData();
 
+    outf("gsave\n");
     outf("/picstr %d string def\n",ww*3);
     outf("%d %d translate\n",dx,hh-dy);
     outf("%d %d scale\n",ww,-hh);
@@ -942,13 +942,14 @@ void FXDCPrint::drawImage(const FXImage *img,FXint dx,FXint dy){
     outf("false %d\n",3);
     outf("colorimage\n");
 
-    int end=ww*hh;
+    int end=ww*hh*4;
     for(int i=0; i<end ; i+=4){
       outhex(buffer[i]);
       outhex(buffer[i+1]);
       outhex(buffer[i+2]);
       }
     outf("\n");
+    outf("grestore\n");
     }
   }
 

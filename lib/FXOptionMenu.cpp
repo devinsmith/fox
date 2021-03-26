@@ -3,40 +3,43 @@
 *                             O p t i o n   M e n u                             *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXOptionMenu.cpp,v 1.68 2006/02/06 02:04:28 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXLabel.h"
 #include "FXPopup.h"
@@ -98,8 +101,7 @@ FXOption::FXOption(){
   }
 
 // Make option menu entry
-FXOption::FXOption(FXComposite* p,const FXString& text,FXIcon* ic,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXLabel(p,text,ic,opts,x,y,w,h,pl,pr,pt,pb){
+FXOption::FXOption(FXComposite* p,const FXString& text,FXIcon* ic,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXLabel(p,text,ic,opts,x,y,w,h,pl,pr,pt,pb){
   target=tgt;
   message=sel;
   seltextColor=getApp()->getSelMenuTextColor();
@@ -109,7 +111,7 @@ FXOption::FXOption(FXComposite* p,const FXString& text,FXIcon* ic,FXObject* tgt,
 
 
 // If window can have focus
-bool FXOption::canFocus() const { return true; }
+FXbool FXOption::canFocus() const { return true; }
 
 
 // Get default width
@@ -117,6 +119,9 @@ FXint FXOption::getDefaultWidth(){
   FXint tw=0,iw=MENUGLYPH_WIDTH,s=0,w;
   if(!label.empty()){
     tw=labelWidth(label);
+    }
+  if (options&OPTIONMENU_NOGLYPH){
+    iw=0;
     }
   if(icon){
     iw=icon->getWidth();
@@ -132,6 +137,9 @@ FXint FXOption::getDefaultHeight(){
   FXint th=0,ih=MENUGLYPH_HEIGHT,h;
   if(!label.empty()){
     th=labelHeight(label);
+    }
+  if (options&OPTIONMENU_NOGLYPH){
+    ih=0;
     }
   if(icon){
     ih=icon->getHeight();
@@ -150,6 +158,10 @@ long FXOption::onPaint(FXObject*,FXSelector,void* ptr){
     tw=labelWidth(label);
     th=labelHeight(label);
     }
+  if (options&OPTIONMENU_NOGLYPH){
+    iw=0;
+    ih=0;
+    }
   if(icon){
     iw=icon->getWidth();
     ih=icon->getHeight();
@@ -161,7 +173,7 @@ long FXOption::onPaint(FXObject*,FXSelector,void* ptr){
   if(icon){
     dc.drawIcon(icon,ix,iy);
     }
-  else if(isActive()){
+  else if(isActive() && !(options&OPTIONMENU_NOGLYPH)){
     drawDoubleRaisedRectangle(dc,ix,iy,MENUGLYPH_WIDTH,MENUGLYPH_HEIGHT);
     }
   if(!label.empty()){
@@ -323,6 +335,8 @@ FXDEFMAP(FXOptionMenu) FXOptionMenuMap[]={
   FXMAPFUNC(SEL_MOUSEWHEEL,0,FXOptionMenu::onMouseWheel),
   FXMAPFUNC(SEL_LEFTBUTTONPRESS,0,FXOptionMenu::onLeftBtnPress),
   FXMAPFUNC(SEL_LEFTBUTTONRELEASE,0,FXOptionMenu::onLeftBtnRelease),
+  FXMAPFUNC(SEL_ENTER,0,FXOptionMenu::onEnter),
+  FXMAPFUNC(SEL_LEAVE,0,FXOptionMenu::onLeave),
   FXMAPFUNC(SEL_FOCUSIN,0,FXOptionMenu::onFocusIn),
   FXMAPFUNC(SEL_FOCUSOUT,0,FXOptionMenu::onFocusOut),
   FXMAPFUNC(SEL_MOTION,0,FXOptionMenu::onMotion),
@@ -343,8 +357,7 @@ FXIMPLEMENT(FXOptionMenu,FXLabel,FXOptionMenuMap,ARRAYNUMBER(FXOptionMenuMap))
 
 
 // Make a option menu button
-FXOptionMenu::FXOptionMenu(FXComposite* p,FXPopup* pup,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXLabel(p,FXString::null,NULL,opts,x,y,w,h,pl,pr,pt,pb){
+FXOptionMenu::FXOptionMenu(FXComposite* p,FXPopup* pup,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXLabel(p,FXString::null,NULL,opts,x,y,w,h,pl,pr,pt,pb){
   dragCursor=getApp()->getDefaultCursor(DEF_RARROW_CURSOR);
   pane=pup;
   current=NULL;
@@ -411,6 +424,26 @@ long FXOptionMenu::onFocusOut(FXObject* sender,FXSelector sel,void* ptr){
   return 1;
   }
 
+// Entered button
+long FXOptionMenu::onEnter(FXObject* sender,FXSelector sel,void* ptr){
+  FXLabel::onEnter(sender,sel,ptr);
+  if(isEnabled() && (options&OPTIONMENU_TOOLBAR)){
+    update();
+    }
+  return 1;
+  }
+
+
+// Left button
+long FXOptionMenu::onLeave(FXObject* sender,FXSelector sel,void* ptr){
+  FXLabel::onLeave(sender,sel,ptr);
+  if(isEnabled() && (options&OPTIONMENU_TOOLBAR)){
+    update();
+    }
+  return 1;
+  }
+
+
 
 // Handle repaint
 long FXOptionMenu::onPaint(FXObject*,FXSelector,void* ptr){
@@ -418,21 +451,45 @@ long FXOptionMenu::onPaint(FXObject*,FXSelector,void* ptr){
   FXEvent *ev=(FXEvent*)ptr;
   FXDCWindow dc(this,ev);
 
-  drawFrame(dc,0,0,width,height);
+  // Toolbar style
+  if(options&OPTIONMENU_TOOLBAR){
+    if(options&(FRAME_RAISED|FRAME_SUNKEN) && isEnabled() && underCursor()) {
+        if(options&FRAME_THICK) drawDoubleRaisedRectangle(dc,0,0,width,height);
+        else drawRaisedRectangle(dc,0,0,width,height);
 
-  // Draw background
-  dc.setForeground(backColor);
-  dc.fillRectangle(border,border,width-border*2,height-border*2);
+        // Draw background
+        dc.setForeground(backColor);
+        dc.fillRectangle(border,border,width-border*2,height-border*2);
+        }
+    else {
+        dc.setForeground(backColor);
+        dc.fillRectangle(0,0,width,height);
+        }
+    }
+  else {
+    drawFrame(dc,0,0,width,height);
+
+    // Draw background
+    dc.setForeground(backColor);
+    dc.fillRectangle(border,border,width-border*2,height-border*2);
+    }
+
 
   // Position text & icon
   if(!label.empty()){
     tw=labelWidth(label);
     th=labelHeight(label);
     }
+  if(options&OPTIONMENU_NOGLYPH){
+    iw=0;
+    ih=0;
+    }
   if(icon){
     iw=icon->getWidth();
     ih=icon->getHeight();
     }
+
+
 
   just_x(tx,ix,tw,iw);
   just_y(ty,iy,th,ih);
@@ -442,7 +499,7 @@ long FXOptionMenu::onPaint(FXObject*,FXSelector,void* ptr){
     if(icon){
       dc.drawIcon(icon,ix,iy);
       }
-    else{
+    else if (!(options&OPTIONMENU_NOGLYPH)){
       drawDoubleRaisedRectangle(dc,ix,iy,MENUGLYPH_WIDTH,MENUGLYPH_HEIGHT);
       }
     if(!label.empty()){
@@ -460,7 +517,7 @@ long FXOptionMenu::onPaint(FXObject*,FXSelector,void* ptr){
     if(icon){
       dc.drawIconSunken(icon,ix,iy);
       }
-    else{
+    else if (!(options&OPTIONMENU_NOGLYPH)){
       drawDoubleRaisedRectangle(dc,ix,iy,MENUGLYPH_WIDTH,MENUGLYPH_HEIGHT);
       }
     if(!label.empty()){
@@ -571,9 +628,9 @@ long FXOptionMenu::onMouseWheel(FXObject*,FXSelector,void* ptr){
   FXEvent* ev=(FXEvent*)ptr;
   if(isEnabled()){
     if(ev->code>0)
-      setCurrentNo((getCurrentNo()-1+getNumOptions())%getNumOptions(),TRUE);
+      setCurrentNo((getCurrentNo()-1+getNumOptions())%getNumOptions(),true);
     else
-      setCurrentNo((getCurrentNo()+1)%getNumOptions(),TRUE);
+      setCurrentNo((getCurrentNo()+1)%getNumOptions(),true);
     return 1;
     }
   return 0;
@@ -606,7 +663,7 @@ long FXOptionMenu::onCmdUnpost(FXObject*,FXSelector,void* ptr){
     if(grabbed()) ungrab();
     flags|=FLAG_UPDATE;
     if(ptr){
-      setCurrent((FXOption*)ptr,TRUE);
+      setCurrent((FXOption*)ptr,true);
       }
     }
   return 1;
@@ -645,7 +702,7 @@ void FXOptionMenu::layout(){
 
 
 // Logically inside pane
-bool FXOptionMenu::contains(FXint parentx,FXint parenty) const {
+FXbool FXOptionMenu::contains(FXint parentx,FXint parenty) const {
   if(pane && pane->shown() && pane->contains(parentx,parenty)) return true;
   return false;
   }
@@ -659,7 +716,13 @@ void FXOptionMenu::killFocus(){
 
 
 // If window can have focus
-bool FXOptionMenu::canFocus() const { return true; }
+FXbool FXOptionMenu::canFocus() const { return true; }
+
+
+// Return the option item at the given index
+FXOption *FXOptionMenu::getItem(FXint index) const {
+  return pane ? dynamic_cast<FXOption*>(pane->childAtIndex(index)) : NULL;
+  }
 
 
 // Set current selection
@@ -669,7 +732,6 @@ void FXOptionMenu::setCurrent(FXOption *win,FXbool notify){
     if(win){
       setText(current->getText());
       setIcon(current->getIcon());
-      setTextColor(current->getTextColor());
       }
     else{
       setText(FXString::null);
@@ -682,7 +744,7 @@ void FXOptionMenu::setCurrent(FXOption *win,FXbool notify){
 
 // Set current option
 void FXOptionMenu::setCurrentNo(FXint no,FXbool notify){
-  register FXOption *win=NULL;
+  FXOption *win=NULL;
   if(pane) win=dynamic_cast<FXOption*>(pane->childAtIndex(no));
   setCurrent(win,notify);
   }
@@ -702,7 +764,7 @@ FXint FXOptionMenu::getNumOptions() const {
 
 // Change popup
 void FXOptionMenu::setMenu(FXPopup *pup){
-  register FXOption *win;
+  FXOption *win;
   if(pup!=pane){
     pane=pup;
     if(pane){
@@ -710,7 +772,6 @@ void FXOptionMenu::setMenu(FXPopup *pup){
       if(win){
         setText(win->getText());
         setIcon(win->getIcon());
-        setTextColor(win->getTextColor());
         }
       current=win;
       }

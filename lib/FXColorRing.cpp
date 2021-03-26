@@ -3,38 +3,40 @@
 *                         C o l o r R i n g   W i d g e t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXColorRing.cpp,v 1.19 2006/01/22 17:58:20 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXImage.h"
 #include "FXColorRing.h"
 
@@ -98,14 +100,14 @@
   - Also, we calculate the triangle corners during layout; this keeps manipulation
     of saturation and value very cheap [just move the inner ball].
 
-  - Maybe for slow machines a mode to NOT update dial during dragging.
-
-  - Now that it works I need some beer....
+  - Dial can now be justified inside its box.
 */
 
 #define RINGDIAMETER  60        // Default ring outer diameter
 #define RINGWIDTH     14        // Default ring width
 #define MINTRIANGLE   5         // Minimum triangle radius
+
+#define JUSTIFY_MASK  (JUSTIFY_HZ_APART|JUSTIFY_VT_APART)
 
 
 using namespace FX;
@@ -158,8 +160,7 @@ FXColorRing::FXColorRing(){
 
 
 // Make a color ring
-FXColorRing::FXColorRing(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
+FXColorRing::FXColorRing(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
   flags|=FLAG_ENABLED;
   dial=new FXImage(getApp(),NULL,IMAGE_DITHER|IMAGE_KEEP|IMAGE_OWNED|IMAGE_SHMI|IMAGE_SHMP,RINGDIAMETER,RINGDIAMETER);
   target=tgt;
@@ -212,9 +213,9 @@ FXint FXColorRing::getDefaultHeight(){
 
 // Resize the dial
 void FXColorRing::layout(){
-  register FXint ww=width-padleft-padright-(border<<1);
-  register FXint hh=height-padtop-padbottom-(border<<1);
-  register FXint ss;
+  FXint ww=width-padleft-padright-(border<<1);
+  FXint hh=height-padtop-padbottom-(border<<1);
+  FXint ss;
 
   // Enforce minimum triangle size
   ringinner=FXMIN(ww,hh)/2-ringwidth;
@@ -225,8 +226,12 @@ void FXColorRing::layout(){
   ss=ringouter+ringouter+1;
 
   // New dial location in widget
-  dialx=border+padleft+(ww-ss)/2;
-  dialy=border+padtop+(hh-ss)/2;
+  if(options&JUSTIFY_LEFT) dialx=padleft+border;
+  else if(options&JUSTIFY_RIGHT) dialx=width-padright-border-ss;
+  else dialx=border+padleft+(ww-ss)/2;
+  if(options&JUSTIFY_TOP) dialy=padtop+border;
+  else if(options&JUSTIFY_BOTTOM) dialy=height-padbottom-border-ss;
+  else dialy=border+padtop+(hh-ss)/2;
 
   // Do work if size changed or marked dirty
   if((dial->getWidth()!=ss) || (flags&FLAG_DIRTY)){
@@ -255,20 +260,19 @@ void FXColorRing::layout(){
 
 // Recompute the dial image
 void FXColorRing::updatering(){
-  register FXfloat invdet,a,s,v;
-  register FXint o2,i2,r2,rx,ry,x,y;
-  FXfloat r,g,b;
+  FXfloat invdet,a,s,v,r,g,b;
+  FXint o2,i2,r2,rx,ry,x,y;
 
   // Hue angle in radians
   a=(hsv[0]-180.0f)*DTOR;
 
   // Calculate triangle points
-  clrx=(FXint)(ringinner*cosf(a)+0.5f);
-  clry=(FXint)(ringinner*sinf(a)+0.5f);
-  blkx=(FXint)(ringinner*cosf(a+2.0f*PI/3.0f)+0.5f);
-  blky=(FXint)(ringinner*sinf(a+2.0f*PI/3.0f)+0.5f);
-  whtx=(FXint)(ringinner*cosf(a-2.0f*PI/3.0f)+0.5f);
-  whty=(FXint)(ringinner*sinf(a-2.0f*PI/3.0f)+0.5f);
+  clrx=(FXint)(ringinner*Math::cos(a)+0.5f);
+  clry=(FXint)(ringinner*Math::sin(a)+0.5f);
+  blkx=(FXint)(ringinner*Math::cos(a+2.0f*PI/3.0f)+0.5f);
+  blky=(FXint)(ringinner*Math::sin(a+2.0f*PI/3.0f)+0.5f);
+  whtx=(FXint)(ringinner*Math::cos(a-2.0f*PI/3.0f)+0.5f);
+  whty=(FXint)(ringinner*Math::sin(a-2.0f*PI/3.0f)+0.5f);
 
   // To test for ring
   o2=ringouter*ringouter;
@@ -290,7 +294,7 @@ void FXColorRing::updatering(){
         if(i2<=r2){
 
           // Compute color
-          fxhsv_to_rgb(r,g,b,atan2f(ry,rx)*RTOD+180.0f,1.0f,1.0f);
+          fxhsv_to_rgb(r,g,b,Math::atan2((FXfloat)ry,(FXfloat)rx)*RTOD+180.0f,1.0f,1.0f);
           dial->setPixel(x,y,FXRGB(255.0f*r,255.0f*g,255.0f*b));
           continue;
           }
@@ -318,40 +322,40 @@ void FXColorRing::updatering(){
 
 // Test if inside hue ring
 FXbool FXColorRing::inHueRing(FXint x,FXint y) const {
-  register FXint rx=x-dialx-ringouter;
-  register FXint ry=y-dialy-ringouter;
+  FXint rx=x-dialx-ringouter;
+  FXint ry=y-dialy-ringouter;
   return ringinner*ringinner<=rx*rx+ry*ry;
   }
 
 
 // Compute hue from position on ring x, y
 FXfloat FXColorRing::hueFromXY(FXint x,FXint y) const {
-  return atan2f(y-dialy-ringouter,x-dialx-ringouter)*RTOD+180.0f;
+  return Math::atan2((FXfloat)(y-dialy-ringouter),(FXfloat)(x-dialx-ringouter))*RTOD+180.0f;
   }
 
 
 // Compute position on ring from hue
 void FXColorRing::hueToXY(FXint& x,FXint& y,FXfloat hue) const {
-  register FXfloat a=(hue-180.0f)*DTOR;
-  register FXfloat r=ringouter-ringwidth*0.5f;
-  x=dialx+ringouter+(FXint)(r*cosf(a)+0.5f);
-  y=dialy+ringouter+(FXint)(r*sinf(a)+0.5f);
+  FXfloat a=(hue-180.0f)*DTOR;
+  FXfloat r=ringouter-ringwidth*0.5f;
+  x=dialx+ringouter+(FXint)(r*Math::cos(a)+0.5f);
+  y=dialy+ringouter+(FXint)(r*Math::sin(a)+0.5f);
   }
 
 
 
 // Test if inside saturation/value triangle
 FXbool FXColorRing::inTriangle(FXint x,FXint y) const {
-  register FXint rx=x-dialx-ringouter;
-  register FXint ry=y-dialy-ringouter;
+  FXint rx=x-dialx-ringouter;
+  FXint ry=y-dialy-ringouter;
   return 0<=(clry-blky)*(rx-clrx)-(clrx-blkx)*(ry-clry) && 0<=(whty-clry)*(rx-whtx)-(whtx-clrx)*(ry-whty) && 0<=(blky-whty)*(rx-blkx)-(blkx-whtx)*(ry-blky);
   }
 
 
 // Compute x,y location from saturation and value
 void FXColorRing::satValToXY(FXint& x,FXint& y,FXfloat s,FXfloat v) const {
-  register FXfloat px=whtx+(clrx-whtx)*s;
-  register FXfloat py=whty+(clry-whty)*s;
+  FXfloat px=whtx+(clrx-whtx)*s;
+  FXfloat py=whty+(clry-whty)*s;
   x=dialx+ringouter+blkx+(FXint)((px-blkx)*v+0.5f);
   y=dialy+ringouter+blky+(FXint)((py-blky)*v+0.5f);
   }
@@ -359,9 +363,9 @@ void FXColorRing::satValToXY(FXint& x,FXint& y,FXfloat s,FXfloat v) const {
 
 // Compute saturation and value given x, y in triangle and hue
 void FXColorRing::satValFromXY(FXfloat& s,FXfloat& v,FXint x,FXint y) const {
-  register FXint rx=x-dialx-ringouter;
-  register FXint ry=y-dialy-ringouter;
-  register FXfloat ss,vv;
+  FXint rx=x-dialx-ringouter;
+  FXint ry=y-dialy-ringouter;
+  FXfloat ss,vv;
 
   // Outside triangle on blk-clr side
   if((clry-blky)*(rx-clrx)-(clrx-blkx)*(ry-clry)<0){
@@ -406,8 +410,8 @@ void FXColorRing::satValFromXY(FXfloat& s,FXfloat& v,FXint x,FXint y) const {
     }
 
   // Clamp to range
-  s=FXCLAMP(0.0f,ss,1.0f);
-  v=FXCLAMP(0.0f,vv,1.0f);
+  s=Math::fclamp(0.0f,ss,1.0f);
+  v=Math::fclamp(0.0f,vv,1.0f);
   }
 
 
@@ -442,7 +446,7 @@ long FXColorRing::onCmdGetTip(FXObject*,FXSelector,void* ptr){
 
 // We were asked about tip text
 long FXColorRing::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryTip(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryTip(sender,sel,ptr)) return 1;
   if((flags&FLAG_TIP) && !tip.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&tip);
     return 1;
@@ -453,7 +457,7 @@ long FXColorRing::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
 
 // We were asked about status text
 long FXColorRing::onQueryHelp(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryHelp(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryHelp(sender,sel,ptr)) return 1;
   if((flags&FLAG_HELP) && !help.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&help);
     return 1;
@@ -504,8 +508,8 @@ long FXColorRing::onPaint(FXObject*,FXSelector,void* ptr){
 
 // Determine if special case applies
 FXbool FXColorRing::inCorner(FXint x,FXint y) const {
-  register FXint rx=x-dialx-ringouter;
-  register FXint ry=y-dialy-ringouter;
+  FXint rx=x-dialx-ringouter;
+  FXint ry=y-dialy-ringouter;
   return (ringouter*ringouter<=rx*rx+ry*ry) && (0.99999f<=hsv[1] && 0.99999f<=hsv[2]);
   }
 
@@ -577,7 +581,7 @@ long FXColorRing::onMouseWheel(FXObject*,FXSelector,void* ptr){
   FXfloat amount=((FXEvent*)ptr)->code/12.0f;
   if(isEnabled()){
     if(((FXEvent*)ptr)->state&CONTROLMASK) amount/=10.0f;
-    setHue(fmodf(hsv[0]+amount+360.0f,360.0f));
+    setHue(Math::fmod(hsv[0]+amount+360.0f,360.0f));
     if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)hsv);
     return 1;
     }
@@ -587,7 +591,7 @@ long FXColorRing::onMouseWheel(FXObject*,FXSelector,void* ptr){
 
 // Change hue
 void FXColorRing::setHue(FXfloat h){
-  h=FXCLAMP(0.0f,h,360.0f);
+  h=Math::fclamp(0.0f,h,360.0f);
   if(hsv[0]!=h){
     hsv[0]=h;
     update(huex-4,huey-4,9,9);
@@ -600,7 +604,7 @@ void FXColorRing::setHue(FXfloat h){
 
 // Change saturation
 void FXColorRing::setSat(FXfloat s){
-  s=FXCLAMP(0.0f,s,1.0f);
+  s=Math::fclamp(0.0f,s,1.0f);
   if(hsv[1]!=s){
     hsv[1]=s;
     update(satvalx-4,satvaly-4,9,9);
@@ -612,7 +616,7 @@ void FXColorRing::setSat(FXfloat s){
 
 // Change saturation
 void FXColorRing::setVal(FXfloat v){
-  v=FXCLAMP(0.0f,v,1.0f);
+  v=Math::fclamp(0.0f,v,1.0f);
   if(hsv[2]!=v){
     hsv[2]=v;
     update(satvalx-4,satvaly-4,9,9);
@@ -622,14 +626,13 @@ void FXColorRing::setVal(FXfloat v){
   }
 
 
-
 // Set hue, saturation, value
 void FXColorRing::setHueSatVal(FXfloat h,FXfloat s,FXfloat v){
 
   // Clamp
-  h=FXCLAMP(0.0f,h,360.0f);
-  s=FXCLAMP(0.0f,s,1.0f);
-  v=FXCLAMP(0.0f,v,1.0f);
+  h=Math::fclamp(0.0f,h,360.0f);
+  s=Math::fclamp(0.0f,s,1.0f);
+  v=Math::fclamp(0.0f,v,1.0f);
 
   // Changed after clamping?
   if(hsv[0]!=h || hsv[1]!=s || hsv[2]!=v){
@@ -659,6 +662,22 @@ void FXColorRing::setRingWidth(FXint rw){
     ringwidth=rw;
     recalc();
     }
+  }
+
+
+// Set text justify style
+void FXColorRing::setJustify(FXuint style){
+  FXuint opts=(options&~JUSTIFY_MASK) | (style&JUSTIFY_MASK);
+  if(options!=opts){
+    options=opts;
+    recalc();
+    }
+  }
+
+
+// Get text justify style
+FXuint FXColorRing::getJustify() const {
+  return (options&JUSTIFY_MASK);
   }
 
 

@@ -3,42 +3,43 @@
 *             M u l t i p l e   D o c u m e n t   B u t t o n                   *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMDIButton.cpp,v 1.28 2006/01/22 17:58:33 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
-#include "FXIcon.h"
-#include "FXGIFIcon.h"
+#include "FXEvent.h"
 #include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
+#include "FXGIFIcon.h"
 #include "FXFrame.h"
 #include "FXLabel.h"
 #include "FXButton.h"
@@ -77,8 +78,7 @@ FXIMPLEMENT(FXMDIDeleteButton,FXButton,FXMDIDeleteButtonMap,ARRAYNUMBER(FXMDIDel
 
 
 // Make delete button
-FXMDIDeleteButton::FXMDIDeleteButton(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXButton(p,"\tClose\tClose Window.",NULL,tgt,sel,opts,x,y,w,h,3,3,2,2){
+FXMDIDeleteButton::FXMDIDeleteButton(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXButton(p,"\tClose\tClose Window.",NULL,tgt,sel,opts,x,y,w,h,3,3,2,2){
   }
 
 
@@ -115,20 +115,20 @@ long FXMDIDeleteButton::onPaint(FXObject*,FXSelector,void* ptr){
     dc.setForeground(textColor);
   else
     dc.setForeground(shadowColor);
-#ifndef WIN32
-  dc.drawLine(xx,  yy,  xx+8,yy+8);
-  dc.drawLine(xx+1,yy,  xx+8,yy+7);
-  dc.drawLine(xx,  yy+1,xx+7,yy+8);
-  dc.drawLine(xx+8,yy,  xx,  yy+8);
-  dc.drawLine(xx+8,yy+1,xx+1,yy+8);
-  dc.drawLine(xx+7,yy,  xx,  yy+7);
-#else
+#ifdef WIN32
   dc.drawLine(xx,  yy,  xx+9,yy+9);
   dc.drawLine(xx+1,yy,  xx+9,yy+8);
   dc.drawLine(xx,  yy+1,xx+8,yy+9);
   dc.drawLine(xx,  yy+8,xx+9,yy-1);
   dc.drawLine(xx+1,yy+8,xx+9,  yy);
   dc.drawLine(xx,  yy+7,xx+8,yy-1);
+#else
+  dc.drawLine(xx,  yy,  xx+8,yy+8);
+  dc.drawLine(xx+1,yy,  xx+8,yy+7);
+  dc.drawLine(xx,  yy+1,xx+7,yy+8);
+  dc.drawLine(xx+8,yy,  xx,  yy+8);
+  dc.drawLine(xx+8,yy+1,xx+1,yy+8);
+  dc.drawLine(xx+7,yy,  xx,  yy+7);
 #endif
   return 1;
   }
@@ -148,8 +148,7 @@ FXIMPLEMENT(FXMDIRestoreButton,FXButton,FXMDIRestoreButtonMap,ARRAYNUMBER(FXMDIR
 
 
 // Make restore button
-FXMDIRestoreButton::FXMDIRestoreButton(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXButton(p,"\tRestore\tRestore Window.",NULL,tgt,sel,opts,x,y,w,h,3,3,2,2){
+FXMDIRestoreButton::FXMDIRestoreButton(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXButton(p,"\tRestore\tRestore Window.",NULL,tgt,sel,opts,x,y,w,h,3,3,2,2){
   }
 
 
@@ -214,8 +213,7 @@ FXIMPLEMENT(FXMDIMaximizeButton,FXButton,FXMDIMaximizeButtonMap,ARRAYNUMBER(FXMD
 
 
 // Make maximize button
-FXMDIMaximizeButton::FXMDIMaximizeButton(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXButton(p,"\tMaximize\tMaximize Window.",NULL,tgt,sel,opts,x,y,w,h,3,3,2,2){
+FXMDIMaximizeButton::FXMDIMaximizeButton(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXButton(p,"\tMaximize\tMaximize Window.",NULL,tgt,sel,opts,x,y,w,h,3,3,2,2){
   }
 
 FXint FXMDIMaximizeButton::getDefaultWidth(){
@@ -271,8 +269,7 @@ FXIMPLEMENT(FXMDIMinimizeButton,FXButton,FXMDIMinimizeButtonMap,ARRAYNUMBER(FXMD
 
 
 // Make minimize button
-FXMDIMinimizeButton::FXMDIMinimizeButton(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXButton(p,"\tMinimize\tMinimize Window.",NULL,tgt,sel,opts,x,y,w,h,3,3,2,2){
+FXMDIMinimizeButton::FXMDIMinimizeButton(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXButton(p,"\tMinimize\tMinimize Window.",NULL,tgt,sel,opts,x,y,w,h,3,3,2,2){
   }
 
 
@@ -329,8 +326,7 @@ FXIMPLEMENT(FXMDIWindowButton,FXMenuButton,FXMDIWindowButtonMap,ARRAYNUMBER(FXMD
 
 
 // Make window button
-FXMDIWindowButton::FXMDIWindowButton(FXComposite* p,FXPopup* pup,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXMenuButton(p,FXString::null,NULL,pup,opts,x,y,w,h,0,0,0,0){
+FXMDIWindowButton::FXMDIWindowButton(FXComposite* p,FXPopup* pup,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXMenuButton(p,FXString::null,NULL,pup,opts,x,y,w,h,0,0,0,0){
   tip="Menu";
   target=tgt;
   message=sel;
@@ -404,7 +400,7 @@ FXIMPLEMENT(FXMDIMenu,FXMenuPane,NULL,0)
 
 
 // Convenience constructor
-FXMDIMenu::FXMDIMenu(FXWindow *owner,FXObject* tgt):FXMenuPane(owner){
+FXMDIMenu::FXMDIMenu(FXWindow *own,FXObject* tgt):FXMenuPane(own){
   closeicon=new FXGIFIcon(getApp(),winclose);
   maximizeicon=new FXGIFIcon(getApp(),winmaximize);
   minimizeicon=new FXGIFIcon(getApp(),winminimize);

@@ -3,39 +3,42 @@
 *                     T o o l   B a r   T a b   O b j e c t                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXToolBarTab.cpp,v 1.22 2006/01/22 17:58:48 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXToolBarTab.h"
 
 
@@ -59,8 +62,8 @@ namespace FX {
 
 // Map
 FXDEFMAP(FXToolBarTab) FXToolBarTabMap[]={
-  FXMAPFUNC(SEL_PAINT,0,FXToolBarTab::onPaint),
   FXMAPFUNC(SEL_UPDATE,0,FXToolBarTab::onUpdate),
+  FXMAPFUNC(SEL_PAINT,0,FXToolBarTab::onPaint),
   FXMAPFUNC(SEL_ENTER,0,FXToolBarTab::onEnter),
   FXMAPFUNC(SEL_LEAVE,0,FXToolBarTab::onLeave),
   FXMAPFUNC(SEL_UNGRABBED,0,FXToolBarTab::onUngrabbed),
@@ -86,25 +89,24 @@ FXIMPLEMENT(FXToolBarTab,FXFrame,FXToolBarTabMap,ARRAYNUMBER(FXToolBarTabMap))
 FXToolBarTab::FXToolBarTab(){
   flags|=FLAG_ENABLED;
   activeColor=FXRGB(150,156,224);
-  collapsed=FALSE;
-  down=FALSE;
+  collapsed=false;
+  down=false;
   }
 
 
 // Construct and init
-FXToolBarTab::FXToolBarTab(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXFrame(p,opts,x,y,w,h){
+FXToolBarTab::FXToolBarTab(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXFrame(p,opts,x,y,w,h){
   flags|=FLAG_ENABLED;
   activeColor=FXRGB(150,156,224);
   target=tgt;
   message=sel;
-  collapsed=FALSE;
-  down=FALSE;
+  collapsed=false;
+  down=false;
   }
 
 
 // If window can have focus
-bool FXToolBarTab::canFocus() const { return true; }
+FXbool FXToolBarTab::canFocus() const { return true; }
 
 
 // Enable the window
@@ -204,12 +206,12 @@ long FXToolBarTab::onUpdate(FXObject* sender,FXSelector sel,void* ptr){
   FXFrame::onUpdate(sender,sel,ptr);
   if(sibling){
     if(sibling->shown() && collapsed){
-      collapsed=FALSE;
+      collapsed=false;
       update();
       recalc();
       }
     else if(!sibling->shown() && !collapsed){
-      collapsed=TRUE;
+      collapsed=true;
       update();
       recalc();
       }
@@ -222,7 +224,7 @@ long FXToolBarTab::onUpdate(FXObject* sender,FXSelector sel,void* ptr){
 long FXToolBarTab::onEnter(FXObject* sender,FXSelector sel,void* ptr){
   FXFrame::onEnter(sender,sel,ptr);
   if(isEnabled()){
-    if(flags&FLAG_PRESSED) down=TRUE;
+    if(flags&FLAG_PRESSED) down=true;
     update();
     }
   return 1;
@@ -233,7 +235,7 @@ long FXToolBarTab::onEnter(FXObject* sender,FXSelector sel,void* ptr){
 long FXToolBarTab::onLeave(FXObject* sender,FXSelector sel,void* ptr){
   FXFrame::onLeave(sender,sel,ptr);
   if(isEnabled()){
-    if(flags&FLAG_PRESSED) down=FALSE;
+    if(flags&FLAG_PRESSED) down=false;
     update();
     }
   return 1;
@@ -246,7 +248,7 @@ long FXToolBarTab::onLeftBtnPress(FXObject* sender,FXSelector sel,void* ptr){
     if(isEnabled() && !(flags&FLAG_PRESSED)){
       flags|=FLAG_PRESSED;
       flags&=~FLAG_UPDATE;
-      down=TRUE;
+      down=true;
       update();
       return 1;
       }
@@ -262,9 +264,9 @@ long FXToolBarTab::onLeftBtnRelease(FXObject* sender,FXSelector sel,void* ptr){
     if(isEnabled() && (flags&FLAG_PRESSED)){
       flags|=FLAG_UPDATE;
       flags&=~FLAG_PRESSED;
-      down=FALSE;
+      down=false;
       update();
-      if(click) collapse(!collapsed,TRUE);
+      if(click) collapse(!collapsed,true);
       return 1;
       }
     }
@@ -277,7 +279,7 @@ long FXToolBarTab::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
   FXFrame::onUngrabbed(sender,sel,ptr);
   flags&=~FLAG_PRESSED;
   flags|=FLAG_UPDATE;
-  down=FALSE;
+  down=false;
   update();
   return 1;
   }
@@ -290,7 +292,7 @@ long FXToolBarTab::onKeyPress(FXObject*,FXSelector,void* ptr){
   if(isEnabled() && !(flags&FLAG_PRESSED)){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr)) return 1;
     if(event->code==KEY_space || event->code==KEY_KP_Space){
-      down=TRUE;
+      down=true;
       update();
       flags|=FLAG_PRESSED;
       flags&=~FLAG_UPDATE;
@@ -307,11 +309,11 @@ long FXToolBarTab::onKeyRelease(FXObject*,FXSelector,void* ptr){
   if(isEnabled() && (flags&FLAG_PRESSED)){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr)) return 1;
     if(event->code==KEY_space || event->code==KEY_KP_Space){
-      down=FALSE;
+      down=false;
       update();
       flags|=FLAG_UPDATE;
       flags&=~FLAG_PRESSED;
-      collapse(!collapsed,TRUE);
+      collapse(!collapsed,true);
       return 1;
       }
     }
@@ -321,7 +323,7 @@ long FXToolBarTab::onKeyRelease(FXObject*,FXSelector,void* ptr){
 
 // Collapse
 long FXToolBarTab::onCmdCollapse(FXObject*,FXSelector,void*){
-  collapse(TRUE,TRUE);
+  collapse(true,true);
   return 1;
   }
 
@@ -338,7 +340,7 @@ long FXToolBarTab::onUpdCollapse(FXObject* sender,FXSelector,void*){
 
 // Uncollapse
 long FXToolBarTab::onCmdUncollapse(FXObject*,FXSelector,void*){
-  collapse(FALSE,TRUE);
+  collapse(false,true);
   return 1;
   }
 
@@ -355,7 +357,7 @@ long FXToolBarTab::onUpdUncollapse(FXObject* sender,FXSelector,void*){
 
 // We were asked about tip text
 long FXToolBarTab::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryTip(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryTip(sender,sel,ptr)) return 1;
   if((flags&FLAG_TIP) && !tip.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&tip);
     return 1;
@@ -380,7 +382,7 @@ long FXToolBarTab::onCmdGetTip(FXObject*,FXSelector,void* ptr){
 
 // Draw horizontal speckles
 void FXToolBarTab::drawHSpeckles(FXDCWindow& dc,FXint x,FXint w){
-  register FXint i;
+  FXint i;
   dc.setForeground(hiliteColor);
   for(i=0; i<w-5; i+=4){dc.drawPoint(x+i,2);dc.drawPoint(x+i+1,5);}
   dc.setForeground(shadowColor);
@@ -390,7 +392,7 @@ void FXToolBarTab::drawHSpeckles(FXDCWindow& dc,FXint x,FXint w){
 
 // Draw vertical speckles
 void FXToolBarTab::drawVSpeckles(FXDCWindow& dc,FXint y,FXint h){
-  register FXint i;
+  FXint i;
   dc.setForeground(hiliteColor);
   for(i=0; i<h-5; i+=3){dc.drawPoint(2,y+i+1);dc.drawPoint(5,y+i);}
   dc.setForeground(shadowColor);

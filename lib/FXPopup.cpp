@@ -3,40 +3,43 @@
 *                     P o p u p   W i n d o w   O b j e c t                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXPopup.cpp,v 1.91.2.4 2007/03/08 01:51:52 fox Exp $                         *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
-#include "fxpriv.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXPopup.h"
+#include "fxpriv.h"
 
 /*
   Notes:
@@ -51,6 +54,10 @@
     a popup menu just to get a single choice value back.
   - Do not assume root window is at (0,0); multi-monitor machines may
     have secondary monitor anywhere relative to primary display.
+  - If any child is resized due to GUI update, and FXPopup is in
+    POPUP_SHRINKWRAP mode, ID_LAYOUT causes resize() of the popup it
+    self as well as layout() of its interior.  For normal shell windows
+    only layout() is called.
 */
 
 
@@ -86,6 +93,7 @@ FXDEFMAP(FXPopup) FXPopupMap[]={
   FXMAPFUNC(SEL_KEYPRESS,0,FXPopup::onKeyPress),
   FXMAPFUNC(SEL_KEYRELEASE,0,FXPopup::onKeyRelease),
   FXMAPFUNC(SEL_UNGRABBED,0,FXPopup::onUngrabbed),
+  FXMAPFUNC(SEL_CHORE,FXPopup::ID_LAYOUT,FXPopup::onLayout),
   FXMAPFUNC(SEL_COMMAND,FXWindow::ID_UNPOST,FXPopup::onCmdUnpost),
   FXMAPFUNCS(SEL_COMMAND,FXPopup::ID_CHOICE,FXPopup::ID_CHOICE+999,FXPopup::onCmdChoice),
   };
@@ -101,8 +109,7 @@ FXPopup::FXPopup():prevActive(NULL),nextActive(NULL){
 
 
 // Transient window used for popups
-FXPopup::FXPopup(FXWindow* owner,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXShell(owner,opts,x,y,w,h),prevActive(NULL),nextActive(NULL){
+FXPopup::FXPopup(FXWindow* own,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXShell(own,opts,x,y,w,h),prevActive(NULL),nextActive(NULL){
   defaultCursor=getApp()->getDefaultCursor(DEF_RARROW_CURSOR);
   dragCursor=getApp()->getDefaultCursor(DEF_RARROW_CURSOR);
   flags|=FLAG_ENABLED;
@@ -116,20 +123,20 @@ FXPopup::FXPopup(FXWindow* owner,FXuint opts,FXint x,FXint y,FXint w,FXint h):
 
 
 // Popups do override-redirect
-bool FXPopup::doesOverrideRedirect() const {
+FXbool FXPopup::doesOverrideRedirect() const {
   return true;
   }
 
 
 // Popups do save-unders
-bool FXPopup::doesSaveUnder() const {
+FXbool FXPopup::doesSaveUnder() const {
   return true;
   }
 
 
 #ifdef WIN32
 
-const char* FXPopup::GetClass() const { return "FXPopup"; }
+const void* FXPopup::GetClass() const { return TEXT("FXPopup"); }
 
 #endif
 
@@ -163,9 +170,9 @@ FXWindow* FXPopup::getGrabOwner() const {
 
 // Get width
 FXint FXPopup::getDefaultWidth(){
-  register FXWindow* child;
-  register FXint w,wmax,wcum;
-  register FXuint hints;
+  FXWindow* child;
+  FXint w,wmax,wcum;
+  FXuint hints;
   wmax=wcum=0;
   for(child=getFirst(); child; child=child->getNext()){
     if(child->shown()){
@@ -191,9 +198,9 @@ FXint FXPopup::getDefaultWidth(){
 
 // Get height
 FXint FXPopup::getDefaultHeight(){
-  register FXWindow* child;
-  register FXint h,hmax,hcum;
-  register FXuint hints;
+  FXWindow* child;
+  FXint h,hmax,hcum;
+  FXuint hints;
   hmax=hcum=0;
   for(child=getFirst(); child; child=child->getNext()){
     if(child->shown()){
@@ -219,14 +226,14 @@ FXint FXPopup::getDefaultHeight(){
 
 // Recalculate layout
 void FXPopup::layout(){
-  register FXWindow *child;
-  register FXint w,h,x,y,remain,t;
-  register FXuint hints;
-  register FXint sumexpand=0;
-  register FXint numexpand=0;
-  register FXint mw=0;
-  register FXint mh=0;
-  register FXint e=0;
+  FXWindow *child;
+  FXint w,h,x,y,remain,t;
+  FXuint hints;
+  FXint sumexpand=0;
+  FXint numexpand=0;
+  FXint mw=0;
+  FXint mh=0;
+  FXint e=0;
 
   // Horizontal
   if(options&POPUP_HORIZONTAL){
@@ -524,28 +531,20 @@ long FXPopup::onFocusPrev(FXObject*,FXSelector,void* ptr){
 
 // Moved into the popup:- tell the target
 long FXPopup::onEnter(FXObject* sender,FXSelector sel,void* ptr){
-  FXEvent* event=(FXEvent*)ptr;
-  FXint px, py;
+  FXint px,py;
   FXShell::onEnter(sender,sel,ptr);
-//  if(event->code==CROSSINGNORMAL){
-  //if(((FXEvent*)ptr)->code!=CROSSINGGRAB){
-    translateCoordinatesTo(px,py,getParent(),event->win_x,event->win_y); // Patch from Michael Nold <mn@sol-3.de>
-    if(contains(px,py) && getGrabOwner()->grabbed()) getGrabOwner()->ungrab();
-//    }
+  translateCoordinatesTo(px,py,getParent(),((FXEvent*)ptr)->win_x,((FXEvent*)ptr)->win_y);
+  if(contains(px,py) && getGrabOwner()->grabbed()) getGrabOwner()->ungrab();
   return 1;
   }
 
 
 // Moved outside the popup:- tell the target
 long FXPopup::onLeave(FXObject* sender,FXSelector sel,void* ptr){
-  FXEvent* event=(FXEvent*)ptr;
   FXint px,py;
   FXShell::onLeave(sender,sel,ptr);
-//  if(event->code==CROSSINGNORMAL){
-  //if(((FXEvent*)ptr)->code!=CROSSINGGRAB){
-    translateCoordinatesTo(px,py,getParent(),event->win_x,event->win_y); // Patch from Michael Nold <mn@sol-3.de>
-    if(!contains(px,py) && shown() && !getGrabOwner()->grabbed() && getGrabOwner()->shown()) getGrabOwner()->grab();
-//    }
+  translateCoordinatesTo(px,py,getParent(),((FXEvent*)ptr)->win_x,((FXEvent*)ptr)->win_y);
+  if(!contains(px,py) && shown() && !getGrabOwner()->grabbed() && getGrabOwner()->shown()) getGrabOwner()->grab();
   return 1;
   }
 
@@ -580,6 +579,18 @@ long FXPopup::onMap(FXObject* sender,FXSelector sel,void* ptr){
   }
 
 
+// Perform layout; return 0 because no GUI update is needed
+long FXPopup::onLayout(FXObject*,FXSelector,void*){
+  if(getShrinkWrap()){
+    resize(getDefaultWidth(),getDefaultHeight());
+    }
+  else{
+    layout();
+    }
+  return 0;
+  }
+
+
 // Pressed button outside popup
 long FXPopup::onButtonPress(FXObject*,FXSelector,void*){
   FXTRACE((200,"%s::onButtonPress %p\n",getClassName(),this));
@@ -610,7 +621,6 @@ long FXPopup::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
 // Key press; escape cancels popup
 long FXPopup::onKeyPress(FXObject* sender,FXSelector sel,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
-//  if(event->code==KEY_Escape || event->code==KEY_Cancel || event->code==KEY_Alt_L || event->code==KEY_Alt_R){
   if(event->code==KEY_Escape || event->code==KEY_Cancel){
     handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
     return 1;
@@ -675,15 +685,10 @@ void FXPopup::hide(){
 // Popup the menu at some location
 void FXPopup::popup(FXWindow* grabto,FXint x,FXint y,FXint w,FXint h){
   FXint rx,ry,rw,rh;
-#ifndef WIN32
-  rx=getRoot()->getX();
-  ry=getRoot()->getY();
-  rw=getRoot()->getWidth();
-  rh=getRoot()->getHeight();
-#else
+#ifdef WIN32
   RECT rect;
-  MYMONITORINFO minfo;
-  HANDLE monitor;
+  MONITORINFO minfo;
+  HMONITOR monitor;
 
   rect.left=x;
   rect.right=x+w;
@@ -691,11 +696,11 @@ void FXPopup::popup(FXWindow* grabto,FXint x,FXint y,FXint w,FXint h){
   rect.bottom=y+h;
 
   // Get monitor info if we have this API
-  monitor=fxMonitorFromRect(&rect,MONITOR_DEFAULTTOPRIMARY);
+  monitor=MonitorFromRect(&rect,MONITOR_DEFAULTTOPRIMARY);
   if(monitor){
     memset(&minfo,0,sizeof(minfo));
     minfo.cbSize=sizeof(minfo);
-    fxGetMonitorInfo(monitor,&minfo);
+    GetMonitorInfo(monitor,&minfo);
     rx=minfo.rcWork.left;
     ry=minfo.rcWork.top;
     rw=minfo.rcWork.right-minfo.rcWork.left;
@@ -710,8 +715,12 @@ void FXPopup::popup(FXWindow* grabto,FXint x,FXint y,FXint w,FXint h){
     rw=rect.right-rect.left;
     rh=rect.bottom-rect.top;
     }
+#else
+  rx=getRoot()->getX();
+  ry=getRoot()->getY();
+  rw=getRoot()->getWidth();
+  rh=getRoot()->getHeight();
 #endif
-
   FXTRACE((150,"%s::popup %p\n",getClassName(),this));
   grabowner=grabto;
   if((options&POPUP_SHRINKWRAP) || w<=1) w=getDefaultWidth();
@@ -735,7 +744,6 @@ void FXPopup::popdown(){
   grabowner=NULL;
   killFocus();
   hide();
-  getApp()->flush(true);
   }
 
 
@@ -817,7 +825,7 @@ FXuint FXPopup::getOrientation() const {
 
 // Set popup orientation
 void FXPopup::setOrientation(FXuint orient){
-  FXuint opts=(options&~POPUP_HORIZONTAL) | (orient&POPUP_HORIZONTAL);
+  FXuint opts=((orient^options)&POPUP_HORIZONTAL)^options;
   if(options!=opts){
     options=opts;
     recalc();
@@ -832,14 +840,14 @@ FXbool FXPopup::getShrinkWrap() const {
 
 
 // Change shrinkwrap mode
-void FXPopup::setShrinkWrap(FXbool sw){
-  options=sw ? (options|POPUP_SHRINKWRAP) : (options&~POPUP_SHRINKWRAP);
+void FXPopup::setShrinkWrap(FXbool flag){
+  options^=((0-flag)^options)&POPUP_SHRINKWRAP;
   }
 
 
 // Change frame border style
 void FXPopup::setFrameStyle(FXuint style){
-  FXuint opts=(options&~FRAME_MASK) | (style&FRAME_MASK);
+  FXuint opts=((style^options)&FRAME_MASK)^options;
   if(options!=opts){
     FXint b=(opts&FRAME_THICK) ? 2 : (opts&(FRAME_SUNKEN|FRAME_RAISED)) ? 1 : 0;
     options=opts;

@@ -1,43 +1,44 @@
 /********************************************************************************
 *                                                                               *
-*                        T o o l B a r   W i d g e t                            *
+*                        T o o l   B a r   W i d g e t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2004,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2004,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXToolBar.cpp,v 1.48.2.1 2006/06/20 13:13:06 fox Exp $                       *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
 #include "FXApp.h"
 #include "FXGIFIcon.h"
-#include "FXDCWindow.h"
-#include "FXDrawable.h"
-#include "FXWindow.h"
 #include "FXFrame.h"
 #include "FXComposite.h"
 #include "FXPacker.h"
@@ -87,22 +88,20 @@ FXIMPLEMENT(FXToolBar,FXDockBar,FXToolBarMap,ARRAYNUMBER(FXToolBarMap))
 
 
 // Make a dockable and, possibly, floatable toolbar
-FXToolBar::FXToolBar(FXComposite* p,FXComposite* q,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXDockBar(p,q,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
+FXToolBar::FXToolBar(FXComposite* p,FXComposite* q,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXDockBar(p,q,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
   }
 
 
 // Make a non-floatable toolbar
-FXToolBar::FXToolBar(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXDockBar(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
+FXToolBar::FXToolBar(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXDockBar(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
   }
 
 
 // Compute minimum width based on child layout hints
 FXint FXToolBar::getDefaultWidth(){
-  register FXint total=0,mw=0,w;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint total=0,mw=0,w;
+  FXWindow* child;
+  FXuint hints;
   if(options&PACK_UNIFORM_WIDTH) mw=maxChildWidth();
   for(child=getFirst(); child; child=child->getNext()){
     if(child->shown()){
@@ -126,9 +125,9 @@ FXint FXToolBar::getDefaultWidth(){
 
 // Compute minimum height based on child layout hints
 FXint FXToolBar::getDefaultHeight(){
-  register FXint total=0,mh=0,h;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint total=0,mh=0,h;
+  FXWindow* child;
+  FXuint hints;
   if(options&PACK_UNIFORM_HEIGHT) mh=maxChildHeight();
   for(child=getFirst(); child; child=child->getNext()){
     if(child->shown()){
@@ -153,9 +152,9 @@ FXint FXToolBar::getDefaultHeight(){
 /*
 // Return width for given height
 FXint FXToolBar::getWidthForHeight(FXint givenheight){
-  register FXint wtot,wmax,hcum,w,h,space,ngalleys,mw=0,mh=0;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint wtot,wmax,hcum,w,h,space,ngalleys,mw=0,mh=0;
+  FXWindow* child;
+  FXuint hints;
   wtot=wmax=hcum=ngalleys=0;
   space=givenheight-padtop-padbottom-(border<<1);
   if(space<1) space=1;
@@ -185,9 +184,9 @@ FXint FXToolBar::getWidthForHeight(FXint givenheight){
 
 // Return height for given width
 FXint FXToolBar::getHeightForWidth(FXint givenwidth){
-  register FXint htot,hmax,wcum,w,h,space,ngalleys,mw=0,mh=0;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint htot,hmax,wcum,w,h,space,ngalleys,mw=0,mh=0;
+  FXWindow* child;
+  FXuint hints;
   htot=hmax=wcum=ngalleys=0;
   space=givenwidth-padleft-padright-(border<<1);
   if(space<1) space=1;
@@ -357,9 +356,9 @@ void FXToolBar::layout(){
 
 // Recalculate layout
 void FXToolBar::layout(){
-  register FXint left,right,top,bottom,remain,expand,mw=0,mh=0,x,y,w,h,e,t;
-  register FXWindow *child;
-  register FXuint hints;
+  FXint left,right,top,bottom,remain,expand,mw=0,mh=0,x,y,w,h,e,t;
+  FXWindow *child;
+  FXuint hints;
 
   // Placement rectangle; right/bottom non-inclusive
   left=border+padleft;
@@ -515,8 +514,8 @@ void FXToolBar::layout(){
 
 
 // Dock the bar before other window
-void FXToolBar::dock(FXDockSite* docksite,FXWindow* before,FXbool notify){
-  FXDockBar::dock(docksite,before,notify);
+void FXToolBar::dock(FXDockSite* docksite,FXWindow* other,FXbool notify){
+  FXDockBar::dock(docksite,other,notify);
   setDockingSide(getParent()->getLayoutHints());
   }
 

@@ -3,39 +3,42 @@
 *                     S c r o l l W i n d o w   W i d g e t                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXScrollWindow.cpp,v 1.37 2006/01/22 17:58:41 fox Exp $                  *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXScrollBar.h"
 #include "FXScrollWindow.h"
 
@@ -70,8 +73,7 @@ FXIMPLEMENT(FXScrollWindow,FXScrollArea,FXScrollWindowMap,ARRAYNUMBER(FXScrollWi
 
 
 // Construct and init
-FXScrollWindow::FXScrollWindow(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXScrollArea(p,opts,x,y,w,h){
+FXScrollWindow::FXScrollWindow(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXScrollArea(p,opts,x,y,w,h){
   }
 
 
@@ -83,8 +85,8 @@ FXWindow* FXScrollWindow::contentWindow() const {
 
 // Determine content width of scroll area
 FXint FXScrollWindow::getContentWidth(){
-  register FXuint hints;
-  register FXint w=1;
+  FXuint hints;
+  FXint w=1;
   if(contentWindow()){
     hints=contentWindow()->getLayoutHints();
     if(hints&LAYOUT_FIX_WIDTH) w=contentWindow()->getWidth();
@@ -96,8 +98,8 @@ FXint FXScrollWindow::getContentWidth(){
 
 // Determine content height of scroll area
 FXint FXScrollWindow::getContentHeight(){
-  register FXuint hints;
-  register FXint h=1;
+  FXuint hints;
+  FXint h=1;
   if(contentWindow()){
     hints=contentWindow()->getLayoutHints();
     if(hints&LAYOUT_FIX_HEIGHT) h=contentWindow()->getHeight();
@@ -109,9 +111,9 @@ FXint FXScrollWindow::getContentHeight(){
 
 // Move contents; moves child window
 void FXScrollWindow::moveContents(FXint x,FXint y){
-  register FXWindow* contents=contentWindow();
-  register FXint xx,yy,ww,hh;
-  register FXuint hints;
+  FXWindow* contents=contentWindow();
+  FXint xx,yy,ww,hh,vw,vh;
+  FXuint hints;
   if(contents){
 
     // Get hints
@@ -121,21 +123,25 @@ void FXScrollWindow::moveContents(FXint x,FXint y){
     ww=getContentWidth();
     hh=getContentHeight();
 
+    // Get visible size
+    vw=getVisibleWidth();
+    vh=getVisibleHeight();
+
     // Determine x-position
     xx=x;
-    if(ww<viewport_w){
-      if(hints&LAYOUT_FILL_X) ww=viewport_w;
-      if(hints&LAYOUT_CENTER_X) xx=(viewport_w-ww)/2;
-      else if(hints&LAYOUT_RIGHT) xx=viewport_w-ww;
+    if(ww<vw){
+      if(hints&LAYOUT_FILL_X) ww=vw;
+      if(hints&LAYOUT_CENTER_X) xx=(vw-ww)/2;
+      else if(hints&LAYOUT_RIGHT) xx=vw-ww;
       else xx=0;
       }
 
     // Determine y-position
     yy=y;
-    if(hh<viewport_h){
-      if(hints&LAYOUT_FILL_Y) hh=viewport_h;
-      if(hints&LAYOUT_CENTER_Y) yy=(viewport_h-hh)/2;
-      else if(hints&LAYOUT_BOTTOM) yy=viewport_h-hh;
+    if(hh<vh){
+      if(hints&LAYOUT_FILL_Y) hh=vh;
+      if(hints&LAYOUT_CENTER_Y) yy=(vh-hh)/2;
+      else if(hints&LAYOUT_BOTTOM) yy=vh-hh;
       else yy=0;
       }
     contents->move(xx,yy);
@@ -147,12 +153,16 @@ void FXScrollWindow::moveContents(FXint x,FXint y){
 
 // Recalculate layout
 void FXScrollWindow::layout(){
-  register FXWindow* contents=contentWindow();
-  register FXint xx,yy,ww,hh;
-  register FXuint hints;
+  FXWindow* contents=contentWindow();
+  FXint xx,yy,ww,hh,vw,vh;
+  FXuint hints;
 
   // Layout scroll bars and viewport
   FXScrollArea::layout();
+
+  // Set line size something reasonable
+  horizontal->setLine(10);
+  vertical->setLine(10);
 
   // Resize contents
   if(contents){
@@ -164,21 +174,25 @@ void FXScrollWindow::layout(){
     ww=getContentWidth();
     hh=getContentHeight();
 
+    // Get visible size
+    vw=getVisibleWidth();
+    vh=getVisibleHeight();
+
     // Determine x-position
     xx=pos_x;
-    if(ww<viewport_w){
-      if(hints&LAYOUT_FILL_X) ww=viewport_w;
-      if(hints&LAYOUT_CENTER_X) xx=(viewport_w-ww)/2;
-      else if(hints&LAYOUT_RIGHT) xx=viewport_w-ww;
+    if(ww<vw){
+      if(hints&LAYOUT_FILL_X) ww=vw;
+      if(hints&LAYOUT_CENTER_X) xx=(vw-ww)/2;
+      else if(hints&LAYOUT_RIGHT) xx=vw-ww;
       else xx=0;
       }
 
     // Determine y-position
     yy=pos_y;
-    if(hh<viewport_h){
-      if(hints&LAYOUT_FILL_Y) hh=viewport_h;
-      if(hints&LAYOUT_CENTER_Y) yy=(viewport_h-hh)/2;
-      else if(hints&LAYOUT_BOTTOM) yy=viewport_h-hh;
+    if(hh<vh){
+      if(hints&LAYOUT_FILL_Y) hh=vh;
+      if(hints&LAYOUT_CENTER_Y) yy=(vh-hh)/2;
+      else if(hints&LAYOUT_BOTTOM) yy=vh-hh;
       else yy=0;
       }
 
@@ -192,11 +206,11 @@ void FXScrollWindow::layout(){
   }
 
 
-// When focus moves to scroll window, we actually force the
-// focus to the content window or a child thereof.
-long FXScrollWindow::onFocusSelf(FXObject* sender,FXSelector,void* ptr){
-  FXWindow *child=contentWindow();      ///// FIXME see MDIChild /////
-  return child && child->handle(sender,FXSEL(SEL_FOCUS_SELF,0),ptr);
+// Focus on widget itself and try put focus on the content window as well
+long FXScrollWindow::onFocusSelf(FXObject* sender,FXSelector,void* ptr){        // See FXMDIChild
+  setFocus();
+  if(contentWindow()) contentWindow()->handle(sender,FXSEL(SEL_FOCUS_SELF,0),ptr);
+  return 1;
   }
 
 
@@ -204,6 +218,12 @@ long FXScrollWindow::onFocusSelf(FXObject* sender,FXSelector,void* ptr){
 long FXScrollWindow::onKeyPress(FXObject* sender,FXSelector sel,void* ptr){
   if(FXScrollArea::onKeyPress(sender,sel,ptr)) return 1;
   switch(((FXEvent*)ptr)->code){
+    case KEY_Up:
+      setPosition(pos_x,pos_y+verticalScrollBar()->getLine());
+      return 1;
+    case KEY_Down:
+      setPosition(pos_x,pos_y-verticalScrollBar()->getLine());
+      return 1;
     case KEY_Page_Up:
     case KEY_KP_Page_Up:
       setPosition(pos_x,pos_y+verticalScrollBar()->getPage());
@@ -221,6 +241,8 @@ long FXScrollWindow::onKeyPress(FXObject* sender,FXSelector sel,void* ptr){
 long FXScrollWindow::onKeyRelease(FXObject* sender,FXSelector sel,void* ptr){
   if(FXScrollArea::onKeyRelease(sender,sel,ptr)) return 1;
   switch(((FXEvent*)ptr)->code){
+    case KEY_Up:
+    case KEY_Down:
     case KEY_Page_Up:
     case KEY_KP_Page_Up:
     case KEY_Page_Down:

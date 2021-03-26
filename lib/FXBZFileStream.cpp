@@ -3,29 +3,29 @@
 *                      B Z F i l e S t r e a m   C l a s s e s                  *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2006 by Lyle Johnson. All Rights Reserved.                 *
+* Copyright (C) 1999,2020 by Lyle Johnson. All Rights Reserved.                 *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXBZFileStream.cpp,v 1.5.2.2 2007/09/28 16:42:20 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
+#include "FXElement.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXObject.h"
@@ -62,14 +62,20 @@ struct BZBlock {
   };
 
 
-// Initialize file stream
+// Create BZIP2 file stream
 FXBZFileStream::FXBZFileStream(const FXObject* cont):FXFileStream(cont),bz(NULL),ac(0){
+  }
+
+
+// Create and open BZIP2 file stream
+FXBZFileStream::FXBZFileStream(const FXString& filename,FXStreamDirection save_or_load,FXuval size):bz(NULL),ac(0){
+  open(filename,save_or_load,size);
   }
 
 
 // Save to a file
 FXuval FXBZFileStream::writeBuffer(FXuval){
-  register FXival m,n; int bzerror;
+  FXival m,n; int bzerror;
   if(dir!=FXStreamSave){fxerror("FXBZFileStream::writeBuffer: wrong stream direction.\n");}
   FXASSERT(begptr<=rdptr);
   FXASSERT(rdptr<=wrptr);
@@ -80,14 +86,13 @@ FXuval FXBZFileStream::writeBuffer(FXuval){
     bz->stream.next_out=bz->buffer;
     bz->stream.avail_out=BUFFERSIZE;
     bzerror=BZ2_bzCompress(&bz->stream,ac);
-//    if(bzerror!=BZ_OK) break;
-    if(bzerror<0) break;  // break on error condition
+    if(bzerror<BZ_OK) break;                            // Error occurred
     m=bz->stream.next_out-bz->buffer;
     n=file.writeBlock(bz->buffer,m);
-    if(n<m) break;
+    if(n<m) break;                                      // Failed to write data
     rdptr=(FXuchar*)bz->stream.next_in;
-    if(bzerror==BZ_STREAM_END) break;  // break from FINISH
-    if(ac==BZ_FLUSH  && bzerror==BZ_RUN_OK) break;  // break from FLUSH
+    if(bzerror==BZ_STREAM_END) break;                   // Finished all data
+    if(bzerror==BZ_RUN_OK && ac==BZ_FLUSH) break;       // Flushed all data
     }
   if(rdptr<wrptr){memmove(begptr,rdptr,wrptr-rdptr);}
   wrptr=begptr+(wrptr-rdptr);
@@ -98,7 +103,7 @@ FXuval FXBZFileStream::writeBuffer(FXuval){
 
 // Load from file
 FXuval FXBZFileStream::readBuffer(FXuval){
-  register FXival n; int bzerror;
+  FXival n; int bzerror;
   if(dir!=FXStreamLoad){fxerror("FXBZFileStream::readBuffer: wrong stream direction.\n");}
   FXASSERT(begptr<=rdptr);
   FXASSERT(rdptr<=wrptr);
@@ -107,32 +112,27 @@ FXuval FXBZFileStream::readBuffer(FXuval){
   wrptr=begptr+(wrptr-rdptr);
   rdptr=begptr;
   while(wrptr<endptr){
-//    n=file.readBlock(bz->buffer,BUFFERSIZE);
-//    if(n<=0) break;
-//    bz->stream.next_in=bz->buffer;
-//    bz->stream.avail_in=n;
-    if(bz->stream.avail_in<=0){ // get more input if buffer is empty
+    if(bz->stream.avail_in<=0){                         // Read more input
       n=file.readBlock(bz->buffer,BUFFERSIZE);
-      if(n<0) break;
+      if(n<=0) break;
       bz->stream.next_in=bz->buffer;
       bz->stream.avail_in=n;
       }
     bz->stream.next_out=(char*)wrptr;
     bz->stream.avail_out=endptr-wrptr;
     bzerror=BZ2_bzDecompress(&bz->stream);
-//    if(bzerror!=BZ_OK) break;
-    if(bzerror<0) break;  // break on error condition
+    if(bzerror<BZ_OK) break;                            // Error occurred
     wrptr=(FXuchar*)bz->stream.next_out;
-    if(bzerror==BZ_STREAM_END) break;
+    if(bzerror==BZ_STREAM_END) break;                   // Hit end of file
     }
   return wrptr-rdptr;
   }
 
 
 // Try open file stream
-bool FXBZFileStream::open(const FXString& filename,FXStreamDirection save_or_load,FXuval size){
+FXbool FXBZFileStream::open(const FXString& filename,FXStreamDirection save_or_load,FXuval size){
   if(FXFileStream::open(filename,save_or_load,size)){
-    if(FXCALLOC(&bz,BZBlock,1)){
+    if(callocElms(bz,1)){
       int bzerror;
       bz->stream.next_in=NULL;
       bz->stream.avail_in=0;
@@ -149,7 +149,7 @@ bool FXBZFileStream::open(const FXString& filename,FXStreamDirection save_or_loa
         if(bzerror==BZ_OK) return true;
         code=FXStreamNoWrite;
         }
-      FXFREE(&bz);
+      freeElms(bz);
       }
     FXFileStream::close();
     }
@@ -158,17 +158,18 @@ bool FXBZFileStream::open(const FXString& filename,FXStreamDirection save_or_loa
 
 
 // Flush buffer
-bool FXBZFileStream::flush(){
-  bool status;
+FXbool FXBZFileStream::flush(){
+  FXbool result;
   int action=ac;
   if(ac!=BZ_FINISH) ac=BZ_FLUSH;
-  status=FXStream::flush();
+  result=FXStream::flush();
   ac=action;
-  return status;
+  return result;
   }
 
+
 // Close file stream
-bool FXBZFileStream::close(){
+FXbool FXBZFileStream::close(){
   if(dir){
     if(dir==FXStreamLoad){
       FXFileStream::close();
@@ -179,7 +180,7 @@ bool FXBZFileStream::close(){
       FXFileStream::close();
       BZ2_bzCompressEnd(&bz->stream);
       }
-    FXFREE(&bz);
+    freeElms(bz);
     return true;
     }
   return false;

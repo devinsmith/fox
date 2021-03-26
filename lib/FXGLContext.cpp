@@ -1,68 +1,70 @@
 /********************************************************************************
 *                                                                               *
-*                        G L  C o n t e x t   C l a s s                         *
+*                     G L  R e n d e r i n g   C o n t e x t                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXGLContext.cpp,v 1.38 2006/01/22 17:58:28 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
+#include "FXElement.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
+#include "FXException.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
+#include "FXFont.h"
 #include "FXVisual.h"
 #include "FXGLVisual.h"
-#include "FXDrawable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXApp.h"
 #include "FXGLContext.h"
 
 
 /*
   Notes:
-  - GL Context can be shared between GL canvas widgets.
-  - OpenGL documentation says that windows can share GL contexts as long as the
-    visuals are the same; so we keep a reference to the GLVisual in the context
-    so as to compare it to the visual of the window when the GL context is being
-    locked on the window.
-  - Display lists can be shared between different types of GL contexts; the display
-    list has to be kept in the same place for each of the contexts that want to share
-    it.
-  - It may be not a bad idea to delay the creation of the context until we call begin().
-    This might be much more elegant, as we then already know which surface to use, and
-    we won't have to create a temporary dummy window.
-  - The mental model of FXGLContext is that of FXDCWindow, except that FXGLContext lives
-    long, while FXDCWindow gets created/destroyed on an as-needed basis.
-  - There should be NO NEED to derive FXGLContext from FXObject; right now we do, for
-    serialization, but I think that we shouldn't; because the stuff in here contains
-    info which makes little sense to serialize....
-  - Should GL context make sure GLVisual has been create()-ed already?
+  - Creates FXGLContext based on frame buffer properties described in the desired FXGLVisual.
+  - When realized, match actual hardware against desired frame buffer properties and create a
+    FXGLContext conformant with the best matching hardware configuration.  Note that we don't
+    have a window yet, necessarily!
+  - There will be three different ways to make a FXGLCanvas:
+
+      1 Each FXGLCanvas has its own FXGLContext; The FXGLContext is owned by the FXGLCanvas and
+        destroyed when the FXGLCanvas is.
+
+      2 Each FXGLCanvas has its own FXGLContext, but it may share the display list and other
+        GL objects with those of another FXGLContext.  Thus the other FXGLContext with which
+        it shares must be passed in.
+
+      3 The FXGLCanvas shares the FXGLContext with another FXGLCanvas.  This is probably the
+        most efficient way as all the GL state information is preserved between the FXGLCanvas
+        windows.
 */
 
-//#define DISPLAY(app) ((Display*)((app)->display))
 
 using namespace FX;
 
@@ -70,112 +72,347 @@ using namespace FX;
 
 namespace FX {
 
+
 // Object implementation
 FXIMPLEMENT(FXGLContext,FXId,NULL,0)
 
 
+// Make GL context
+FXGLContext::FXGLContext():surface(NULL),visual(NULL),shared(NULL){
+  FXTRACE((100,"FXGLContext::FXGLContext %p\n",this));
+  }
+
 
 // Make a GL context
-FXGLContext::FXGLContext(FXApp* a,FXGLVisual *vis):
-  FXId(a),visual(vis),surface(NULL),ctx(NULL){
+FXGLContext::FXGLContext(FXApp *a,FXGLVisual *vis,FXGLContext* shr):FXId(a),surface(NULL),visual(vis),shared(shr){
   FXTRACE((100,"FXGLContext::FXGLContext %p\n",this));
-  sgnext=sgprev=this;
   }
-
-
-// Make a GL context sharing a display list with another
-FXGLContext::FXGLContext(FXApp* a,FXGLVisual *vis,FXGLContext *shared):
-  FXId(a),visual(vis),surface(NULL),ctx(NULL){
-  FXTRACE((100,"FXGLContext::FXGLContext %p\n",this));
-  sgnext=shared;
-  sgprev=shared->sgprev;
-  shared->sgprev=this;
-  sgprev->sgnext=this;
-  }
-
-
-// Return TRUE if it is sharing display lists
-FXbool FXGLContext::isShared() const { return sgnext!=this; }
 
 
 // Create GL context
 void FXGLContext::create(){
-  ///visual->create();    // Should we call this here?
-#ifdef HAVE_GL_H
-  register FXGLContext *context;
-  register void *sharedctx=NULL;
   if(!xid){
     if(getApp()->isInitialized()){
-      FXTRACE((100,"FXGLContext::create %p\n",this));
+      FXTRACE((100,"%s::create %p\n",getClassName(),this));
 
-      // The visual should be OpenGL capable
-      if(!visual->getInfo()){ fxerror("FXGLContext::create(): visual unsuitable for OpenGL.\n"); }
+      // Got to have a visual
+      if(!visual){ fxerror("%s::create: trying to create context without a visual.\n",getClassName()); }
 
-      // Find another member of the group which is already created, and get its context
-      if(sgnext!=this){
-        context=sgnext;
-        while(context!=this){
-          sharedctx=context->ctx;
-          if(sharedctx) break;
-          context=context->sgnext;
+      // If sharing contexts for display lists, shared context must be created already
+      if(shared && !shared->id()){ fxerror("%s::create: trying to create context before shared context has been created.\n",getClassName()); }
+
+      // Initialize visual
+      visual->create();
+
+#ifdef HAVE_GL_H
+#if defined(WIN32)
+      PIXELFORMATDESCRIPTOR pfd={sizeof(PIXELFORMATDESCRIPTOR),1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+      HWND hwnd=CreateWindow(TEXT("GLTEMP"),TEXT(""),0,0,0,0,0,(HWND)NULL,(HMENU)NULL,(HINSTANCE)getApp()->getDisplay(),NULL);
+      HDC hdc=::GetDC(hwnd);
+      SetPixelFormat(hdc,(FXint)(FXival)visual->id(),&pfd);
+      xid=(FXID)wglCreateContext(hdc);
+#if 0 // New code from Vadim ///
+      if(desired_gl>2){
+        int attribList[8]={
+          WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+          WGL_CONTEXT_MINOR_VERSION_ARB, 3,
+          WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+          0, 0
+          };
+        wglMakeCurrent(hdc,(HGLRC)xid);
+        PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB;
+        wglCreateContextAttribsARB=(PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+        if(wglCreateContextAttribsARB!=NULL){                           // OpenGL 3.0 is supported
+          HGLRC hrc=wglCreateContextAttribsARB(hdc,0,attribList);
+          wglDeleteContext((HGLRC)xid);
+          xid=hrc;
           }
         }
-
-#ifndef WIN32
-
-      // Make context
-      ctx=glXCreateContext((Display*)getApp()->getDisplay(),(XVisualInfo*)visual->getInfo(),(GLXContext)sharedctx,TRUE);
-      if(!ctx){ fxerror("FXGLContext::create(): glXCreateContext() failed.\n"); }
-
-      xid=1;
-#else
-
-      // Conceptually, the bitplane organization should be enough to create a context;
-      // but on Windows, there is no concept like a visual, and hence we need to make
-      // a dummy window, set its pixel format, and then create the GL context;
-      // afterwards, the window is no longer needed and will be deleted.
-      // Yes, I'm painfully aware that this sucks, but we intend to keep the
-      // logical model clean come hell or high water....
-      HWND wnd=CreateWindow(TEXT("FXPopup"),NULL,WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS|WS_CLIPCHILDREN|WS_POPUP,0,0,2,2,GetDesktopWindow(),0,(HINSTANCE)(getApp()->display),this);
-      if(!wnd){ fxerror("FXGLContext::create(): CreateWindow() failed.\n"); }
-
-      // Get the window's device context
-      HDC hdc=GetDC((HWND)wnd);
-
-      // Set the pixel format
-      if(!SetPixelFormat(hdc,(FXint)(FXival)visual->getVisual(),(PIXELFORMATDESCRIPTOR*)visual->getInfo())){
-        fxerror("FXGLContext::create(): SetPixelFormat() failed.\n");
-        }
-
-      // Make the GL context
-      ctx=(void*)wglCreateContext(hdc);
-      if(!ctx){ fxerror("FXGLContext::create(): wglCreateContext() failed.\n"); }
-
+#endif
       // I hope I didn't get this backward; the new context obviously has no
       // display lists yet, but the old one may have, as it has already been around
       // for a while.  If you see this fail and can't explain why, then that might
-      // be what's going on.  Report this to jeroen@fox-toolkit.org
-      if(sharedctx && !wglShareLists((HGLRC)sharedctx,(HGLRC)ctx)){ fxerror("FXGLContext::create(): wglShareLists() failed.\n"); }
-
-      // Release window's device context
-      ReleaseDC(wnd,hdc);
-
-      // Destroy the temporary window
-      DestroyWindow(wnd);
-
-      xid=(void*)1;
+      // be what's going on.  Report this to jeroen@fox-toolkit.com
+      if(shared && !wglShareLists((HGLRC)shared->id(),(HGLRC)xid)){
+        throw FXWindowException("unable to share GL context.");
+        }
+      ::ReleaseDC(hwnd,hdc);
+      DestroyWindow(hwnd);
+//#elif defined(GLX_VERSION_1_3)
+//      xid=(FXID)glXCreateNewContext((Display*)getApp()->getDisplay(),(GLXFBConfig)visual->id(),GLX_RGBA_TYPE,shared?(GLXContext)shared->id():NULL,true);
+#else
+      XVisualInfo vi;
+      vi.visual=(Visual*)visual->visual;
+      vi.visualid=vi.visual->visualid;
+      vi.screen=DefaultScreen((Display*)getApp()->getDisplay());
+      vi.depth=visual->getDepth();
+      vi.c_class=vi.visual->c_class;
+      vi.red_mask=vi.visual->red_mask;
+      vi.green_mask=vi.visual->green_mask;
+      vi.blue_mask=vi.visual->blue_mask;
+      vi.colormap_size=vi.visual->map_entries;
+      vi.bits_per_rgb=vi.visual->bits_per_rgb;
+      xid=(FXID)glXCreateContext((Display*)getApp()->getDisplay(),&vi,shared?(GLXContext)shared->id():NULL,true);
 #endif
+#endif
+      if(!xid){
+        throw FXWindowException("unable to create GL context.");
+        }
       }
     }
-#endif
+  }
+
+#if 0
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <GL/gl.h>
+#include <GL/glx.h>
+
+#define GLX_CONTEXT_MAJOR_VERSION_ARB       0x2091
+#define GLX_CONTEXT_MINOR_VERSION_ARB       0x2092
+typedef GLXContext (*glXCreateContextAttribsARBProc)(Display*, GLXFBConfig, GLXContext, Bool, const int*);
+
+// Helper to check for extension string presence
+static bool isExtensionSupported(const char *extList,const char *extension){
+  const char *start,*where,*terminator;
+
+  // Extension names should not have spaces
+  where=strchr(extension,' ');
+  if(where || *extension=='\0') return false;
+
+  // It takes a bit of care to be fool-proof about parsing the OpenGL
+  // extensions string. Don't be fooled by sub-strings, etc.
+  for(start=extList; ; ){
+    where=strstr(start,extension);
+    if(!where) break;
+    terminator=where+strlen(extension);
+    if(where==start || *(where-1)==' '){
+      if(*terminator==' ' || *terminator=='\0') return true;
+      }
+    start=terminator;
+    }
+  return false;
   }
 
 
+static bool ctxErrorOccurred = false;
+
+static int ctxErrorHandler( Display *dpy, XErrorEvent *ev ){
+  ctxErrorOccurred = true;
+  return 0;
+  }
+
+
+int main (int argc, char ** argv){
+  Display *display = XOpenDisplay(0);
+
+  if ( !display ){
+    printf( "Failed to open X display\n" );
+    exit(1);
+    }
+
+  // Get a matching FB config
+  static int visual_attribs[] = {
+    GLX_X_RENDERABLE    , True,
+    GLX_DRAWABLE_TYPE   , GLX_WINDOW_BIT,
+    GLX_RENDER_TYPE     , GLX_RGBA_BIT,
+    GLX_X_VISUAL_TYPE   , GLX_TRUE_COLOR,
+    GLX_RED_SIZE        , 8,
+    GLX_GREEN_SIZE      , 8,
+    GLX_BLUE_SIZE       , 8,
+    GLX_ALPHA_SIZE      , 8,
+    GLX_DEPTH_SIZE      , 24,
+    GLX_STENCIL_SIZE    , 8,
+    GLX_DOUBLEBUFFER    , True,
+    //GLX_SAMPLE_BUFFERS  , 1,
+    //GLX_SAMPLES         , 4,
+    None
+    };
+
+  int glx_major, glx_minor;
+
+  // FBConfigs were added in GLX version 1.3.
+  if ( !glXQueryVersion( display, &glx_major, &glx_minor ) || ( ( glx_major == 1 ) && ( glx_minor < 3 ) ) || ( glx_major < 1 ) ){
+    printf( "Invalid GLX version" );
+    exit(1);
+    }
+
+  printf( "Getting matching framebuffer configs\n" );
+  int fbcount;
+  GLXFBConfig *fbc = glXChooseFBConfig( display, DefaultScreen( display ), visual_attribs, &fbcount );
+  if ( !fbc ){
+    printf( "Failed to retrieve a framebuffer config\n" );
+    exit(1);
+    }
+  printf( "Found %d matching FB configs.\n", fbcount );
+
+  // Pick the FB config/visual with the most samples per pixel
+  printf( "Getting XVisualInfos\n" );
+  int best_fbc = -1, worst_fbc = -1, best_num_samp = -1, worst_num_samp = 999;
+
+  int i;
+  for ( i = 0; i < fbcount; i++ ){
+    XVisualInfo *vi = glXGetVisualFromFBConfig( display, fbc[i] );
+    if ( vi ){
+      int samp_buf, samples;
+      glXGetFBConfigAttrib( display, fbc[i], GLX_SAMPLE_BUFFERS, &samp_buf );
+      glXGetFBConfigAttrib( display, fbc[i], GLX_SAMPLES       , &samples  );
+
+      printf( "  Matching fbconfig %d, visual ID 0x%2x: SAMPLE_BUFFERS = %d,"" SAMPLES = %d\n", i, vi -> visualid, samp_buf, samples );
+
+      if ( best_fbc < 0 || samp_buf && samples > best_num_samp ) best_fbc = i, best_num_samp = samples;
+      if ( worst_fbc < 0 || !samp_buf || samples < worst_num_samp ) worst_fbc = i, worst_num_samp = samples;
+      }
+    XFree( vi );
+    }
+
+  GLXFBConfig bestFbc = fbc[ best_fbc ];
+
+  // Be sure to free the FBConfig list allocated by glXChooseFBConfig()
+  XFree( fbc );
+
+  // Get a visual
+  XVisualInfo *vi = glXGetVisualFromFBConfig( display, bestFbc );
+  printf( "Chosen visual ID = 0x%x\n", vi->visualid );
+
+  printf( "Creating colormap\n" );
+  XSetWindowAttributes swa;
+  Colormap cmap;
+  swa.colormap = cmap = XCreateColormap( display,RootWindow( display, vi->screen ), vi->visual, AllocNone );
+  swa.background_pixmap = None ;
+  swa.border_pixel      = 0;
+  swa.event_mask        = StructureNotifyMask;
+
+  printf( "Creating window\n" );
+  Window win = XCreateWindow( display, RootWindow( display, vi->screen ), 0, 0, 100, 100, 0, vi->depth, InputOutput, vi->visual, CWBorderPixel|CWColormap|CWEventMask, &swa );
+  if ( !win ){
+    printf( "Failed to create window.\n" );
+    exit(1);
+    }
+
+  // Done with the visual info data
+  XFree( vi );
+
+  XStoreName( display, win, "GL 3.0 Window" );
+
+  printf( "Mapping window\n" );
+  XMapWindow( display, win );
+
+  // Get the default screen's GLX extension list
+  const char *glxExts = glXQueryExtensionsString( display,DefaultScreen( display ) );
+
+  // NOTE: It is not necessary to create or make current to a context before
+  // calling glXGetProcAddressARB
+  glXCreateContextAttribsARBProc glXCreateContextAttribsARB = 0;
+  glXCreateContextAttribsARB = (glXCreateContextAttribsARBProc) glXGetProcAddressARB( (const GLubyte *) "glXCreateContextAttribsARB" );
+
+  GLXContext ctx = 0;
+
+  // Install an X error handler so the application won't exit if GL 3.0
+  // context allocation fails.
+  //
+  // Note this error handler is global.  All display connections in all threads
+  // of a process use the same error handler, so be sure to guard against other
+  // threads issuing X commands while this code is running.
+  ctxErrorOccurred = false;
+  int (*oldHandler)(Display*, XErrorEvent*) = XSetErrorHandler(&ctxErrorHandler);
+
+  // Check for the GLX_ARB_create_context extension string and the function.
+  // If either is not present, use GLX 1.3 context creation method.
+  if ( !isExtensionSupported( glxExts, "GLX_ARB_create_context" ) || !glXCreateContextAttribsARB ){
+    printf( "glXCreateContextAttribsARB() not found ... using old-style GLX context\n" );
+    ctx = glXCreateNewContext( display, bestFbc, GLX_RGBA_TYPE, 0, True );
+    }
+
+  // If it does, try to get a GL 3.0 context!
+  else {
+    int context_attribs[] = {
+      GLX_CONTEXT_MAJOR_VERSION_ARB, 3,
+      GLX_CONTEXT_MINOR_VERSION_ARB, 0,
+      //GLX_CONTEXT_FLAGS_ARB        , GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+      None
+      };
+
+    printf( "Creating context\n" );
+    ctx = glXCreateContextAttribsARB( display, bestFbc, 0,True, context_attribs );
+
+    // Sync to ensure any errors generated are processed.
+    XSync( display, False );
+    if ( !ctxErrorOccurred && ctx ){
+      printf( "Created GL 3.0 context\n" );
+      }
+    else {
+      // Couldn't create GL 3.0 context.  Fall back to old-style 2.x context.
+      // When a context version below 3.0 is requested, implementations will
+      // return the newest context version compatible with OpenGL versions less
+      // than version 3.0.
+      // GLX_CONTEXT_MAJOR_VERSION_ARB = 1
+      context_attribs[1] = 1;
+      // GLX_CONTEXT_MINOR_VERSION_ARB = 0
+      context_attribs[3] = 0;
+
+      ctxErrorOccurred = false;
+
+      printf( "Failed to create GL 3.0 context ... using old-style GLX context\n" );
+      ctx = glXCreateContextAttribsARB( display, bestFbc, 0, True, context_attribs );
+      }
+    }
+
+  // Sync to ensure any errors generated are processed.
+  XSync( display, False );
+
+  // Restore the original error handler
+  XSetErrorHandler( oldHandler );
+
+  if ( ctxErrorOccurred || !ctx ){
+    printf( "Failed to create an OpenGL context\n" );
+    exit(1);
+    }
+
+  // Verifying that context is a direct context
+  if ( ! glXIsDirect ( display, ctx ) ){
+    printf( "Indirect GLX rendering context obtained\n" );
+    }
+  else{
+    printf( "Direct GLX rendering context obtained\n" );
+    }
+
+  printf( "Making context current\n" );
+  glXMakeCurrent( display, win, ctx );
+
+  glClearColor ( 0, 0.5, 1, 1 );
+  glClear ( GL_COLOR_BUFFER_BIT );
+  glXSwapBuffers ( display, win );
+
+  sleep( 1 );
+
+  glClearColor ( 1, 0.5, 0, 1 );
+  glClear ( GL_COLOR_BUFFER_BIT );
+  glXSwapBuffers ( display, win );
+
+  sleep( 1 );
+
+  glXMakeCurrent( display, 0, 0 );
+  glXDestroyContext( display, ctx );
+
+  XDestroyWindow( display, win );
+  XFreeColormap( display, cmap );
+  XCloseDisplay( display );
+  }
+#endif
+
 // Detach the GL context
 void FXGLContext::detach(){
+  visual->detach();
 #ifdef HAVE_GL_H
   if(xid){
     FXTRACE((100,"FXGLContext::detach %p\n",this));
+    surface=NULL;
     xid=0;
     }
 #endif
@@ -188,126 +425,164 @@ void FXGLContext::destroy(){
   if(xid){
     if(getApp()->isInitialized()){
       FXTRACE((100,"FXGLContext::destroy %p\n",this));
-#ifndef WIN32
-      glXDestroyContext((Display*)getApp()->getDisplay(),(GLXContext)ctx);
+#ifdef WIN32
+      wglDeleteContext((HGLRC)xid);
 #else
-      wglDeleteContext((HGLRC)ctx);
+      glXDestroyContext((Display*)getApp()->getDisplay(),(GLXContext)xid);
 #endif
       }
-    ctx=NULL;
+    surface=NULL;
     xid=0;
     }
 #endif
   }
 
 
+// Change visual
+void FXGLContext::setVisual(FXGLVisual* vis){
+  if(!vis){ fxerror("%s::setVisual: NULL visual\n",getClassName()); }
+  if(xid){ fxerror("%s::setVisual: visual should be set before calling create()\n",getClassName()); }
+  visual=vis;
+  }
+
+
+// Change share context
+void FXGLContext::setShared(FXGLContext *ctx){
+  if(xid){ fxerror("%s::setShared: sharing should be set before calling create()\n",getClassName()); }
+  shared=ctx;
+  }
+
 
 //  Make the rendering context of drawable current
-FXbool FXGLContext::begin(FXDrawable *drawable){
+FXbool FXGLContext::begin(FXDrawable *draw){
 #ifdef HAVE_GL_H
-  if(!drawable){ fxerror("FXGLContext::begin: NULL drawable.\n"); }
-  if(!drawable->id()){ fxerror("FXGLContext::begin: drawable not created yet.\n"); }
-  if(visual!=drawable->getVisual()){ fxerror("FXGLContext::begin: visuals do not match.\n"); }
-  if(xid){
-#ifndef WIN32
-    if(glXMakeCurrent((Display*)getApp()->getDisplay(),drawable->id(),(GLXContext)ctx)){
-      surface=drawable;
-      return TRUE;
-      }
-#else
-    //HDC hdc=drawable->GetDC();  // Obtain DC in a way appropriate for the drawable!
-    HDC hdc=::GetDC((HWND)drawable->id());  // FIXME:- it should probably be the line above, but need to check about ReleaseDC first!
-    if(visual->colormap){
-      SelectPalette(hdc,(HPALETTE)visual->colormap,FALSE);
+  if(xid && !surface){
+#ifdef WIN32
+    HDC hdc=(HDC)draw->GetDC();
+    if(draw->getVisual()->colormap){
+      SelectPalette(hdc,(HPALETTE)draw->getVisual()->colormap,false);
       RealizePalette(hdc);
       }
-    if(wglMakeCurrent(hdc,(HGLRC)ctx)){
-      surface=drawable;
-      return TRUE;
+    if(wglMakeCurrent(hdc,(HGLRC)xid)){
+      surface=draw;
+      return true;
+      }
+//#elif defined(GLX_VERSION_1_3)
+//    if(glXMakeContextCurrent((Display*)getApp()->getDisplay(),draw->id(),draw->id(),(GLXContext)xid)){
+//      surface=draw;
+//      return true;
+//      }
+#else
+    if(glXMakeCurrent((Display*)getApp()->getDisplay(),draw->id(),(GLXContext)xid)){
+      surface=draw;
+      return true;
       }
 #endif
     }
 #endif
-  return FALSE;
+  return false;
   }
 
 
 // Make the rendering context of drawable non-current
 FXbool FXGLContext::end(){
-  FXbool bRet=FALSE;
 #ifdef HAVE_GL_H
-  if(xid){
-#ifndef WIN32
-    bRet=glXMakeCurrent((Display*)getApp()->getDisplay(),None,(GLXContext)NULL);
-#else
-    if(surface){
-      // According to "Steve Granja" <sjgranja@hks.com>,
-      // ::ReleaseDC is still necessary even for owned DC's.
-      // So release it here to prevent resource leak.
-      ::ReleaseDC((HWND)surface->id(),wglGetCurrentDC());
+  if(xid && surface){
+#ifdef WIN32
+    HDC hdc=wglGetCurrentDC();
+    if(wglMakeCurrent(NULL,NULL)!=0){
+      surface->ReleaseDC(hdc);
+      surface=NULL;
+      return true;
       }
-    bRet=wglMakeCurrent(NULL,NULL);
+//#elif defined(GLX_VERSION_1_3)
+//    if(glXMakeContextCurrent((Display*)getApp()->getDisplay(),None,None,NULL)){
+//      surface=NULL;
+//      return true;
+//      }
+#else
+    if(glXMakeCurrent((Display*)getApp()->getDisplay(),None,(GLXContext)NULL)){
+      surface=NULL;
+      return true;
+      }
 #endif
-    surface=NULL;
-    }
+   }
 #endif
-  return bRet;
+  return false;
   }
 
 
 // Used by GL to swap the buffers in double buffer mode, or flush a single buffer
 void FXGLContext::swapBuffers(){
 #ifdef HAVE_GL_H
-  if(!surface){ fxerror("FXGLContext::swapBuffers: not connected to drawable.\n"); }
-#ifndef WIN32
-  glXSwapBuffers((Display*)getApp()->getDisplay(),surface->id());
+  if(xid){
+#ifdef WIN32
+    // SwapBuffers(wglGetCurrentDC());
+    if(wglSwapLayerBuffers(wglGetCurrentDC(),WGL_SWAP_MAIN_PLANE)==false){
+      SwapBuffers(wglGetCurrentDC());
+      }
 #else
-  // SwapBuffers(wglGetCurrentDC());
-  // wglSwapLayerBuffers(wglGetCurrentDC(),WGL_SWAP_MAIN_PLANE);
-  HDC hdc=wglGetCurrentDC();
-  if(wglSwapLayerBuffers(hdc,WGL_SWAP_MAIN_PLANE)==FALSE){
-    SwapBuffers(hdc);
+    glXSwapBuffers((Display*)getApp()->getDisplay(),glXGetCurrentDrawable());
+#endif
     }
 #endif
+  }
+
+
+// Return true if THIS context is current
+FXbool FXGLContext::isCurrent() const {
+#ifdef HAVE_GL_H
+  if(xid){
+#ifdef WIN32
+    return (FXID)wglGetCurrentContext()==xid;
+#else
+    return (FXID)glXGetCurrentContext()==xid;
+#endif
+    }
+#endif
+  return false;
+  }
+
+
+// Return true if thread has ANY current context
+FXbool FXGLContext::hasCurrent(){
+#ifdef HAVE_GL_H
+#ifdef WIN32
+  return wglGetCurrentContext()!=NULL;
+#else
+  return glXGetCurrentContext()!=NULL;
+#endif
+#else
+  return false;
 #endif
   }
 
 
-// This function only available on Mesa
-void FXGLContext::swapSubBuffers(FXint,FXint,FXint,FXint){
-
-// FIXME: Put the swap hack back!!
-// FIXME: bool bUseSwapHack = ! strncmp("Mesa", glGetString(GL_RENDERER), 4);
-
-// FIXME: how to get proc address by name, since we don't know which shared lib we're going to get!
-
-// #ifdef HAVE_GL_H
-// #ifdef HAVE_MESA
-// #ifdef GLX_MESA_copy_sub_buffer
-//   glXCopySubBufferMESA(getApp()->display,xid,x,height-y-h-1,w,h);
-// #else
-//   glXSwapBuffers(getApp()->display,xid);
-// #endif
-// #endif
-// #endif
+// Has double buffering
+FXbool FXGLContext::isDoubleBuffer() const {
+  return visual->isDoubleBuffer();
   }
 
 
-// Save object to stream
+// Has stereo buffering
+FXbool FXGLContext::isStereo() const {
+  return visual->isStereo();
+  }
+
+
+// Save data
 void FXGLContext::save(FXStream& store) const {
   FXId::save(store);
   store << visual;
-  store << sgnext;
-  store << sgprev;
+  store << shared;
   }
 
 
-// Load object from stream
+// Load data
 void FXGLContext::load(FXStream& store){
   FXId::load(store);
   store >> visual;
-  store >> sgnext;
-  store >> sgprev;
+  store >> shared;
   }
 
 
@@ -315,13 +590,135 @@ void FXGLContext::load(FXStream& store){
 FXGLContext::~FXGLContext(){
   FXTRACE((100,"FXGLContext::~FXGLContext %p\n",this));
   destroy();
-  sgnext->sgprev=sgprev;
-  sgprev->sgnext=sgnext;
-  visual=(FXGLVisual*)-1L;
   surface=(FXDrawable*)-1L;
-  sgnext=(FXGLContext*)-1L;
-  sgprev=(FXGLContext*)-1L;
-  ctx=(void*)-1L;
+  visual=(FXGLVisual*)-1L;
+  shared=(FXGLContext*)-1L;
+  }
+
+
+/*******************************************************************************/
+
+
+#if defined(HAVE_XFT_H) && defined(HAVE_GL_H)
+
+// Xft version
+static FXbool glXUseXftFont(XftFont* font,int first,int count,int listBase){
+  GLint swapbytes,lsbfirst,rowlength,skiprows,skippixels,alignment,list;
+  GLfloat x0,y0,dx,dy;
+  FT_Face face;
+  FT_Error err;
+  FXint i,size,x,y;
+  FXuchar *glyph;
+  FXbool result=false;
+
+  // Save the current packing mode for bitmaps
+  glGetIntegerv(GL_UNPACK_SWAP_BYTES,&swapbytes);
+  glGetIntegerv(GL_UNPACK_LSB_FIRST,&lsbfirst);
+  glGetIntegerv(GL_UNPACK_ROW_LENGTH,&rowlength);
+  glGetIntegerv(GL_UNPACK_SKIP_ROWS,&skiprows);
+  glGetIntegerv(GL_UNPACK_SKIP_PIXELS,&skippixels);
+  glGetIntegerv(GL_UNPACK_ALIGNMENT,&alignment);
+
+  // Set desired packing modes
+  glPixelStorei(GL_UNPACK_SWAP_BYTES,GL_FALSE);
+  glPixelStorei(GL_UNPACK_LSB_FIRST,GL_FALSE);
+  glPixelStorei(GL_UNPACK_ROW_LENGTH,0);
+  glPixelStorei(GL_UNPACK_SKIP_ROWS,0);
+  glPixelStorei(GL_UNPACK_SKIP_PIXELS,0);
+  glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+
+  // Get face info
+  face=XftLockFace(font);
+
+  // Render font glyphs; use FreeType to render to bitmap
+  for(i=first; i<count; i++){
+    list=listBase+i;
+
+    // Load glyph
+    err=FT_Load_Glyph(face,FT_Get_Char_Index(face,i),FT_LOAD_DEFAULT);
+    if(err) goto x;
+
+    // Render glyph
+    err=FT_Render_Glyph(face->glyph,FT_RENDER_MODE_MONO);
+    if(err) goto x;
+
+    // Pitch may be negative, its the stride between rows
+    size=FXABS(face->glyph->bitmap.pitch) * face->glyph->bitmap.rows;
+
+    // Glyph coordinates; note info in freetype is 6-bit fixed point
+    x0=-(face->glyph->metrics.horiBearingX>>6);
+    y0=(face->glyph->metrics.height-face->glyph->metrics.horiBearingY)>>6;
+    dx=face->glyph->metrics.horiAdvance>>6;
+    dy=0;
+
+    // Allocate glyph data
+    if(!allocElms(glyph,size)) goto x;
+
+    // Copy into OpenGL bitmap format; note OpenGL upside down
+    for(y=0; y<(FXint)face->glyph->bitmap.rows; y++){
+      for(x=0; x<face->glyph->bitmap.pitch; x++){
+        glyph[y*face->glyph->bitmap.pitch+x]=face->glyph->bitmap.buffer[(face->glyph->bitmap.rows-y-1)*face->glyph->bitmap.pitch+x];
+        }
+      }
+
+    // Put bitmap into display list
+    glNewList(list,GL_COMPILE);
+    glBitmap(FXABS(face->glyph->bitmap.pitch)<<3,face->glyph->bitmap.rows,x0,y0,dx,dy,glyph);
+    glEndList();
+
+    // Free glyph data
+    freeElms(glyph);
+    }
+
+  // Success
+  result=true;
+
+  // Restore packing modes
+x:glPixelStorei(GL_UNPACK_SWAP_BYTES,swapbytes);
+  glPixelStorei(GL_UNPACK_LSB_FIRST,lsbfirst);
+  glPixelStorei(GL_UNPACK_ROW_LENGTH,rowlength);
+  glPixelStorei(GL_UNPACK_SKIP_ROWS,skiprows);
+  glPixelStorei(GL_UNPACK_SKIP_PIXELS,skippixels);
+  glPixelStorei(GL_UNPACK_ALIGNMENT,alignment);
+
+  // Unlock face
+  XftUnlockFace(font);
+  return result;
+  }
+
+
+#endif
+
+
+// Create a display list of bitmaps from font glyphs in a font
+FXbool glUseFXFont(FXFont* font,int first,int count,int list){
+  FXbool result=false;
+  if(!font || !font->id()){ fxerror("glUseFXFont: invalid font.\n"); }
+  FXTRACE((100,"glUseFXFont: first=%d count=%d list=%d\n",first,count,list));
+#ifdef HAVE_GL_H
+#ifdef WIN32
+  if(wglGetCurrentContext()){
+    HDC hdc=wglGetCurrentDC();
+    HFONT oldfont=(HFONT)SelectObject(hdc,(HFONT)font->id());
+    // Replace wglUseFontBitmaps() with wglUseFontBitmapsW()
+    // Change glCallLists() parameter:
+    //   glCallLists(len,GL_UNSIGNED_SHORT,(GLushort*)unicodebuffer);
+    // Figure out better values for "first" and "count".
+    result=wglUseFontBitmaps(hdc,first,count,list);
+    SelectObject(hdc,oldfont);
+    }
+#else
+  if(glXGetCurrentContext()){
+#ifdef HAVE_XFT_H                       // Using XFT
+    result=glXUseXftFont((XftFont*)font->id(),first,count,list);
+#else                                   // Using XLFD
+    glXUseXFont((Font)font->id(),first,count,list);
+    result=true;
+#endif
+    }
+#endif
+#endif
+  return result;
   }
 
 }

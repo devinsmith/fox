@@ -3,42 +3,41 @@
 *                       C o m b o   B o x   O b j e c t                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXComboBox.cpp,v 1.66.2.2 2007/06/07 20:17:57 fox Exp $                      *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
 #include "FXObjectList.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
-#include "FXId.h"
-#include "FXDrawable.h"
-#include "FXDC.h"
 #include "FXWindow.h"
 #include "FXFrame.h"
 #include "FXLabel.h"
@@ -79,7 +78,6 @@
 
 using namespace FX;
 
-
 /*******************************************************************************/
 
 namespace FX {
@@ -91,7 +89,7 @@ FXDEFMAP(FXComboBox) FXComboBoxMap[]={
   FXMAPFUNC(SEL_FOCUS_SELF,0,FXComboBox::onFocusSelf),
   FXMAPFUNC(SEL_UPDATE,FXComboBox::ID_TEXT,FXComboBox::onUpdFmText),
   FXMAPFUNC(SEL_CLICKED,FXComboBox::ID_LIST,FXComboBox::onListClicked),
-  FXMAPFUNC(SEL_COMMAND,FXComboBox::ID_LIST,FXComboBox::onListClicked),
+  FXMAPFUNC(SEL_COMMAND,FXComboBox::ID_LIST,FXComboBox::onListCommand),
   FXMAPFUNC(SEL_LEFTBUTTONPRESS,FXComboBox::ID_TEXT,FXComboBox::onTextButton),
   FXMAPFUNC(SEL_MOUSEWHEEL,FXComboBox::ID_TEXT,FXComboBox::onMouseWheel),
   FXMAPFUNC(SEL_CHANGED,FXComboBox::ID_TEXT,FXComboBox::onTextChanged),
@@ -111,17 +109,16 @@ FXIMPLEMENT(FXComboBox,FXPacker,FXComboBoxMap,ARRAYNUMBER(FXComboBoxMap))
 
 
 // Combo box
-FXComboBox::FXComboBox(FXComposite *p,FXint cols,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXPacker(p,opts,x,y,w,h, 0,0,0,0, 0,0){
+FXComboBox::FXComboBox(FXComposite *p,FXint cols,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXPacker(p,opts,x,y,w,h,0,0,0,0,0,0){
   flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
-  field=new FXTextField(this,cols,this,FXComboBox::ID_TEXT,0, 0,0,0,0, pl,pr,pt,pb);
-  if(options&COMBOBOX_STATIC) field->setEditable(FALSE);
+  field=new FXTextField(this,cols,this,FXComboBox::ID_TEXT,0,0,0,0,0,pl,pr,pt,pb);
+  if(options&COMBOBOX_STATIC) field->setEditable(false);
   pane=new FXPopup(this,FRAME_LINE);
   list=new FXList(pane,this,FXComboBox::ID_LIST,LIST_BROWSESELECT|LIST_AUTOSELECT|LAYOUT_FILL_X|LAYOUT_FILL_Y|SCROLLERS_TRACK|HSCROLLER_NEVER);
   if(options&COMBOBOX_STATIC) list->setScrollStyle(SCROLLERS_TRACK|HSCROLLING_OFF);
-  button=new FXMenuButton(this,FXString::null,NULL,pane,FRAME_RAISED|FRAME_THICK|MENUBUTTON_DOWN|MENUBUTTON_ATTACH_RIGHT, 0,0,0,0, 0,0,0,0);
+  button=new FXMenuButton(this,FXString::null,NULL,pane,FRAME_RAISED|FRAME_THICK|MENUBUTTON_DOWN|MENUBUTTON_ATTACH_RIGHT,0,0,0,0,0,0,0,0);
   button->setXOffset(border);
   button->setYOffset(border);
   flags&=~FLAG_UPDATE;  // Never GUI update
@@ -171,18 +168,16 @@ void FXComboBox::disable(){
 
 // Get default width
 FXint FXComboBox::getDefaultWidth(){
-  FXint ww,pw;
-  ww=field->getDefaultWidth()+button->getDefaultWidth()+(border<<1);
-  pw=pane->getDefaultWidth();
+  FXint ww=field->getDefaultWidth()+button->getDefaultWidth()+(border<<1);
+  FXint pw=pane->getDefaultWidth();
   return FXMAX(ww,pw);
   }
 
 
 // Get default height
 FXint FXComboBox::getDefaultHeight(){
-  FXint th,bh;
-  th=field->getDefaultHeight();
-  bh=button->getDefaultHeight();
+  FXint th=field->getDefaultHeight();
+  FXint bh=button->getDefaultHeight();
   return FXMAX(th,bh)+(border<<1);
   }
 
@@ -202,7 +197,7 @@ void FXComboBox::layout(){
 
 // Forward GUI update of text field to target; but only if pane is not popped
 long FXComboBox::onUpdFmText(FXObject*,FXSelector,void*){
-  return target && !isPaneShown() && target->tryHandle(this,FXSEL(SEL_UPDATE,message),NULL);
+  return target && !isMenuShown() && target->tryHandle(this,FXSEL(SEL_UPDATE,message),NULL);
   }
 
 
@@ -212,22 +207,24 @@ long FXComboBox::onFwdToText(FXObject* sender,FXSelector sel,void* ptr){
   }
 
 
-// Forward clicked message from list to target
-long FXComboBox::onListClicked(FXObject*,FXSelector sel,void* ptr){
-  button->handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
-  if(FXSELTYPE(sel)==SEL_COMMAND){
-    field->setText(list->getItemText((FXint)(FXival)ptr));
-    if(!(options&COMBOBOX_STATIC)) field->selectAll();          // Select if editable
-    if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)getText().text());
-    }
-  return 1;
+// Clicked inside or outside an item in the list; unpost the pane
+long FXComboBox::onListClicked(FXObject*,FXSelector,void*){
+  return button->handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
+  }
+
+
+// Clicked on an item in the list; issue a callback
+long FXComboBox::onListCommand(FXObject*,FXSelector,void* ptr){
+  field->setText(list->getItemText((FXint)(FXival)ptr));
+  if(!(options&COMBOBOX_STATIC)) field->selectAll();
+  return target && target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)getText().text());
   }
 
 
 // Pressed left button in text field
 long FXComboBox::onTextButton(FXObject*,FXSelector,void*){
   if(options&COMBOBOX_STATIC){
-    button->handle(this,FXSEL(SEL_COMMAND,ID_POST),NULL);    // Post the list
+    button->showMenu(true);
     return 1;
     }
   return 0;
@@ -279,7 +276,7 @@ long FXComboBox::onFocusUp(FXObject*,FXSelector,void*){
     if(index<0) index=getNumItems()-1;
     else if(0<index) index--;
     if(0<=index && index<getNumItems()){
-      setCurrentItem(index,TRUE);
+      setCurrentItem(index,true);
       }
     return 1;
     }
@@ -294,7 +291,7 @@ long FXComboBox::onFocusDown(FXObject*,FXSelector,void*){
     if(index<0) index=0;
     else if(index<getNumItems()-1) index++;
     if(0<=index && index<getNumItems()){
-      setCurrentItem(index,TRUE);
+      setCurrentItem(index,true);
       }
     return 1;
     }
@@ -316,7 +313,7 @@ long FXComboBox::onMouseWheel(FXObject*,FXSelector,void* ptr){
       else if(0<index) index--;
       }
     if(0<=index && index<getNumItems()){
-      setCurrentItem(index,TRUE);
+      setCurrentItem(index,true);
       }
     return 1;
     }
@@ -337,8 +334,11 @@ void FXComboBox::setEditable(FXbool edit){
 
 
 // Set text
-void FXComboBox::setText(const FXString& text){
-  field->setText(text);
+void FXComboBox::setText(const FXString& text,FXbool notify){
+  if(field->getText()!=text){
+    field->setText(text);
+    if(notify && target){target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)getText().text());}
+    }
   }
 
 
@@ -391,12 +391,11 @@ void FXComboBox::setCurrentItem(FXint index,FXbool notify){
     list->setCurrentItem(index);
     list->makeItemVisible(index);
     if(0<=index){
-      setText(list->getItemText(index));
+      setText(list->getItemText(index),notify);
       }
     else{
-      setText(FXString::null);
+      setText(FXString::null,notify);
       }
-    if(notify && target){target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)getText().text());}
     }
   }
 
@@ -414,116 +413,128 @@ FXString FXComboBox::getItem(FXint index) const {
 
 
 // Replace text of item at index
-FXint FXComboBox::setItem(FXint index,const FXString& text,void* ptr){
+FXint FXComboBox::setItem(FXint index,const FXString& text,FXptr ptr,FXbool notify){
   if(index<0 || list->getNumItems()<=index){ fxerror("%s::setItem: index out of range.\n",getClassName()); }
   list->setItem(index,text,NULL,ptr);
-  if(isItemCurrent(index)){
-    field->setText(text);
-    }
   recalc();
+  if(isItemCurrent(index)){
+    setText(text,notify);
+    }
   return index;
   }
 
 
 // Fill list by appending items from array of strings
-FXint FXComboBox::fillItems(const FXchar** strings){
-  register FXint numberofitems=list->getNumItems();
-  register FXint n=list->fillItems(strings);
-  if(numberofitems<=list->getCurrentItem()){
-    field->setText(list->getItemText(list->getCurrentItem()));
-    }
+FXint FXComboBox::fillItems(const FXchar *const *strings,FXbool notify){
+  FXint numberofitems=list->getNumItems();
+  FXint n=list->fillItems(strings);
   recalc();
+  if(numberofitems<=list->getCurrentItem()){
+    setText(list->getItemText(list->getCurrentItem()),notify);
+    }
+  return n;
+  }
+
+
+// Fill list by appending items from array of strings
+FXint FXComboBox::fillItems(const FXString* strings,FXbool notify){
+  FXint numberofitems=list->getNumItems();
+  FXint n=list->fillItems(strings);
+  recalc();
+  if(numberofitems<=list->getCurrentItem()){
+    setText(list->getItemText(list->getCurrentItem()),notify);
+    }
   return n;
   }
 
 
 // Fill list by appending items from newline separated strings
-FXint FXComboBox::fillItems(const FXString& strings){
-  register FXint numberofitems=list->getNumItems();
-  register FXint n=list->fillItems(strings);
-  if(numberofitems<=list->getCurrentItem()){
-    field->setText(list->getItemText(list->getCurrentItem()));
-    }
+FXint FXComboBox::fillItems(const FXString& strings,FXbool notify){
+  FXint numberofitems=list->getNumItems();
+  FXint n=list->fillItems(strings);
   recalc();
+  if(numberofitems<=list->getCurrentItem()){
+    setText(list->getItemText(list->getCurrentItem()),notify);
+    }
   return n;
   }
 
 
 // Insert item at index
-FXint FXComboBox::insertItem(FXint index,const FXString& text,void* ptr){
+FXint FXComboBox::insertItem(FXint index,const FXString& text,FXptr ptr,FXbool notify){
   if(index<0 || list->getNumItems()<index){ fxerror("%s::insertItem: index out of range.\n",getClassName()); }
   list->insertItem(index,text,NULL,ptr);
-  if(isItemCurrent(index)){
-    field->setText(text);
-    }
   recalc();
+  if(isItemCurrent(index)){
+    setText(text,notify);
+    }
   return index;
   }
 
 
 // Append item
-FXint FXComboBox::appendItem(const FXString& text,void* ptr){
+FXint FXComboBox::appendItem(const FXString& text,FXptr ptr,FXbool notify){
   FXint index=list->appendItem(text,NULL,ptr);
-  if(isItemCurrent(getNumItems()-1)){
-    field->setText(text);
-    }
   recalc();
+  if(isItemCurrent(index)){
+    setText(text,notify);
+    }
   return index;
   }
 
 
 // Prepend item
-FXint FXComboBox::prependItem(const FXString& text,void* ptr){
+FXint FXComboBox::prependItem(const FXString& text,void* ptr,FXbool notify){
   FXint index=list->prependItem(text,NULL,ptr);
-  if(isItemCurrent(0)){
-    field->setText(text);
-    }
   recalc();
+  if(isItemCurrent(index)){
+    setText(text,notify);
+    }
   return index;
   }
 
 
 // Move item from oldindex to newindex
-FXint FXComboBox::moveItem(FXint newindex,FXint oldindex){
+FXint FXComboBox::moveItem(FXint newindex,FXint oldindex,FXbool notify){
   if(newindex<0 || list->getNumItems()<=newindex || oldindex<0 || list->getNumItems()<=oldindex){ fxerror("%s::moveItem: index out of range.\n",getClassName()); }
   FXint current=list->getCurrentItem();
   list->moveItem(newindex,oldindex);
+  recalc();
   if(current!=list->getCurrentItem()){
     current=list->getCurrentItem();
     if(0<=current){
-      field->setText(list->getItemText(current));
+      setText(list->getItemText(current),notify);
       }
     else{
-      field->setText(" ");
+      setText(FXString::null,notify);
       }
     }
-  recalc();
   return newindex;
   }
 
 
 // Remove given item
-void FXComboBox::removeItem(FXint index){
+void FXComboBox::removeItem(FXint index,FXbool notify){
   FXint current=list->getCurrentItem();
   list->removeItem(index);
+  recalc();
   if(index==current){
     current=list->getCurrentItem();
     if(0<=current){
-      field->setText(list->getItemText(current));
+      setText(list->getItemText(current),notify);
       }
     else{
-      field->setText(FXString::null);
+      setText(FXString::null,notify);
       }
     }
-  recalc();
   }
 
 
 // Remove all items
-void FXComboBox::clearItems(){
-  field->setText(FXString::null);
+void FXComboBox::clearItems(FXbool notify){
   list->clearItems();
   recalc();
+  setText(FXString::null,notify);
   }
 
 
@@ -534,16 +545,18 @@ FXint FXComboBox::findItem(const FXString& text,FXint start,FXuint flgs) const {
 
 
 // Get item by data
-FXint FXComboBox::findItemByData(const void *ptr,FXint start,FXuint flgs) const {
+FXint FXComboBox::findItemByData(FXptr ptr,FXint start,FXuint flgs) const {
   return list->findItemByData(ptr,start,flgs);
   }
 
 
 // Set item text
 void FXComboBox::setItemText(FXint index,const FXString& txt){
-  if(isItemCurrent(index)) setText(txt);
   list->setItemText(index,txt);
   recalc();
+  if(isItemCurrent(index)){
+    setText(txt);
+    }
   }
 
 
@@ -554,20 +567,44 @@ FXString FXComboBox::getItemText(FXint index) const {
 
 
 // Set item data
-void FXComboBox::setItemData(FXint index,void* ptr) const {
+void FXComboBox::setItemData(FXint index,FXptr ptr) const {
   list->setItemData(index,ptr);
   }
 
 
 // Get item data
-void* FXComboBox::getItemData(FXint index) const {
+FXptr FXComboBox::getItemData(FXint index) const {
   return list->getItemData(index);
   }
 
 
+// Return true if item is enabled
+FXbool FXComboBox::isItemEnabled(FXint index) const {
+  return list->isItemEnabled(index);
+  }
+
+
+// Enable item
+FXbool FXComboBox::enableItem(FXint index){
+  return list->enableItem(index);
+  }
+
+
+// Disable item
+FXbool FXComboBox::disableItem(FXint index){
+  return list->disableItem(index);
+  }
+
+
+// Show menu
+void FXComboBox::showMenu(FXbool shw){
+  button->showMenu(shw);
+  }
+
+
 // Is the pane shown
-FXbool FXComboBox::isPaneShown() const {
-  return pane->shown();
+FXbool FXComboBox::isMenuShown() const {
+  return button->isMenuShown();
   }
 
 
@@ -592,15 +629,27 @@ void FXComboBox::setComboStyle(FXuint mode){
   if(opts!=options){
     options=opts;
     if(options&COMBOBOX_STATIC){
-      field->setEditable(FALSE);                                // Non-editable
+      field->setEditable(false);                                // Non-editable
       list->setScrollStyle(SCROLLERS_TRACK|HSCROLLING_OFF);     // No scrolling
       }
     else{
-      field->setEditable(TRUE);                                 // Editable
+      field->setEditable(true);                                 // Editable
       list->setScrollStyle(SCROLLERS_TRACK|HSCROLLER_NEVER);    // Scrollable, but no scrollbar
       }
     recalc();
     }
+  }
+
+
+// Change popup pane shrinkwrap mode
+void FXComboBox::setShrinkWrap(FXbool flag){
+  pane->setShrinkWrap(flag);
+  }
+
+
+// Return popup pane shrinkwrap mode
+FXbool FXComboBox::getShrinkWrap() const {
+  return pane->getShrinkWrap();
   }
 
 

@@ -3,40 +3,43 @@
 *                       M e n u    B u t t o n    O b j e c t                   *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMenuButton.cpp,v 1.50 2006/01/22 17:58:35 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
 #include "fxkeys.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXMenuButton.h"
 #include "FXMenuPane.h"
@@ -90,16 +93,20 @@ namespace FX {
 
 // Map
 FXDEFMAP(FXMenuButton) FXMenuButtonMap[]={
-  FXMAPFUNC(SEL_PAINT,0,FXMenuButton::onPaint),
   FXMAPFUNC(SEL_UPDATE,0,FXMenuButton::onUpdate),
+  FXMAPFUNC(SEL_PAINT,0,FXMenuButton::onPaint),
   FXMAPFUNC(SEL_ENTER,0,FXMenuButton::onEnter),
   FXMAPFUNC(SEL_LEAVE,0,FXMenuButton::onLeave),
   FXMAPFUNC(SEL_MOTION,0,FXMenuButton::onMotion),
   FXMAPFUNC(SEL_FOCUSIN,0,FXMenuButton::onFocusIn),
   FXMAPFUNC(SEL_FOCUSOUT,0,FXMenuButton::onFocusOut),
   FXMAPFUNC(SEL_UNGRABBED,0,FXMenuButton::onUngrabbed),
-  FXMAPFUNC(SEL_LEFTBUTTONPRESS,0,FXMenuButton::onLeftBtnPress),
-  FXMAPFUNC(SEL_LEFTBUTTONRELEASE,0,FXMenuButton::onLeftBtnRelease),
+  FXMAPFUNC(SEL_LEFTBUTTONPRESS,0,FXMenuButton::onButtonPress),
+  FXMAPFUNC(SEL_LEFTBUTTONRELEASE,0,FXMenuButton::onButtonRelease),
+  FXMAPFUNC(SEL_MIDDLEBUTTONPRESS,0,FXMenuButton::onButtonPress),
+  FXMAPFUNC(SEL_MIDDLEBUTTONRELEASE,0,FXMenuButton::onButtonRelease),
+  FXMAPFUNC(SEL_RIGHTBUTTONPRESS,0,FXMenuButton::onButtonPress),
+  FXMAPFUNC(SEL_RIGHTBUTTONRELEASE,0,FXMenuButton::onButtonRelease),
   FXMAPFUNC(SEL_KEYPRESS,0,FXMenuButton::onKeyPress),
   FXMAPFUNC(SEL_KEYRELEASE,0,FXMenuButton::onKeyRelease),
   FXMAPFUNC(SEL_KEYPRESS,FXWindow::ID_HOTKEY,FXMenuButton::onHotKeyPress),
@@ -118,17 +125,16 @@ FXMenuButton::FXMenuButton(){
   pane=(FXPopup*)-1L;
   offsetx=0;
   offsety=0;
-  state=FALSE;
+  state=false;
   }
 
 
 // Make a check button
-FXMenuButton::FXMenuButton(FXComposite* p,const FXString& text,FXIcon* ic,FXPopup* pup,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXLabel(p,text,ic,opts,x,y,w,h,pl,pr,pt,pb){
+FXMenuButton::FXMenuButton(FXComposite* p,const FXString& text,FXIcon* ic,FXPopup* pup,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXLabel(p,text,ic,opts,x,y,w,h,pl,pr,pt,pb){
   pane=pup;
   offsetx=0;
   offsety=0;
-  state=FALSE;
+  state=false;
   }
 
 
@@ -147,7 +153,7 @@ void FXMenuButton::detach(){
 
 
 // If window can have focus
-bool FXMenuButton::canFocus() const { return true; }
+FXbool FXMenuButton::canFocus() const { return true; }
 
 
 // Get default width
@@ -177,7 +183,7 @@ FXint FXMenuButton::getDefaultHeight(){
   if(icon) ih=icon->getHeight();
   if(!(options&(ICON_ABOVE_TEXT|ICON_BELOW_TEXT))) h=FXMAX(th,ih); else h=th+ih;
   h=padtop+padbottom+(border<<1)+h;
-  if((options&MENUBUTTON_LEFT) && (options&MENUBUTTON_ATTACH_BOTTOM)&&(options&MENUBUTTON_ATTACH_CENTER)){
+  if((options&MENUBUTTON_LEFT) && (options&MENUBUTTON_ATTACH_BOTTOM) && (options&MENUBUTTON_ATTACH_CENTER)){
     if(pane){ ph=pane->getDefaultHeight(); if(ph>h) h=ph; }
     }
   return h;
@@ -230,12 +236,12 @@ long FXMenuButton::onLeave(FXObject* sender,FXSelector sel,void* ptr){
   }
 
 
-// Pressed left button
-long FXMenuButton::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
+// Pressed button
+long FXMenuButton::onButtonPress(FXObject*,FXSelector sel,void* ptr){
   flags&=~FLAG_TIP;
   handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
   if(isEnabled()){
-    if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONPRESS,message),ptr)) return 1;
+    if(target && target->tryHandle(this,FXSEL(FXSELTYPE(sel),message),ptr)) return 1;
     if(state)
       handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
     else
@@ -246,11 +252,11 @@ long FXMenuButton::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
   }
 
 
-// Released left button
-long FXMenuButton::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
+// Released button
+long FXMenuButton::onButtonRelease(FXObject*,FXSelector sel,void* ptr){
   FXEvent* ev=(FXEvent*)ptr;
   if(isEnabled()){
-    if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONRELEASE,message),ptr)) return 1;
+    if(target && target->tryHandle(this,FXSEL(FXSELTYPE(sel),message),ptr)) return 1;
     if(ev->moved){ handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL); }
     return 1;
     }
@@ -289,9 +295,9 @@ long FXMenuButton::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
 long FXMenuButton::onKeyPress(FXObject*,FXSelector sel,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   flags&=~FLAG_TIP;
-  if(pane && pane->shown() && pane->handle(pane,sel,ptr)) return 1;
   if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr)) return 1;
+    if(pane && pane->shown() && pane->handle(pane,sel,ptr)) return 1;
     if(event->code==KEY_space || event->code==KEY_KP_Space){
       if(state)
         handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
@@ -307,9 +313,9 @@ long FXMenuButton::onKeyPress(FXObject*,FXSelector sel,void* ptr){
 // Keyboard release; forward to menu pane, or handle here
 long FXMenuButton::onKeyRelease(FXObject*,FXSelector sel,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
-  if(pane && pane->shown() && pane->handle(pane,sel,ptr)) return 1;
   if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr)) return 1;
+    if(pane && pane->shown() && pane->handle(pane,sel,ptr)) return 1;
     if(event->code==KEY_space || event->code==KEY_KP_Space){
       return 1;
       }
@@ -320,7 +326,6 @@ long FXMenuButton::onKeyRelease(FXObject*,FXSelector sel,void* ptr){
 
 // Hot key combination pressed
 long FXMenuButton::onHotKeyPress(FXObject*,FXSelector,void* ptr){
-  FXTRACE((200,"%s::onHotKeyPress %p\n",getClassName(),this));
   flags&=~FLAG_TIP;
   handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
   if(isEnabled()){
@@ -335,15 +340,14 @@ long FXMenuButton::onHotKeyPress(FXObject*,FXSelector,void* ptr){
 
 // Hot key combination released
 long FXMenuButton::onHotKeyRelease(FXObject*,FXSelector,void*){
-  FXTRACE((200,"%s::onHotKeyRelease %p\n",getClassName(),this));
   return 1;
   }
 
 
-// Post the menu
-long FXMenuButton::onCmdPost(FXObject*,FXSelector,void*){
-  if(!state){
-    if(pane){
+// Show menu
+void FXMenuButton::showMenu(FXbool shw){
+  if(pane){
+    if(shw && !state){
       FXint x,y,w,h;
       translateCoordinatesTo(x,y,getRoot(),0,0);
       w=pane->getShrinkWrap() ? pane->getDefaultWidth() : pane->getWidth();
@@ -402,26 +406,37 @@ long FXMenuButton::onCmdPost(FXObject*,FXSelector,void*){
         }
       pane->popup(this,x,y,w,h);
       if(!grabbed()) grab();
+      flags&=~FLAG_UPDATE;
+      state=true;
+      update();
       }
-    flags&=~FLAG_UPDATE;
-    state=TRUE;
-    update();
+    else if(!shw && state){
+      pane->popdown();
+      if(grabbed()) ungrab();
+      flags|=FLAG_UPDATE;
+      state=false;
+      update();
+      }
     }
+  }
+
+
+// Is the pane shown
+FXbool FXMenuButton::isMenuShown() const {
+  return pane && pane->shown();
+  }
+
+
+// Post the menu
+long FXMenuButton::onCmdPost(FXObject*,FXSelector,void*){
+  showMenu(true);
   return 1;
   }
 
 
 // Unpost the menu
 long FXMenuButton::onCmdUnpost(FXObject*,FXSelector,void*){
-  if(state){
-    if(pane){
-      pane->popdown();
-      if(grabbed()) ungrab();
-      }
-    flags|=FLAG_UPDATE;
-    state=FALSE;
-    update();
-    }
+  showMenu(false);
   return 1;
   }
 
@@ -631,7 +646,7 @@ void FXMenuButton::killFocus(){
 
 
 // Logically inside pane
-bool FXMenuButton::contains(FXint parentx,FXint parenty) const {
+FXbool FXMenuButton::contains(FXint parentx,FXint parenty) const {
   if(pane && pane->shown() && pane->contains(parentx,parenty)) return true;
   return false;
   }

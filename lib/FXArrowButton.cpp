@@ -3,39 +3,41 @@
 *                     A r r o w   B u t t o n    O b j e c t                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXArrowButton.cpp,v 1.50 2006/01/22 17:58:17 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXArrowButton.h"
 
 
@@ -62,8 +64,8 @@ namespace FX {
 
 // Map
 FXDEFMAP(FXArrowButton) FXArrowButtonMap[]={
-  FXMAPFUNC(SEL_PAINT,0,FXArrowButton::onPaint),
   FXMAPFUNC(SEL_UPDATE,0,FXArrowButton::onUpdate),
+  FXMAPFUNC(SEL_PAINT,0,FXArrowButton::onPaint),
   FXMAPFUNC(SEL_ENTER,0,FXArrowButton::onEnter),
   FXMAPFUNC(SEL_LEAVE,0,FXArrowButton::onLeave),
   FXMAPFUNC(SEL_TIMEOUT,FXArrowButton::ID_AUTO,FXArrowButton::onAuto),
@@ -93,21 +95,20 @@ FXArrowButton::FXArrowButton(){
   flags|=FLAG_ENABLED;
   arrowColor=0;
   arrowSize=9;
-  state=FALSE;
-  fired=FALSE;
+  state=false;
+  fired=false;
   }
 
 
 // Make a text button
-FXArrowButton::FXArrowButton(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
+FXArrowButton::FXArrowButton(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
   flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
   arrowColor=getApp()->getForeColor();
   arrowSize=9;
-  state=FALSE;
-  fired=FALSE;
+  state=false;
+  fired=false;
   }
 
 
@@ -150,7 +151,7 @@ void FXArrowButton::setState(FXbool s){
 
 
 // If window can have focus
-bool FXArrowButton::canFocus() const { return true; }
+FXbool FXArrowButton::canFocus() const { return true; }
 
 
 // Implement auto-hide or auto-gray modes
@@ -165,10 +166,10 @@ long FXArrowButton::onUpdate(FXObject* sender,FXSelector sel,void* ptr){
 
 // Press automatically
 long FXArrowButton::onAuto(FXObject*,FXSelector,void*){
-  setState(TRUE);
+  setState(true);
   getApp()->addTimeout(this,ID_REPEAT,getApp()->getScrollSpeed());
   flags&=~FLAG_UPDATE;
-  fired=FALSE;
+  fired=false;
   return 1;
   }
 
@@ -178,7 +179,7 @@ long FXArrowButton::onEnter(FXObject* sender,FXSelector sel,void* ptr){
   FXFrame::onEnter(sender,sel,ptr);
   if(isEnabled()){
     if(flags&FLAG_PRESSED){
-      setState(TRUE);
+      setState(true);
       }
     else if(options&ARROW_AUTO){
       if(options&ARROW_REPEAT) getApp()->addTimeout(this,ID_AUTO,getApp()->getScrollDelay());
@@ -194,13 +195,13 @@ long FXArrowButton::onLeave(FXObject* sender,FXSelector sel,void* ptr){
   FXFrame::onLeave(sender,sel,ptr);
   if(isEnabled()){
     if(flags&FLAG_PRESSED){
-      setState(FALSE);
+      setState(false);
       }
     else if(options&ARROW_AUTO){
-      setState(FALSE);
+      setState(false);
       if(options&ARROW_REPEAT) getApp()->removeTimeout(this,ID_AUTO);
       flags|=FLAG_UPDATE;
-      fired=FALSE;
+      fired=false;
       }
     if(options&ARROW_TOOLBAR) update();
     }
@@ -215,12 +216,12 @@ long FXArrowButton::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
   if(isEnabled() && !(flags&FLAG_PRESSED)){
     grab();
     if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONPRESS,message),ptr)) return 1;
-    setState(TRUE);
+    setState(true);
     getApp()->removeTimeout(this,ID_AUTO);
     if(options&ARROW_REPEAT) getApp()->addTimeout(this,ID_REPEAT,getApp()->getScrollDelay());
     flags|=FLAG_PRESSED;
     flags&=~FLAG_UPDATE;
-    fired=FALSE;
+    fired=false;
     return 1;
     }
   return 0;
@@ -234,10 +235,10 @@ long FXArrowButton::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
     ungrab();
     flags|=FLAG_UPDATE;
     flags&=~FLAG_PRESSED;
-    fired=FALSE;
+    fired=false;
     getApp()->removeTimeout(this,ID_REPEAT);
     if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONRELEASE,message),ptr)) return 1;
-    setState(FALSE);
+    setState(false);
     if(click && target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)1);
     return 1;
     }
@@ -248,11 +249,11 @@ long FXArrowButton::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
 // Lost the grab for some reason
 long FXArrowButton::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
   FXFrame::onUngrabbed(sender,sel,ptr);
-  setState(FALSE);
+  setState(false);
   getApp()->removeTimeout(this,ID_REPEAT);
   flags&=~FLAG_PRESSED;
   flags|=FLAG_UPDATE;
-  fired=FALSE;
+  fired=false;
   return 1;
   }
 
@@ -261,7 +262,7 @@ long FXArrowButton::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
 long FXArrowButton::onRepeat(FXObject*,FXSelector,void*){
   getApp()->addTimeout(this,ID_REPEAT,getApp()->getScrollSpeed());
   if(state && target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)1);
-  fired=TRUE;
+  fired=true;
   return 1;
   }
 
@@ -270,15 +271,15 @@ long FXArrowButton::onRepeat(FXObject*,FXSelector,void*){
 long FXArrowButton::onKeyPress(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   flags&=~FLAG_TIP;
-  if(isEnabled() && !(flags&FLAG_PRESSED)){
+  if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr)) return 1;
-    if(event->code==KEY_space || event->code==KEY_KP_Space){
-      setState(TRUE);
+    if(!(flags&FLAG_PRESSED) && (event->code==KEY_space || event->code==KEY_KP_Space)){
+      setState(true);
       getApp()->removeTimeout(this,ID_AUTO);
       if(options&ARROW_REPEAT) getApp()->addTimeout(this,ID_REPEAT,getApp()->getScrollDelay());
       flags|=FLAG_PRESSED;
       flags&=~FLAG_UPDATE;
-      fired=FALSE;
+      fired=false;
       return 1;
       }
     }
@@ -290,13 +291,13 @@ long FXArrowButton::onKeyPress(FXObject*,FXSelector,void* ptr){
 long FXArrowButton::onKeyRelease(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   FXbool click=(!fired && state);
-  if(isEnabled() && (flags&FLAG_PRESSED)){
+  if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr)) return 1;
-    if(event->code==KEY_space || event->code==KEY_KP_Space){
-      setState(FALSE);
+    if((flags&FLAG_PRESSED) && (event->code==KEY_space || event->code==KEY_KP_Space)){
+      setState(false);
       flags|=FLAG_UPDATE;
       flags&=~FLAG_PRESSED;
-      fired=FALSE;
+      fired=false;
       getApp()->removeTimeout(this,ID_REPEAT);
       if(click && target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)1);
       return 1;
@@ -311,12 +312,12 @@ long FXArrowButton::onHotKeyPress(FXObject*,FXSelector,void* ptr){
   flags&=~FLAG_TIP;
   handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
   if(isEnabled() && !(flags&FLAG_PRESSED)){
-    setState(TRUE);
+    setState(true);
     getApp()->removeTimeout(this,ID_AUTO);
     if(options&ARROW_REPEAT) getApp()->addTimeout(this,ID_REPEAT,getApp()->getScrollDelay());
     flags|=FLAG_PRESSED;
     flags&=~FLAG_UPDATE;
-    fired=FALSE;
+    fired=false;
     }
   return 1;
   }
@@ -326,10 +327,10 @@ long FXArrowButton::onHotKeyPress(FXObject*,FXSelector,void* ptr){
 long FXArrowButton::onHotKeyRelease(FXObject*,FXSelector,void*){
   FXbool click=(!fired && state);
   if(isEnabled() && (flags&FLAG_PRESSED)){
-    setState(FALSE);
+    setState(false);
     flags|=FLAG_UPDATE;
     flags&=~FLAG_PRESSED;
-    fired=FALSE;
+    fired=false;
     getApp()->removeTimeout(this,ID_REPEAT);
     if(click && target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)1);
     }
@@ -367,7 +368,7 @@ long FXArrowButton::onCmdGetTip(FXObject*,FXSelector,void* ptr){
 
 // We were asked about tip text
 long FXArrowButton::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryTip(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryTip(sender,sel,ptr)) return 1;
   if((flags&FLAG_TIP) && !tip.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&tip);
     return 1;
@@ -378,7 +379,7 @@ long FXArrowButton::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
 
 // We were asked about status text
 long FXArrowButton::onQueryHelp(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryHelp(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryHelp(sender,sel,ptr)) return 1;
   if((flags&FLAG_HELP) && !help.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&help);
     return 1;
@@ -461,11 +462,11 @@ long FXArrowButton::onPaint(FXObject*,FXSelector,void* ptr){
   ww=width-padleft-padright-(border<<1);
   hh=height-padtop-padbottom-(border<<1);
   if(options&(ARROW_UP|ARROW_DOWN)){
-    q=ww|1; if(q>(hh<<1)) q=(hh<<1)-1;
+    q=(ww-1)|1; if((q>>1)>hh) q=(hh<<1)-1;
     ww=q; hh=q>>1;
     }
   else{
-    q=hh|1; if(q>(ww<<1)) q=(ww<<1)-1;
+    q=(hh-1)|1; if((q>>1)>ww) q=(ww<<1)-1;
     ww=q>>1; hh=q;
     }
 

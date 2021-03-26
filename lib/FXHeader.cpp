@@ -3,40 +3,42 @@
 *                               H e a d e r   O b j e c t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXHeader.cpp,v 1.103.2.4 2006/11/21 19:01:53 fox Exp $                       *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXObjectList.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXHeader.h"
 
@@ -73,10 +75,17 @@ namespace FX {
 FXIMPLEMENT(FXHeaderItem,FXObject,NULL,0)
 
 
+// Construct new item with given text, icon, size, and user-data
+FXHeaderItem::FXHeaderItem(const FXString& text,FXIcon* ic,FXint s,void* ptr):icon(ic),data(ptr),size(s),pos(0),state(LEFT|BEFORE){
+  label=text.section('\t', 0);
+  tip=text.section('\t', 1);
+  }
+
+
 // Draw item
-void FXHeaderItem::draw(const FXHeader* header,FXDC& dc,FXint x,FXint y,FXint w,FXint h){
-  register FXint tx,ty,tw,th,ix,iy,iw,ih,s,ml,mr,mt,mb,beg,end,t,xx,yy,bb,aa,ax,ay;
-  register FXFont *font=header->getFont();
+void FXHeaderItem::draw(const FXHeader* header,FXDC& dc,FXint x,FXint y,FXint w,FXint h) const {
+  FXint tx,ty,tw,th,ix,iy,iw,ih,s,ml,mr,mt,mb,beg,end,t,xx,yy,bb,aa,ax,ay;
+  FXFont *font=header->getFont();
 
   // Get border width and padding
   bb=header->getBorderWidth();
@@ -113,6 +122,7 @@ void FXHeaderItem::draw(const FXHeader* header,FXDC& dc,FXint x,FXint y,FXint w,
   if(iw && tw) s=ICON_SPACING;
 
   // Draw arrows
+#if 1
   if(state&(ARROW_UP|ARROW_DOWN)){
     aa=(font->getFontHeight()-5)|1;
     ay=y+(h-aa)/2;
@@ -134,6 +144,31 @@ void FXHeaderItem::draw(const FXHeader* header,FXDC& dc,FXint x,FXint y,FXint w,
     w-=aa+4;
     dc.setClipRectangle(x,y,w,h);
     }
+#endif
+#if 0
+  if(state&(ARROW_UP|ARROW_DOWN)){
+    FXPoint points[3];
+    aa=(font->getFontHeight()-5)|1;
+    ay=y+(h-aa)/2;
+    ax=x+w-aa-2;
+    if(state&ARROW_UP){
+      points[0].set(ax+(aa>>1),ay-1);
+      points[1].set(ax,ay+aa);
+      points[2].set(ax+aa-1,ay+aa);
+      dc.setForeground(header->getShadowColor());
+      dc.fillPolygon(points,3);
+      }
+    else{
+      points[0].set(ax+aa,ay);
+      points[1].set(ax+(aa>>1),ay+aa);
+      points[2].set(ax+1,ay);
+      dc.setForeground(header->getShadowColor());
+      dc.fillPolygon(points,3);
+      }
+    w-=aa+4;
+    dc.setClipRectangle(x,y,w,h);
+    }
+#endif
 
   // Fix x coordinate
   if(state&LEFT){
@@ -201,53 +236,77 @@ void FXHeaderItem::draw(const FXHeader* header,FXDC& dc,FXint x,FXint y,FXint w,
 
 
 // Create icon
-void FXHeaderItem::create(){ if(icon) icon->create(); }
+void FXHeaderItem::create(){
+  if(icon) icon->create();
+  }
 
 
 // No op, we don't own icon
-void FXHeaderItem::destroy(){ /*if(icon) icon->destroy();*/ }
+void FXHeaderItem::destroy(){
+  if((state&ICONOWNED) && icon) icon->destroy();
+  }
 
 
 // Detach from icon resource
-void FXHeaderItem::detach(){ if(icon) icon->detach(); }
-
-
-// Change sort direction
-void FXHeaderItem::setArrowDir(FXbool dir){
-  state&=~(ARROW_UP|ARROW_DOWN);
-  if(dir==TRUE) state|=ARROW_UP; else if(dir==FALSE) state|=ARROW_DOWN;
+void FXHeaderItem::detach(){
+  if(icon) icon->detach();
   }
 
 
 // Change sort direction
-FXbool FXHeaderItem::getArrowDir() const {
-  return (state&ARROW_UP) ? TRUE : (state&ARROW_DOWN) ? FALSE : MAYBE;
+void FXHeaderItem::setArrowDir(FXuint dir){
+  state^=((dir^state)&(ARROW_UP|ARROW_DOWN));
+  }
+
+
+// Change sort direction
+FXuint FXHeaderItem::getArrowDir() const {
+  return state&(ARROW_UP|ARROW_DOWN);
   }
 
 
 // Change justify mode
 void FXHeaderItem::setJustify(FXuint justify){
-  state=(state&~(RIGHT|LEFT|TOP|BOTTOM)) | (justify&(RIGHT|LEFT|TOP|BOTTOM));
+  state^=((justify^state)&(RIGHT|LEFT|TOP|BOTTOM));
   }
+
+
+// Return content justification
+FXuint FXHeaderItem::getJustify() const {
+  return state&(RIGHT|LEFT|TOP|BOTTOM);
+  }
+
 
 // Change icon positioning
 void FXHeaderItem::setIconPosition(FXuint mode){
-  state=(state&~(BEFORE|AFTER|ABOVE|BELOW)) | (mode&(BEFORE|AFTER|ABOVE|BELOW));
+  state^=((mode^state)&(BEFORE|AFTER|ABOVE|BELOW));
+  }
+
+
+// Return icon position
+FXuint FXHeaderItem::getIconPosition() const {
+  return state&(BEFORE|AFTER|ABOVE|BELOW);
   }
 
 
 // Set button state
 void FXHeaderItem::setPressed(FXbool pressed){
-  if(pressed) state|=PRESSED; else state&=~PRESSED;
+  state^=((0-pressed)^state)&PRESSED;
+  }
+
+
+// Return pressed state
+FXbool FXHeaderItem::isPressed() const {
+  return (state&PRESSED)!=0;
   }
 
 
 // Get width of item
 FXint FXHeaderItem::getWidth(const FXHeader* header) const {
-  register FXint ml=header->getPadLeft()+header->getBorderWidth();
-  register FXint mr=header->getPadRight()+header->getBorderWidth();
-  register FXFont *font=header->getFont();
-  register FXint beg,end,tw,iw,s,t,w;
+  FXint ml=header->getPadLeft()+header->getBorderWidth();
+  FXint mr=header->getPadRight()+header->getBorderWidth();
+  FXFont *font=header->getFont();
+  FXint beg,end,tw,iw,s,t,w;
   tw=iw=beg=s=0;
   if(icon) iw=icon->getWidth();
   do{
@@ -268,10 +327,10 @@ FXint FXHeaderItem::getWidth(const FXHeader* header) const {
 
 // Get height of item
 FXint FXHeaderItem::getHeight(const FXHeader* header) const {
-  register FXint mt=header->getPadTop()+header->getBorderWidth();
-  register FXint mb=header->getPadBottom()+header->getBorderWidth();
-  register FXFont *font=header->getFont();
-  register FXint beg,end,th,ih,h;
+  FXint mt=header->getPadTop()+header->getBorderWidth();
+  FXint mb=header->getPadBottom()+header->getBorderWidth();
+  FXFont *font=header->getFont();
+  FXint beg,end,th,ih,h;
   th=ih=beg=0;
   if(icon) ih=icon->getHeight();
   do{
@@ -296,7 +355,15 @@ void FXHeaderItem::setText(const FXString& txt){
 
 
 // Change item's icon
-void FXHeaderItem::setIcon(FXIcon* icn){
+void FXHeaderItem::setIcon(FXIcon* icn,FXbool owned){
+  if(icon && (state&ICONOWNED)){
+    if(icon!=icn) delete icon;
+    state&=~ICONOWNED;
+    }
+  icon=icn;
+  if(icon && owned){
+    state|=ICONOWNED;
+    }
   icon=icn;
   }
 
@@ -305,6 +372,7 @@ void FXHeaderItem::setIcon(FXIcon* icn){
 void FXHeaderItem::save(FXStream& store) const {
   FXObject::save(store);
   store << label;
+  store << tip;
   store << icon;
   store << size;
   store << pos;
@@ -316,12 +384,19 @@ void FXHeaderItem::save(FXStream& store) const {
 void FXHeaderItem::load(FXStream& store){
   FXObject::load(store);
   store >> label;
+  store >> tip;
   store >> icon;
   store >> size;
   store >> pos;
   store >> state;
   }
 
+
+// Delete item and free icon if owned
+FXHeaderItem::~FXHeaderItem(){
+  if(state&ICONOWNED) delete icon;
+  icon=(FXIcon*)-1L;
+  }
 
 /*******************************************************************************/
 
@@ -345,8 +420,9 @@ FXIMPLEMENT(FXHeader,FXFrame,FXHeaderMap,ARRAYNUMBER(FXHeaderMap))
 // Make a Header
 FXHeader::FXHeader(){
   flags|=FLAG_ENABLED|FLAG_SHOWN;
-  textColor=0;
   font=NULL;
+  numbering=NULL;
+  textColor=0;
   pos=0;
   active=-1;
   activepos=0;
@@ -356,13 +432,13 @@ FXHeader::FXHeader(){
 
 
 // Make a Header
-FXHeader::FXHeader(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
+FXHeader::FXHeader(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
   flags|=FLAG_ENABLED|FLAG_SHOWN;
   target=tgt;
   message=sel;
-  textColor=getApp()->getForeColor();
   font=getApp()->getNormalFont();
+  numbering=NULL;
+  textColor=getApp()->getForeColor();
   pos=0;
   active=-1;
   activepos=0;
@@ -373,7 +449,7 @@ FXHeader::FXHeader(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint
 
 // Create window
 void FXHeader::create(){
-  register FXint i;
+  FXint i;
   FXFrame::create();
   for(i=0; i<items.no(); i++){items[i]->create();}
   font->create();
@@ -382,7 +458,7 @@ void FXHeader::create(){
 
 // Detach window
 void FXHeader::detach(){
-  register FXint i;
+  FXint i;
   FXFrame::detach();
   for(i=0; i<items.no(); i++){items[i]->detach();}
   font->detach();
@@ -391,7 +467,7 @@ void FXHeader::detach(){
 
 // Get default width
 FXint FXHeader::getDefaultWidth(){
-  register FXint i,t,w=0;
+  FXint i,t,w=0;
   if(options&HEADER_VERTICAL){
     for(i=0; i<items.no(); i++){
       if((t=items[i]->getWidth(this))>w) w=t;
@@ -408,7 +484,7 @@ FXint FXHeader::getDefaultWidth(){
 
 // Get default height
 FXint FXHeader::getDefaultHeight(){
-  register FXint i,t,h=0;
+  FXint i,t,h=0;
   if(options&HEADER_VERTICAL){
     for(i=0; i<items.no(); i++){
       h+=items[i]->getSize();
@@ -421,7 +497,6 @@ FXint FXHeader::getDefaultHeight(){
     }
   return h;
   }
-
 
 
 // Return total size
@@ -443,30 +518,68 @@ FXHeaderItem *FXHeader::getItem(FXint index) const {
   }
 
 
+// Simple decimal numbering
+FXString FXHeader::decimalNumbering(FXint index){
+  return FXString::value(index+1);
+  }
+
+
+// Simple alpha numbering
+FXString FXHeader::alphaNumbering(FXint index){
+  FXchar buf[8]; FXint i=8;
+  index++;
+  while(index){
+    index-=1;
+    buf[--i]='A'+index%26;
+    index/=26;
+    }
+  return FXString(&buf[i],8-i);
+  }
+
+
+// Renumber captions
+void FXHeader::renumberCaptions(FXNumberingFunc func,FXint fm,FXint to){
+  if(func){
+    if(fm<=0) fm=0;
+    if(to>=items.no()) to=items.no()-1;
+    while(fm<=to){
+      setItemText(fm,func(fm));
+      ++fm;
+      }
+    }
+  }
+
+
 // Replace item with another
 FXint FXHeader::setItem(FXint index,FXHeaderItem* item,FXbool notify){
-
-  // Must have item
-  if(!item){ fxerror("%s::setItem: item is NULL.\n",getClassName()); }
-
-  // Must be in range
   if(index<0 || items.no()<=index){ fxerror("%s::setItem: index out of range.\n",getClassName()); }
+  if(items[index]!=item){
 
-  // Notify item will be replaced
-  if(notify && target){target->tryHandle(this,FXSEL(SEL_REPLACED,message),(void*)(FXival)index);}
+    // Must have item
+    if(!item){ fxerror("%s::setItem: item is NULL.\n",getClassName()); }
 
-  // Copy the size over
-  item->setSize(items[index]->getSize());
-  item->setPos(items[index]->getPos());
+    // Notify old item will be deleted
+    if(notify && target){target->tryHandle(this,FXSEL(SEL_DELETED,message),(void*)(FXival)index);}
 
-  // Delete old
-  delete items[index];
+    // Copy the size over
+    item->setSize(items[index]->getSize());
+    item->setPos(items[index]->getPos());
 
-  // Add new
-  items[index]=item;
+    // Delete old
+    delete items[index];
 
-  // Redo layout
-  recalc();
+    // Add new
+    items[index]=item;
+
+    // Autorenumber captions
+    renumberCaptions(numbering,index,index);
+
+    // Redo layout
+    recalc();
+
+    // Notify new item has been inserted
+    if(notify && target){target->tryHandle(this,FXSEL(SEL_INSERTED,message),(void*)(FXival)index);}
+    }
   return index;
   }
 
@@ -479,7 +592,7 @@ FXint FXHeader::setItem(FXint index,const FXString& text,FXIcon *icon,FXint size
 
 // Insert item
 FXint FXHeader::insertItem(FXint index,FXHeaderItem* item,FXbool notify){
-  register FXint i,d;
+  FXint i,d;
 
   // Must have item
   if(!item){ fxerror("%s::insertItem: item is NULL.\n",getClassName()); }
@@ -491,16 +604,19 @@ FXint FXHeader::insertItem(FXint index,FXHeaderItem* item,FXbool notify){
   item->setPos((0<index)?items[index-1]->getPos()+items[index-1]->getSize():0);
 
   // Move over remaining items
-  for(i=index,d=item->getSize(); i<items.no(); i++) items[i]->setPos(items[i]->getPos()+d);
+  for(i=index,d=item->getSize(); i<items.no(); ++i) items[i]->setPos(items[i]->getPos()+d);
 
   // Add item to list
   items.insert(index,item);
 
-  // Notify item has been inserted
-  if(notify && target){target->tryHandle(this,FXSEL(SEL_INSERTED,message),(void*)(FXival)index);}
+  // Autorenumber captions
+  renumberCaptions(numbering,index,items.no()-1);
 
   // Redo layout
   recalc();
+
+  // Notify item has been inserted
+  if(notify && target){target->tryHandle(this,FXSEL(SEL_INSERTED,message),(void*)(FXival)index);}
 
   return index;
   }
@@ -536,8 +652,8 @@ FXint FXHeader::prependItem(const FXString& text,FXIcon *icon,FXint size,void* p
 
 
 // Fill list by appending items from array of strings
-FXint FXHeader::fillItems(const FXchar** strings,FXIcon *icon,FXint size,void* ptr,FXbool notify){
-  register FXint n=0;
+FXint FXHeader::fillItems(const FXchar *const *strings,FXIcon *icon,FXint size,void* ptr,FXbool notify){
+  FXint n=0;
   if(strings){
     while(strings[n]){
       appendItem(strings[n++],icon,size,ptr,notify);
@@ -547,9 +663,21 @@ FXint FXHeader::fillItems(const FXchar** strings,FXIcon *icon,FXint size,void* p
   }
 
 
+// Fill list by appending items from array of strings
+FXint FXHeader::fillItems(const FXString* strings,FXIcon *icon,FXint size,void* ptr,FXbool notify){
+  FXint n=0;
+  if(strings){
+    while(!strings[n].empty()){
+      appendItem(strings[n++],icon,size,ptr,notify);
+      }
+    }
+  return n;
+  }
+
+
 // Fill list by appending items from newline separated strings
 FXint FXHeader::fillItems(const FXString& strings,FXIcon *icon,FXint size,void* ptr,FXbool notify){
-  register FXint n=0;
+  FXint n=0;
   FXString text;
   while(!(text=strings.section('\n',n)).empty()){
     appendItem(text,icon,size,ptr,notify);
@@ -561,8 +689,8 @@ FXint FXHeader::fillItems(const FXString& strings,FXIcon *icon,FXint size,void* 
 
 // Extract node from list
 FXHeaderItem* FXHeader::extractItem(FXint index,FXbool notify){
-  register FXHeaderItem *result;
-  register FXint i,d;
+  FXHeaderItem *result;
+  FXint i,d;
 
   // Must be in range
   if(index<0 || items.no()<=index){ fxerror("%s::extractItem: index out of range.\n",getClassName()); }
@@ -579,6 +707,9 @@ FXHeaderItem* FXHeader::extractItem(FXint index,FXbool notify){
   // Remove item from list
   items.erase(index);
 
+  // Autorenumber captions
+  renumberCaptions(numbering,index,items.no()-1);
+
   // Redo layout
   recalc();
 
@@ -589,7 +720,7 @@ FXHeaderItem* FXHeader::extractItem(FXint index,FXbool notify){
 
 // Remove node from list
 void FXHeader::removeItem(FXint index,FXbool notify){
-  register FXint i,d;
+  FXint i,d;
 
   // Must be in range
   if(index<0 || items.no()<=index){ fxerror("%s::removeItem: index out of range.\n",getClassName()); }
@@ -605,6 +736,9 @@ void FXHeader::removeItem(FXint index,FXbool notify){
 
   // Remove item from list
   items.erase(index);
+
+  // Autorenumber captions
+  renumberCaptions(numbering,index,items.no()-1);
 
   // Redo layout
   recalc();
@@ -645,11 +779,28 @@ FXString FXHeader::getItemText(FXint index) const {
   }
 
 
+// Change item's tooltip text
+void FXHeader::setItemTipText(FXint index,const FXString& text){
+  if(index<0 || items.no()<=index){ fxerror("%s::setItemTipText: index out of range.\n",getClassName()); }
+  if(items[index]->getTipText()!=text){
+    items[index]->setTipText(text);
+    recalc();
+    }
+  }
+
+
+// Get item's tooltip text
+FXString FXHeader::getItemTipText(FXint index) const {
+  if(index<0 || items.no()<=index){ fxerror("%s::getItemTipText: index out of range.\n",getClassName()); }
+  return items[index]->getTipText();
+  }
+
+
 // Change item's icon
-void FXHeader::setItemIcon(FXint index,FXIcon* icon){
+void FXHeader::setItemIcon(FXint index,FXIcon* icon,FXbool owned){
   if(index<0 || items.no()<=index){ fxerror("%s::setItemIcon: index out of range.\n",getClassName()); }
   if(items[index]->getIcon()!=icon){
-    items[index]->setIcon(icon);
+    items[index]->setIcon(icon,owned);
     recalc();
     }
   }
@@ -664,7 +815,7 @@ FXIcon* FXHeader::getItemIcon(FXint index) const {
 
 // Change item's size
 void FXHeader::setItemSize(FXint index,FXint size){
-  register FXint i,d;
+  FXint i,d;
   if(index<0 || items.no()<=index){ fxerror("%s::setItemSize: index out of range.\n",getClassName()); }
   if(size<0) size=0;
   d=size-items[index]->getSize();
@@ -692,21 +843,20 @@ FXint FXHeader::getItemOffset(FXint index) const {
 
 // Get index of item at offset
 FXint FXHeader::getItemAt(FXint coord) const {
-  register FXint h=items.no()-1,l=0,m;
-  coord=coord-pos;
+  FXint h=items.no()-1,l=0,p=coord-pos,m;
   if(l<=h){
-    if(coord<items[l]->getPos()) return -1;
-    if(coord>=items[h]->getPos()+items[h]->getSize()) return items.no();
+    if(p<items[l]->getPos()) return -1;
+    if(p>=items[h]->getPos()+items[h]->getSize()) return items.no();
     do{
       m=(h+l)>>1;
-      if(coord<items[m]->getPos()) h=m-1;
-      else if(coord>=items[m]->getPos()+items[m]->getSize()) l=m+1;
+      if(p<items[m]->getPos()) h=m-1;
+      else if(p>=items[m]->getPos()+items[m]->getSize()) l=m+1;
       else break;
       }
-    while(h>=l);
+    while(l<=h);
     return m;
     }
-  return coord<0 ? -1 : 0;
+  return p<0 ? -1 : 0;
   }
 
 
@@ -725,7 +875,7 @@ void* FXHeader::getItemData(FXint index) const {
 
 
 // Change sort direction
-void FXHeader::setArrowDir(FXint index,FXbool dir){
+void FXHeader::setArrowDir(FXint index,FXuint dir){
   if(index<0 || items.no()<=index){ fxerror("%s::setArrowDir: index out of range.\n",getClassName()); }
   if(items[index]->getArrowDir()!=dir){
     items[index]->setArrowDir(dir);
@@ -735,7 +885,7 @@ void FXHeader::setArrowDir(FXint index,FXbool dir){
 
 
 // Return sort direction
-FXbool FXHeader::getArrowDir(FXint index) const {
+FXuint FXHeader::getArrowDir(FXint index) const {
   if(index<0 || items.no()<=index){ fxerror("%s::getArrowDir: index out of range.\n",getClassName()); }
   return items[index]->getArrowDir();
   }
@@ -785,7 +935,7 @@ void FXHeader::setItemPressed(FXint index,FXbool pressed){
   }
 
 
-// Return TRUE if button item is pressed in
+// Return true if button item is pressed in
 FXbool FXHeader::isItemPressed(FXint index) const {
   if(index<0 || items.no()<=index){ fxerror("%s::isItemPressed: index out of range.\n",getClassName()); }
   return items[index]->isPressed();
@@ -794,7 +944,7 @@ FXbool FXHeader::isItemPressed(FXint index) const {
 
 // Scroll to make given item visible
 void FXHeader::makeItemVisible(FXint index){
-  register FXint newpos,ioffset,isize,space;
+  FXint newpos,ioffset,isize,space;
   if(xid){
     newpos=pos;
     if(0<=index && index<items.no()){
@@ -835,7 +985,7 @@ void FXHeader::layout(){
 long FXHeader::onPaint(FXObject*,FXSelector,void* ptr){
   FXEvent *ev=(FXEvent*)ptr;
   FXDCWindow dc(this,ev);
-  register FXint x,y,w,h,i,ilo,ihi;
+  FXint x,y,w,h,i,ilo,ihi;
 
   // Set font
   dc.setFont(font);
@@ -963,14 +1113,13 @@ long FXHeader::onPaint(FXObject*,FXSelector,void* ptr){
 
 // We were asked about tip text
 long FXHeader::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryTip(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryTip(sender,sel,ptr)) return 1;
   if(flags&FLAG_TIP){
     FXint index,cx,cy; FXuint btns;
     getCursorPosition(cx,cy,btns);
     index=getItemAt((options&HEADER_VERTICAL)?cy:cx);
     if(0<=index && index<items.no()){
-      FXString string=items[index]->getText();
-      sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&string);
+      sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&items[index]->getTipText());
       return 1;
       }
     }
@@ -980,7 +1129,7 @@ long FXHeader::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
 
 // We were asked about status text
 long FXHeader::onQueryHelp(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryHelp(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryHelp(sender,sel,ptr)) return 1;
   if((flags&FLAG_HELP) && !help.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&help);
     return 1;
@@ -1011,8 +1160,7 @@ long FXHeader::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
 
     // Where clicked
     coord=(options&HEADER_VERTICAL)?event->win_y:event->win_x;
-    active=getItemAt(coord);
-    if(0<=active && active<items.no()){
+    if((active=getItemAt(coord))>=0){
       if((options&HEADER_RESIZE) && (active<items.no()) && (pos+items[active]->getPos()+items[active]->getSize()-FUDGE<coord)){
         activepos=pos+items[active]->getPos();
         activesize=items[active]->getSize();
@@ -1031,7 +1179,7 @@ long FXHeader::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
       else if((options&HEADER_BUTTON) && (active<items.no())){
         activepos=pos+items[active]->getPos();
         activesize=items[active]->getSize();
-        setItemPressed(active,TRUE);
+        setItemPressed(active,true);
         flags|=FLAG_PRESSED;
         }
       }
@@ -1075,7 +1223,7 @@ long FXHeader::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
     // Pressed button
     if(flg&FLAG_PRESSED){
       if(items[active]->isPressed()){
-        setItemPressed(active,FALSE);
+        setItemPressed(active,false);
         if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXival)active);
         }
       return 1;
@@ -1131,18 +1279,18 @@ long FXHeader::onMotion(FXObject*,FXSelector,void* ptr){
   if(flags&FLAG_PRESSED){
     if(options&HEADER_VERTICAL){
       if(activepos<=event->win_y && event->win_y<activepos+activesize && 0<=event->win_x && event->win_x<width){
-        setItemPressed(active,TRUE);
+        setItemPressed(active,true);
         }
       else{
-        setItemPressed(active,FALSE);
+        setItemPressed(active,false);
         }
       }
     else{
       if(activepos<=event->win_x && event->win_x<activepos+activesize && 0<=event->win_y && event->win_y<height){
-        setItemPressed(active,TRUE);
+        setItemPressed(active,true);
         }
       else{
-        setItemPressed(active,FALSE);
+        setItemPressed(active,false);
         }
       }
     return 1;
@@ -1151,8 +1299,8 @@ long FXHeader::onMotion(FXObject*,FXSelector,void* ptr){
   // When hovering over a split, show the split cursor
   if(options&HEADER_RESIZE){
     if(options&HEADER_VERTICAL){
-      index=getItemAt(event->win_y-FUDGE);
-      if(0<=index && index<items.no() && pos+items[index]->getPos()+items[index]->getSize()-FUDGE<event->win_y){
+      index=getItemAt(event->win_y);
+      if(0<=index && ((index<items.no() && pos+items[index]->getPos()+items[index]->getSize()-FUDGE<event->win_y) || (0<index && event->win_y<pos+items[index-1]->getPos()+items[index-1]->getSize()+FUDGE))){
         setDefaultCursor(getApp()->getDefaultCursor(DEF_VSPLIT_CURSOR));
         }
       else{
@@ -1160,8 +1308,8 @@ long FXHeader::onMotion(FXObject*,FXSelector,void* ptr){
         }
       }
     else{
-      index=getItemAt(event->win_x-FUDGE);
-      if(0<=index && index<items.no() && pos+items[index]->getPos()+items[index]->getSize()-FUDGE<event->win_x){
+      index=getItemAt(event->win_x);
+      if(0<=index && ((index<items.no() && pos+items[index]->getPos()+items[index]->getSize()-FUDGE<event->win_x) || (0<index && event->win_x<pos+items[index-1]->getPos()+items[index-1]->getSize()+FUDGE))){
         setDefaultCursor(getApp()->getDefaultCursor(DEF_HSPLIT_CURSOR));
         }
       else{
@@ -1193,7 +1341,7 @@ void FXHeader::drawSplit(FXint p){
   FXDCWindow dc(getParent());
   FXint px,py;
   translateCoordinatesTo(px,py,getParent(),p,p);
-  dc.clipChildren(FALSE);
+  dc.clipChildren(false);
   dc.setFunction(BLT_NOT_DST);
   if(options&HEADER_VERTICAL){
     dc.fillRectangle(0,py,getParent()->getWidth(),2);
@@ -1227,6 +1375,17 @@ void FXHeader::setFont(FXFont* fnt){
   }
 
 
+// Set auto-renumbering function
+void FXHeader::setAutoNumbering(FXNumberingFunc func){
+  if(numbering!=func){
+    numbering=func;
+    if(numbering){
+      renumberCaptions(numbering);
+      }
+    }
+  }
+
+
 // Set text color
 void FXHeader::setTextColor(FXColor clr){
   if(textColor!=clr){
@@ -1238,7 +1397,7 @@ void FXHeader::setTextColor(FXColor clr){
 
 // Header style change
 void FXHeader::setHeaderStyle(FXuint style){
-  FXuint opts=(options&~HEADER_MASK) | (style&HEADER_MASK);
+  FXuint opts=((style^options)&HEADER_MASK)^options;
   if(options!=opts){
     options=opts;
     recalc();
@@ -1250,12 +1409,6 @@ void FXHeader::setHeaderStyle(FXuint style){
 // Get header style
 FXuint FXHeader::getHeaderStyle() const {
   return (options&HEADER_MASK);
-  }
-
-
-// Change help text
-void FXHeader::setHelpText(const FXString& text){
-  help=text;
   }
 
 

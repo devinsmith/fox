@@ -3,38 +3,40 @@
 *                       D r a g   C o r n e r   W i d g e t                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDragCorner.cpp,v 1.34.2.1 2006/05/18 15:27:20 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXDragCorner.h"
 
 
@@ -80,13 +82,12 @@ FXDragCorner::FXDragCorner(){
   oldh=0;
   xoff=0;
   yoff=0;
-  ewmh=0;
+  ewmh=false;
   }
 
 
 // Construct and init
-FXDragCorner::FXDragCorner(FXComposite* p):
-  FXWindow(p,LAYOUT_RIGHT|LAYOUT_BOTTOM){
+FXDragCorner::FXDragCorner(FXComposite* p):FXWindow(p,LAYOUT_RIGHT|LAYOUT_BOTTOM){
   flags|=FLAG_ENABLED|FLAG_SHOWN;
   defaultCursor=getApp()->getDefaultCursor(DEF_DRAGBR_CURSOR);
   dragCursor=getApp()->getDefaultCursor(DEF_DRAGBR_CURSOR);
@@ -97,7 +98,7 @@ FXDragCorner::FXDragCorner(FXComposite* p):
   oldh=0;
   xoff=0;
   yoff=0;
-  ewmh=0;
+  ewmh=false;
   }
 
 
@@ -117,12 +118,12 @@ FXint FXDragCorner::getDefaultHeight(){
 void FXDragCorner::create(){
   FXWindow::create();
 #ifndef WIN32
-  unsigned long n,i; Atom type,*list; int format;
-  if(XGetWindowProperty(DISPLAY(getApp()),XDefaultRootWindow(DISPLAY(getApp())),getApp()->wmNetSupported,0,2048,False,XA_ATOM,&type,&format,&n,&i,(unsigned char**)&list)==Success && list){
+  unsigned long n,i; Atom type; unsigned char *prop; int format;
+  if(Success==XGetWindowProperty(DISPLAY(getApp()),XDefaultRootWindow(DISPLAY(getApp())),getApp()->wmNetSupported,0,2048,False,XA_ATOM,&type,&format,&n,&i,&prop)){
     for(i=0; i<n; i++){
-      if(list[i]==getApp()->wmNetMoveResize){ ewmh=1; break; }
+      if(((Atom*)prop)[i]==getApp()->wmNetMoveResize){ ewmh=true; break; }
       }
-    XFree(list);
+    XFree(prop);
     }
 #endif
   }
@@ -175,7 +176,7 @@ long FXDragCorner::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
   translateCoordinatesTo(wx,wy,getShell(),event->win_x,event->win_y);
   oldw=wx+xoff;
   oldh=wy+yoff;
-  dc.clipChildren(FALSE);
+  dc.clipChildren(false);
   dc.setFunction(BLT_SRC_XOR_DST);
   dc.setForeground(FXRGB(255,255,255));
   getShell()->translateCoordinatesTo(xx,yy,getRoot(),0,0);
@@ -195,7 +196,7 @@ long FXDragCorner::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
     ungrab();
     getShell()->translateCoordinatesTo(xx,yy,getRoot(),0,0);
     translateCoordinatesTo(wx,wy,getShell(),event->win_x,event->win_y);
-    dc.clipChildren(FALSE);
+    dc.clipChildren(false);
     dc.setFunction(BLT_SRC_XOR_DST);
     dc.setForeground(FXRGB(255,255,255));
     dc.drawRectangle(xx,yy,oldw,oldh);
@@ -214,7 +215,7 @@ long FXDragCorner::onMotion(FXObject*,FXSelector,void* ptr){
     FXint xx,yy,wx,wy;
     getShell()->translateCoordinatesTo(xx,yy,getRoot(),0,0);
     translateCoordinatesTo(wx,wy,getShell(),event->win_x,event->win_y);
-    dc.clipChildren(FALSE);
+    dc.clipChildren(false);
     dc.setFunction(BLT_SRC_XOR_DST);
     dc.setForeground(FXRGB(255,255,255));
     dc.drawRectangle(xx,yy,oldw,oldh);
