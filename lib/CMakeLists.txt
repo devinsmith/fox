@@ -1,3 +1,7 @@
+if (POLICY CMP0072)
+   cmake_policy (SET CMP0072 OLD)
+endif(POLICY CMP0072)
+
 include(CheckIncludeFileCXX)
 include(CheckCXXSourceCompiles)
 include(CheckCXXSymbolExists)
@@ -964,6 +968,8 @@ if(X11_Xrender_FOUND)
   list(APPEND LIBRARIES ${X11_Xrender_LIB})
 endif()
 
+
+
 # check for xinput2
 # find_path(X11_Xi2_INCLUDE_PATH X11/extensions/XInput2.h ${X11_INC_SEARCH_PATH})
 #if (X11_Xi2_INCLUDE_PATH AND X11_Xi_LIB)
@@ -1168,6 +1174,11 @@ endif()
 if (OPENGL_GLU_FOUND)
   add_definitions(-DHAVE_GLU_H)
   list(APPEND LIBRARIES ${OPENGL_glu_LIBRARY})
+endif()
+
+if (OpenGL_GLX_FOUND)
+   target_compile_definitions(fox PUBLIC -DHAVE_GLX_H)
+   list(APPEND LIBRARIES ${OPENGL_glx_LIBRARY})
 endif()
 
 if(NOT WITH_XIM)
