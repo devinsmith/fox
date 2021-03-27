@@ -3,36 +3,39 @@
 *                         M e n u   B a r   W i d g e t                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMenuBar.cpp,v 1.26 2006/01/22 17:58:35 fox Exp $                       *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXButton.h"
 #include "FXMenuBar.h"
@@ -42,6 +45,8 @@
   Notes:
   - Hittin Alt- key only should attract focus to the first item in the menubar.
   - If width of menu gets too small, expand the height to make it multiple rows.
+  - FIXME popping a menu and leaving the cursor inside the menu title
+    somehow does not allow keyboard navigation.
 */
 
 using namespace FX;
@@ -76,16 +81,14 @@ FXIMPLEMENT(FXMenuBar,FXToolBar,FXMenuBarMap,ARRAYNUMBER(FXMenuBarMap))
 
 
 // Make a floatable menubar
-FXMenuBar::FXMenuBar(FXComposite* p,FXComposite* q,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXToolBar(p,q,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
+FXMenuBar::FXMenuBar(FXComposite* p,FXComposite* q,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXToolBar(p,q,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
   flags|=FLAG_ENABLED;
   dragCursor=getApp()->getDefaultCursor(DEF_RARROW_CURSOR);
   }
 
 
 // Make a non-floatable menubar
-FXMenuBar::FXMenuBar(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXToolBar(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
+FXMenuBar::FXMenuBar(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXToolBar(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
   flags|=FLAG_ENABLED;
   dragCursor=getApp()->getDefaultCursor(DEF_RARROW_CURSOR);
   }
@@ -131,14 +134,12 @@ long FXMenuBar::onFocusLeft(FXObject*,FXSelector,void* ptr){
 
 // Enter:- when inside the popup, all is normal!
 long FXMenuBar::onEnter(FXObject* sender,FXSelector sel,void* ptr){
-  FXEvent* ev=(FXEvent*)ptr;
-  FXint px, py;
+  FXint px,py;
   FXToolBar::onEnter(sender,sel,ptr);
   if(!getFocus() || !getFocus()->isActive()) return 1;
   if(((FXEvent*)ptr)->code==CROSSINGNORMAL){
-    translateCoordinatesTo(px,py,getParent(),ev->win_x,ev->win_y);
+    translateCoordinatesTo(px,py,getParent(),((FXEvent*)ptr)->win_x,((FXEvent*)ptr)->win_y);
     if(contains(px,py) && grabbed()) ungrab();
-    //if(grabbed()) ungrab();
     }
   return 1;
   }
@@ -146,16 +147,12 @@ long FXMenuBar::onEnter(FXObject* sender,FXSelector sel,void* ptr){
 
 // Leave:- when outside the popup, a click will hide the popup!
 long FXMenuBar::onLeave(FXObject* sender,FXSelector sel,void* ptr){
-  FXEvent* ev=(FXEvent*)ptr;
   FXint px,py;
   FXToolBar::onLeave(sender,sel,ptr);
   if(!getFocus() || !getFocus()->isActive()) return 1;
   if(((FXEvent*)ptr)->code==CROSSINGNORMAL){
-    translateCoordinatesTo(px,py,getParent(),ev->win_x,ev->win_y);
+    translateCoordinatesTo(px,py,getParent(),((FXEvent*)ptr)->win_x,((FXEvent*)ptr)->win_y);
     if(!contains(px,py) && !grabbed()) grab();
-//#ifndef WIN32
-//    if(!grabbed()) grab();
-//#endif
     }
   return 1;
   }
@@ -163,7 +160,7 @@ long FXMenuBar::onLeave(FXObject* sender,FXSelector sel,void* ptr){
 
 // We're considered inside the menu bar when either
 // in the bar or in any active menus
-bool FXMenuBar::contains(FXint parentx,FXint parenty) const {
+FXbool FXMenuBar::contains(FXint parentx,FXint parenty) const {
   FXint x,y;
   if(FXComposite::contains(parentx,parenty)) return true;
   if(getFocus()){

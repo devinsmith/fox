@@ -3,31 +3,31 @@
 *                          X P M   I n p u t / O u t p u t                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxxpmio.cpp,v 1.53.2.1 2006/08/02 01:31:11 fox Exp $                         *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxascii.h"
+#include "FXArray.h"
 #include "FXHash.h"
+#include "FXElement.h"
 #include "FXStream.h"
-#include "fxpriv.h"
+#include "FXColors.h"
 
 
 /*
@@ -53,16 +53,27 @@ using namespace FX;
 namespace FX {
 
 
-extern FXAPI bool fxcheckXPM(FXStream& store);
-extern FXAPI bool fxloadXPM(const FXchar **pix,FXColor*& data,FXint& width,FXint& height);
-extern FXAPI bool fxloadXPM(FXStream& store,FXColor*& data,FXint& width,FXint& height);
-extern FXAPI bool fxsaveXPM(FXStream& store,const FXColor *data,FXint width,FXint height,bool fast=true);
+extern FXbool fxfsquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& actualcolors,FXint w,FXint h,FXint maxcolors);
+extern FXbool fxezquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& actualcolors,FXint w,FXint h,FXint maxcolors);
+extern FXbool fxwuquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& actualcolors,FXint w,FXint h,FXint maxcolors);
 
+
+// Declarations
+#ifndef FXLOADXPM
+extern FXAPI FXbool fxcheckXPM(FXStream& store);
+extern FXAPI FXbool fxloadXPM(const FXchar **pix,FXColor*& data,FXint& width,FXint& height);
+extern FXAPI FXbool fxloadXPM(FXStream& store,FXColor*& data,FXint& width,FXint& height);
+extern FXAPI FXbool fxsaveXPM(FXStream& store,const FXColor *data,FXint width,FXint height,FXbool fast=true);
+#endif
+
+// Furnish our own version
+extern FXAPI FXint __sscanf(const FXchar* string,const FXchar* format,...);
+extern FXAPI FXint __snprintf(FXchar* string,FXint length,const FXchar* format,...);
 
 
 // Read till end of line
 static void readline(FXStream& store,FXchar* buffer,FXuint size){
-  register FXuint i=0;
+  FXuint i=0;
   while(!store.eof() && i<size){
     store >> buffer[i];
     if(buffer[i]=='\r') continue;
@@ -75,7 +86,7 @@ static void readline(FXStream& store,FXchar* buffer,FXuint size){
 
 // Read quoted text
 static void readtext(FXStream& store,FXchar* buffer,FXuint size){
-  register FXuint i=0;
+  FXuint i=0;
   FXchar ch;
   store >> ch;
   while(!store.eof() && ch!='"') store >> ch;
@@ -90,7 +101,7 @@ static void readtext(FXStream& store,FXchar* buffer,FXuint size){
 
 // Parse next word
 static FXint nextword(const FXchar*& src,FXchar* dst){
-  register FXchar *ptr=dst;
+  FXchar *ptr=dst;
   while(*src && Ascii::isSpace(*src)) src++;
   while(*src && !Ascii::isSpace(*src)) *ptr++=*src++;
   *ptr=0;
@@ -99,13 +110,13 @@ static FXint nextword(const FXchar*& src,FXchar* dst){
 
 
 // Is key
-static bool iskey(const FXchar *str){
+static FXbool iskey(const FXchar *str){
   return ((str[0]=='c' || str[0]=='s' || str[0]=='m' || str[0]=='g') && str[1]==0) || (str[0]=='g' && str[1]=='4' && str[2]==0);
   }
 
 
 // Check if stream contains a XPM
-bool fxcheckXPM(FXStream& store){
+FXbool fxcheckXPM(FXStream& store){
   FXuchar signature[9];
   store.load(signature,9);
   store.position(-9,FXFromCurrent);
@@ -114,7 +125,7 @@ bool fxcheckXPM(FXStream& store){
 
 
 // Load image from array of strings
-bool fxloadXPM(const FXchar **pixels,FXColor*& data,FXint& width,FXint& height){
+FXbool fxloadXPM(const FXchar **pixels,FXColor*& data,FXint& width,FXint& height){
   FXchar  lookuptable[1024][8],name[100],word[100],flag,best;
   FXColor colortable[16384],*pix,color;
   const FXchar *src,*line;
@@ -136,7 +147,7 @@ bool fxloadXPM(const FXchar **pixels,FXColor*& data,FXint& width,FXint& height){
   if(!line) return false;
 
   // Parse size description
-  sscanf(line,"%d %d %u %u",&width,&height,&ncolors,&cpp);
+  __sscanf(line,"%d %d %u %u",&width,&height,&ncolors,&cpp);
 
   // Check size
   if(width<1 || height<1 || width>16384 || height>16384) return false;
@@ -162,10 +173,10 @@ bool fxloadXPM(const FXchar **pixels,FXColor*& data,FXint& width,FXint& height){
       flag=word[0];
       name[0]=0;
       while(nextword(src,word) && !iskey(word)){
-        strcat(name,word);
+        fxstrlcat(name,word,sizeof(name));
         }
       if(flag<best){                    // c < g < m < s
-        color=fxcolorfromname(name);
+        color=colorFromName(name);
         best=flag;
         }
       }
@@ -177,12 +188,12 @@ bool fxloadXPM(const FXchar **pixels,FXColor*& data,FXint& width,FXint& height){
       }
     else{
       colortable[c]=color;
-      strncpy(lookuptable[c],line,cpp);
+      fxstrlcpy(lookuptable[c],line,cpp);
       }
     }
 
   // Try allocate pixels
-  if(!FXMALLOC(&data,FXColor,width*height)){
+  if(!allocElms(data,width*height)){
     return false;
     }
 
@@ -213,7 +224,7 @@ bool fxloadXPM(const FXchar **pixels,FXColor*& data,FXint& width,FXint& height){
 
 
 // Load image from stream
-bool fxloadXPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
+FXbool fxloadXPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   FXchar lookuptable[1024][8],line[100],name[100],word[100],flag,best,ch;
   FXColor colortable[16384],*pix,color;
   const FXchar *src;
@@ -233,7 +244,7 @@ bool fxloadXPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   readtext(store,line,sizeof(line));
 
   // Parse size description
-  if(sscanf(line,"%d %d %u %u",&width,&height,&ncolors,&cpp)!=4) return false;
+  if(__sscanf(line,"%d %d %u %u",&width,&height,&ncolors,&cpp)!=4) return false;
 
   // Check size
   if(width<1 || height<1 || width>16384 || height>16384) return false;
@@ -259,10 +270,10 @@ bool fxloadXPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
       flag=word[0];
       name[0]=0;
       while(nextword(src,word) && !iskey(word)){
-        strcat(name,word);
+        fxstrlcat(name,word,sizeof(name));
         }
       if(flag<best){                    // c < g < m < s
-        color=fxcolorfromname(name);
+        color=colorFromName(name);
         best=flag;
         }
       }
@@ -274,18 +285,18 @@ bool fxloadXPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
       }
     else{
       colortable[c]=color;
-      strncpy(lookuptable[c],line,cpp);
+      fxstrlcpy(lookuptable[c],line,cpp);
       }
     }
 
   // Try allocate pixels
-  if(!FXMALLOC(&data,FXColor,width*height)){
+  if(!allocElms(data,width*height)){
     return false;
     }
 
   // Read the pixels
   for(i=0,pix=data; i<height; i++){
-    while(!store.eof() && (store>>ch,ch!='"'));
+    while(!store.eof() && (store>>ch,ch!='"')){}
     for(j=0; j<width; j++){
       store.load(line,cpp);
       if(cpp==1){
@@ -301,7 +312,7 @@ bool fxloadXPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
         }
       *pix++=color;
       }
-    while(!store.eof() && (store>>ch,ch!='"'));
+    while(!store.eof() && (store>>ch,ch!='"')){}
     }
 
   // We got the image, but we're not done yet; need to read few more bytes
@@ -319,7 +330,7 @@ bool fxloadXPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
 
 
 // Save image to a stream
-bool fxsaveXPM(FXStream& store,const FXColor *data,FXint width,FXint height,bool fast){
+FXbool fxsaveXPM(FXStream& store,const FXColor *data,FXint width,FXint height,FXbool fast){
   const FXchar printable[]=" .XoO+@#$%&*=-;:>,<1234567890qwertyuipasdfghjklzxcvbnmMNBVCZASDFGHJKLPIUYTREWQ!~^/()_`'][{}|";
   const FXchar quote='"';
   const FXchar comma=',';
@@ -335,7 +346,7 @@ bool fxsaveXPM(FXStream& store,const FXColor *data,FXint width,FXint height,bool
   if(!data || width<=0 || height<=0) return false;
 
   // Allocate temp buffer for pixels
-  if(!FXMALLOC(&pixels,FXuchar,numpixels)) return false;
+  if(!allocElms(pixels,numpixels)) return false;
 
   // First, try EZ quantization, because it is exact; a previously
   // loaded XPM will be re-saved with exactly the same colors.
@@ -357,7 +368,7 @@ bool fxsaveXPM(FXStream& store,const FXColor *data,FXint width,FXint height,bool
   store.save("/* XPM */\nstatic char * image[] = {\n",36);
 
   // Save values
-  len=sprintf(buffer,"\"%d %d %d %d\",\n",width,height,ncolors,cpp);
+  len=__snprintf(buffer,sizeof(buffer),"\"%d %d %d %d\",\n",width,height,ncolors,cpp);
   store.save(buffer,len);
 
   // Save the colors
@@ -366,11 +377,11 @@ bool fxsaveXPM(FXStream& store,const FXColor *data,FXint width,FXint height,bool
     c1=printable[i%MAXPRINTABLE];
     c2=printable[i/MAXPRINTABLE];
     if(FXALPHAVAL(color)){
-      len=sprintf(buffer,"\"%c%c c #%02x%02x%02x\",\n",c1,c2,FXREDVAL(color),FXGREENVAL(color),FXBLUEVAL(color));
+      len=__snprintf(buffer,sizeof(buffer),"\"%c%c c #%02x%02x%02x\",\n",c1,c2,FXREDVAL(color),FXGREENVAL(color),FXBLUEVAL(color));
       store.save(buffer,len);
       }
     else{
-      len=sprintf(buffer,"\"%c%c c None\",\n",c1,c2);
+      len=__snprintf(buffer,sizeof(buffer),"\"%c%c c None\",\n",c1,c2);
       store.save(buffer,len);
       }
     }
@@ -393,7 +404,7 @@ bool fxsaveXPM(FXStream& store,const FXColor *data,FXint width,FXint height,bool
     if(i<height-1){ store << comma; store << newline; }
     }
   store.save("};\n",3);
-  FXFREE(&pixels);
+  freeElms(pixels);
   return true;
   }
 

@@ -3,44 +3,46 @@
 *                          C o l o r   S e l e c t o r                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXColorSelector.cpp,v 1.74.2.1 2009/01/16 01:20:37 fox Exp $                 *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
-#include "fxpriv.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
+#include "FXColors.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
 #include "FXObject.h"
 #include "FXObjectList.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
 #include "FXApp.h"
 #include "FXFont.h"
-#include "FXDCWindow.h"
 #include "FXIcon.h"
 #include "FXGIFIcon.h"
 #include "FXWindow.h"
@@ -69,7 +71,6 @@
 #include "FXColorSelector.h"
 #include "icons.h"
 
-
 /*
   Notes:
   - Custom colors in the twentyfour wells are saved to registry for next time you
@@ -90,8 +91,12 @@
   - Perhaps this panel should send color change messages to active
     colorwell widget?
 
-  - Still need a way to pick a color from the screen:- look at WindowMaker.
+  - New default palette of colors; basic grey levels, primary colors,
+    darker colors, and pastel colors.
 */
+
+// Is color pure gray
+#define FXISGREY(rgba) (FXREDVAL(rgba)==FXGREENVAL(rgba) && FXREDVAL(rgba)==FXBLUEVAL(rgba))
 
 using namespace FX;
 
@@ -128,14 +133,14 @@ FXDEFMAP(FXColorSelector) FXColorSelectorMap[]={
   FXMAPFUNC(SEL_COMMAND,FXColorSelector::ID_WELL_CHANGED,FXColorSelector::onCmdWell),
   FXMAPFUNC(SEL_CHANGED,FXColorSelector::ID_WELL_CHANGED,FXColorSelector::onChgWell),
   FXMAPFUNCS(SEL_COMMAND,FXColorSelector::ID_CUSTOM_FIRST,FXColorSelector::ID_CUSTOM_LAST,FXColorSelector::onCmdCustomWell),
-  FXMAPFUNCS(SEL_CHANGED,FXColorSelector::ID_CUSTOM_FIRST,FXColorSelector::ID_CUSTOM_LAST,FXColorSelector::onChgCustomWell),
   FXMAPFUNC(SEL_COMMAND,FXColorSelector::ID_COLOR_LIST,FXColorSelector::onCmdList),
-  FXMAPFUNC(SEL_COMMAND,FXWindow::ID_SETVALUE,FXColorSelector::onCmdSetValue),
-  FXMAPFUNC(SEL_COMMAND,FXColorSelector::ID_ACTIVEPANE,FXColorSelector::onCmdActivePane),
   FXMAPFUNC(SEL_UPDATE,FXColorSelector::ID_DIAL_WHEEL,FXColorSelector::onUpdWheel),
   FXMAPFUNC(SEL_COMMAND,FXColorSelector::ID_DIAL_WHEEL,FXColorSelector::onCmdWheel),
   FXMAPFUNC(SEL_CHANGED,FXColorSelector::ID_DIAL_WHEEL,FXColorSelector::onCmdWheel),
   FXMAPFUNC(SEL_COMMAND,FXColorSelector::ID_COLORPICK,FXColorSelector::onCmdColorPick),
+  FXMAPFUNC(SEL_COMMAND,FXColorSelector::ID_SETVALUE,FXColorSelector::onCmdSetValue),
+  FXMAPFUNC(SEL_COMMAND,FXColorSelector::ID_SETINTVALUE,FXColorSelector::onCmdSetIntValue),
+  FXMAPFUNC(SEL_COMMAND,FXColorSelector::ID_GETINTVALUE,FXColorSelector::onCmdGetIntValue),
   };
 
 
@@ -143,22 +148,24 @@ FXDEFMAP(FXColorSelector) FXColorSelectorMap[]={
 FXIMPLEMENT(FXColorSelector,FXPacker,FXColorSelectorMap,ARRAYNUMBER(FXColorSelectorMap))
 
 
-// Well names
-const FXchar* FXColorSelector::wellname[24]={
-  "wella","wellb","wellc","welld",
-  "welle","wellf","wellg","wellh",
-  "welli","wellj","wellk","welll",
-  "wellm","welln","wello","wellp",
-  "wellq","wellr","wells","wellt",
-  "wellu","wellv","wellw","wellx"
-  };
-
-
 /*******************************************************************************/
 
+// Sort items based on color
+static FXint hueSort(const FXListItem* a,const FXListItem* b){
+  FXColor colora=((const FXColorItem*)a)->getColor();
+  FXColor colorb=((const FXColorItem*)b)->getColor();
+  FXfloat ca[3],cb[3];
+  fxrgb_to_hsl(ca[0],ca[1],ca[2],0.003921568627f*FXREDVAL(colora),0.003921568627f*FXGREENVAL(colora),0.003921568627f*FXBLUEVAL(colora));
+  fxrgb_to_hsl(cb[0],cb[1],cb[2],0.003921568627f*FXREDVAL(colorb),0.003921568627f*FXGREENVAL(colorb),0.003921568627f*FXBLUEVAL(colorb));
+  if(ca[2]!=cb[2]) return FXSGN(cb[2]-ca[2]);
+  if(ca[1]!=cb[1]) return FXSGN(ca[1]-cb[1]);
+  if(ca[0]!=cb[0]) return FXSGN(cb[0]-ca[0]);
+  return 0;
+  }
+
+
 // Separator item
-FXColorSelector::FXColorSelector(FXComposite *p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXPacker(p,opts,x,y,w,h){
+FXColorSelector::FXColorSelector(FXComposite *p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXPacker(p,opts,x,y,w,h){
   FXLabel *label;
   target=tgt;
   message=sel;
@@ -181,35 +188,30 @@ FXColorSelector::FXColorSelector(FXComposite *p,FXObject* tgt,FXSelector sel,FXu
 
   // Wells with custom colors
   FXHorizontalFrame *colors=new FXHorizontalFrame(this,LAYOUT_SIDE_BOTTOM|LAYOUT_FILL_X, 0,0,0,0, 0,0,0,0, 0,0);
-  colorwells[0]=new FXColorWell(colors,FXRGBA(255,255,255,255),this,ID_CUSTOM_FIRST+0,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[1]=new FXColorWell(colors,FXRGBA(  0,  0,  0,255),this,ID_CUSTOM_FIRST+1,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[2]=new FXColorWell(colors,FXRGBA(255,  0,  0,255),this,ID_CUSTOM_FIRST+2,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[3]=new FXColorWell(colors,FXRGBA(  0,255,  0,255),this,ID_CUSTOM_FIRST+3,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-
-  colorwells[4]=new FXColorWell(colors,FXRGBA(  0,  0,255,255),this,ID_CUSTOM_FIRST+4,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[5]=new FXColorWell(colors,FXRGBA(  0,  0,255,255),this,ID_CUSTOM_FIRST+5,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[6]=new FXColorWell(colors,FXRGBA(255,255,  0,255),this,ID_CUSTOM_FIRST+6,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[7]=new FXColorWell(colors,FXRGBA(  0,255,255,255),this,ID_CUSTOM_FIRST+7,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-
-  colorwells[8]=new FXColorWell(colors,FXRGBA(255,  0,255,255),this,ID_CUSTOM_FIRST+8,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[9]=new FXColorWell(colors,FXRGBA(128,  0,  0,255),this,ID_CUSTOM_FIRST+9,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[10]=new FXColorWell(colors,FXRGBA(  0,128,  0,255),this,ID_CUSTOM_FIRST+10,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[11]=new FXColorWell(colors,FXRGBA(  0,  0,128,255),this,ID_CUSTOM_FIRST+11,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-
-  colorwells[12]=new FXColorWell(colors,FXRGBA(128,128,  0,255),this,ID_CUSTOM_FIRST+12,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[13]=new FXColorWell(colors,FXRGBA(128,  0,128,255),this,ID_CUSTOM_FIRST+13,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[14]=new FXColorWell(colors,FXRGBA(  0,128,128,255),this,ID_CUSTOM_FIRST+14,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[15]=new FXColorWell(colors,FXRGBA(  0,128,128,255),this,ID_CUSTOM_FIRST+15,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-
-  colorwells[16]=new FXColorWell(colors,FXRGBA(255,  0,255,255),this,ID_CUSTOM_FIRST+16,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[17]=new FXColorWell(colors,FXRGBA(128,  0,  0,255),this,ID_CUSTOM_FIRST+17,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[18]=new FXColorWell(colors,FXRGBA(  0,128,  0,255),this,ID_CUSTOM_FIRST+18,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[19]=new FXColorWell(colors,FXRGBA(  0,  0,128,255),this,ID_CUSTOM_FIRST+19,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-
-  colorwells[20]=new FXColorWell(colors,FXRGBA(128,128,  0,255),this,ID_CUSTOM_FIRST+20,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[21]=new FXColorWell(colors,FXRGBA(128,  0,128,255),this,ID_CUSTOM_FIRST+21,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[22]=new FXColorWell(colors,FXRGBA(  0,128,128,255),this,ID_CUSTOM_FIRST+22,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
-  colorwells[23]=new FXColorWell(colors,FXRGBA(  0,128,128,255),this,ID_CUSTOM_FIRST+23,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X, 0,0,0,0 ,0,0,0,0);
+  colorwells[ 0]=new FXColorWell(colors,FXRGBA(255,255,255,255),this,ID_CUSTOM_FIRST+ 0,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[ 1]=new FXColorWell(colors,FXRGBA(204,204,204,255),this,ID_CUSTOM_FIRST+ 1,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[ 2]=new FXColorWell(colors,FXRGBA(153,153,153,255),this,ID_CUSTOM_FIRST+ 2,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[ 3]=new FXColorWell(colors,FXRGBA(102,102,102,255),this,ID_CUSTOM_FIRST+ 3,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[ 4]=new FXColorWell(colors,FXRGBA( 51, 51, 51,255),this,ID_CUSTOM_FIRST+ 4,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[ 5]=new FXColorWell(colors,FXRGBA(  0,  0,  0,255),this,ID_CUSTOM_FIRST+ 5,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[ 6]=new FXColorWell(colors,FXRGBA(255,  0,  0,255),this,ID_CUSTOM_FIRST+ 6,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[ 7]=new FXColorWell(colors,FXRGBA(  0,255,  0,255),this,ID_CUSTOM_FIRST+ 7,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[ 8]=new FXColorWell(colors,FXRGBA(  0,  0,255,255),this,ID_CUSTOM_FIRST+ 8,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[ 9]=new FXColorWell(colors,FXRGBA(  0,255,255,255),this,ID_CUSTOM_FIRST+ 9,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[10]=new FXColorWell(colors,FXRGBA(255,255,  0,255),this,ID_CUSTOM_FIRST+10,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[11]=new FXColorWell(colors,FXRGBA(255,  0,255,255),this,ID_CUSTOM_FIRST+11,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[12]=new FXColorWell(colors,FXRGBA(255,165,  0,255),this,ID_CUSTOM_FIRST+12,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[13]=new FXColorWell(colors,FXRGBA(153,  0,  0,255),this,ID_CUSTOM_FIRST+13,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[14]=new FXColorWell(colors,FXRGBA(  0,153,  0,255),this,ID_CUSTOM_FIRST+14,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[15]=new FXColorWell(colors,FXRGBA(  0,  0,153,255),this,ID_CUSTOM_FIRST+15,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[16]=new FXColorWell(colors,FXRGBA(  0,153,153,255),this,ID_CUSTOM_FIRST+16,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[17]=new FXColorWell(colors,FXRGBA(153,153,  0,255),this,ID_CUSTOM_FIRST+17,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[18]=new FXColorWell(colors,FXRGBA(153,  0,153,255),this,ID_CUSTOM_FIRST+18,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[19]=new FXColorWell(colors,FXRGBA(255,175,175,255),this,ID_CUSTOM_FIRST+19,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[20]=new FXColorWell(colors,FXRGBA(175,255,175,255),this,ID_CUSTOM_FIRST+20,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[21]=new FXColorWell(colors,FXRGBA(175,175,255,255),this,ID_CUSTOM_FIRST+21,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[22]=new FXColorWell(colors,FXRGBA(175,255,255,255),this,ID_CUSTOM_FIRST+22,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
+  colorwells[23]=new FXColorWell(colors,FXRGBA(255,255,175,255),this,ID_CUSTOM_FIRST+23,COLORWELL_SOURCEONLY|LAYOUT_CENTER_Y|LAYOUT_CENTER_X|FRAME_SUNKEN|FRAME_THICK, 0,0,0,0);
 
   // Main part
   FXHorizontalFrame *main=new FXHorizontalFrame(this,LAYOUT_SIDE_TOP|LAYOUT_FILL_X|LAYOUT_FILL_Y);
@@ -220,10 +222,10 @@ FXColorSelector::FXColorSelector(FXComposite *p,FXObject* tgt,FXSelector sel,FXu
   new FXPicker(wellframe,tr("\tPick color"),eyedropicon,this,ID_COLORPICK,JUSTIFY_CENTER_X|JUSTIFY_CENTER_Y|FRAME_RAISED|FRAME_THICK|LAYOUT_CENTER_X|LAYOUT_FIX_WIDTH|LAYOUT_FIX_HEIGHT,0,0,56,32,0,0,0,0);
 
   // Main color well
-  well=new FXColorWell(wellframe,FXRGBA(255,255,255,255),this,ID_WELL_CHANGED,COLORWELL_SOURCEONLY|LAYOUT_TOP|LAYOUT_LEFT|LAYOUT_FILL_Y|LAYOUT_FIX_WIDTH, 0,0,64,0 ,0,0,0,0);
+  well=new FXColorWell(wellframe,FXRGBA(255,255,255,255),this,ID_WELL_CHANGED,COLORWELL_SOURCEONLY|LAYOUT_TOP|LAYOUT_LEFT|LAYOUT_FILL_Y|LAYOUT_FIX_WIDTH|FRAME_SUNKEN|FRAME_THICK, 0,0,64,0);
 
   // Tab book with switchable panels
-  panels=new FXTabBook(main,this,ID_ACTIVEPANE,TABBOOK_TOPTABS|LAYOUT_FILL_Y|LAYOUT_FILL_X);
+  panels=new FXTabBook(main,NULL,0,TABBOOK_TOPTABS|LAYOUT_FILL_Y|LAYOUT_FILL_X);
 
   // HSV Dial Mode
   new FXTabItem(panels,tr("\tHue, Saturation, Value"),dialmodeicon,TAB_TOP_NORMAL,0,0,0,0, 6,6,0,0);
@@ -231,9 +233,7 @@ FXColorSelector::FXColorSelector(FXComposite *p,FXObject* tgt,FXSelector sel,FXu
     // Color wheel
     FXHorizontalFrame *dialblock=new FXHorizontalFrame(panels,FRAME_THICK|FRAME_RAISED|LAYOUT_FILL_Y|LAYOUT_FILL_X|LAYOUT_TOP|LAYOUT_LEFT,0,0,0,0,15,15,5,5, 5,8);
 
-    wheel=new FXColorRing(dialblock,this,ID_DIAL_WHEEL,LAYOUT_CENTER_Y|LAYOUT_FIX_WIDTH|LAYOUT_FIX_HEIGHT,0,0,120,120,1,1,1,1);
-
-    //new FXColorWheel(dialblock,NULL,0,LAYOUT_CENTER_Y|LAYOUT_FIX_WIDTH|LAYOUT_FIX_HEIGHT,0,0,130,130,1,1,1,1);
+    wheel=new FXColorRing(dialblock,this,ID_DIAL_WHEEL,LAYOUT_CENTER_Y|LAYOUT_FILL_Y|LAYOUT_FILL_X|JUSTIFY_LEFT|JUSTIFY_CENTER_Y,0,0,0,0,1,1,1,1);
 
   // RGB Mode
   new FXTabItem(panels,tr("\tRed, Green, Blue"),rgbmodeicon,TAB_TOP_NORMAL,0,0,0,0, 6,6,0,0);
@@ -299,7 +299,7 @@ FXColorSelector::FXColorSelector(FXComposite *p,FXObject* tgt,FXSelector sel,FXu
     label->setTarget(this);
     label->setSelector(ID_ALPHA_LABEL);
 
-    // Set ranges and increment
+    // Set ranges
     hsvaslider[0]->setRange(0,360);
     hsvaslider[1]->setRange(0,1000);
     hsvaslider[2]->setRange(0,1000);
@@ -334,7 +334,7 @@ FXColorSelector::FXColorSelector(FXComposite *p,FXObject* tgt,FXSelector sel,FXu
     label->setTarget(this);
     label->setSelector(ID_ALPHA_LABEL);
 
-    // Set ranges and increment
+    // Set ranges
     cmyslider[0]->setRange(0,255);
     cmyslider[1]->setRange(0,255);
     cmyslider[2]->setRange(0,255);
@@ -347,24 +347,26 @@ FXColorSelector::FXColorSelector(FXComposite *p,FXObject* tgt,FXSelector sel,FXu
     FXHorizontalFrame *outer=new FXHorizontalFrame(panels,FRAME_THICK|FRAME_RAISED|LAYOUT_FILL_Y|LAYOUT_FILL_X);
     FXHorizontalFrame *frame=new FXHorizontalFrame(outer,LAYOUT_FILL_Y|LAYOUT_FILL_X|FRAME_SUNKEN|FRAME_THICK,0,0,0,0, 0,0,0,0);
     list=new FXColorList(frame,this,ID_COLOR_LIST,LAYOUT_FILL_Y|LAYOUT_FILL_X|LIST_BROWSESELECT);
-    list->setNumVisible(6);
+    list->setNumVisible(8);
+    list->setSortFunc(hueSort);
 
     // Add color names
-    for(FXuint i=0; i<fxnumcolornames; i++){
-      list->appendItem(tr(fxcolornames[i].name),fxcolornames[i].color);
+    for(FXuint i=0; i<ARRAYNUMBER(colorName); i++){
+      list->appendItem(tr(colorName[i]),colorValue[i]);
       }
+    list->sortItems();
 
   // Init RGBA
-  rgba[0]=0.0;
-  rgba[1]=0.0;
-  rgba[2]=0.0;
-  rgba[3]=1.0;
+  rgba[0]=0.0f;
+  rgba[1]=0.0f;
+  rgba[2]=0.0f;
+  rgba[3]=1.0f;
 
   // Init HSVA
-  hsva[0]=360.0;
-  hsva[1]=0.0;
-  hsva[2]=0.0;
-  hsva[3]=1.0;
+  hsva[0]=360.0f;
+  hsva[1]=0.0f;
+  hsva[2]=0.0f;
+  hsva[3]=1.0f;
 
   // Reflect color in well
   updateWell();
@@ -373,42 +375,27 @@ FXColorSelector::FXColorSelector(FXComposite *p,FXObject* tgt,FXSelector sel,FXu
   accept->setFocus();
   }
 
+/*******************************************************************************/
 
-// Init the panel
-void FXColorSelector::create(){
-  FXPacker::create();
-
-  // Get custom well colors from defaults database
-  colorwells[0]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[0],FXRGBA(255,255,255,255)));
-  colorwells[1]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[1],FXRGBA(  0,  0,  0,255)));
-  colorwells[2]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[2],FXRGBA(255,  0,  0,255)));
-  colorwells[3]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[3],FXRGBA(  0,255,  0,255)));
-  colorwells[4]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[4],FXRGBA(  0,  0,255,255)));
-  colorwells[5]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[5],FXRGBA(  0,  0,255,255)));
-  colorwells[6]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[6],FXRGBA(255,255,  0,255)));
-  colorwells[7]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[7],FXRGBA(  0,255,255,255)));
-  colorwells[8]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[8],FXRGBA(255,  0,255,255)));
-  colorwells[9]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[9],FXRGBA(128,  0,  0,255)));
-  colorwells[10]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[10],FXRGBA(  0,128,  0,255)));
-  colorwells[11]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[11],FXRGBA(  0,  0,128,255)));
-  colorwells[12]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[12],FXRGBA(128,128,  0,255)));
-  colorwells[13]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[13],FXRGBA(128,  0,128,255)));
-  colorwells[14]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[14],FXRGBA(  0,128,128,255)));
-  colorwells[15]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[15],FXRGBA(  0,128,128,255)));
-  colorwells[16]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[16],FXRGBA(255,  0,255,255)));
-  colorwells[17]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[17],FXRGBA(128,  0,  0,255)));
-  colorwells[18]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[18],FXRGBA(  0,128,  0,255)));
-  colorwells[19]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[19],FXRGBA(  0,  0,128,255)));
-  colorwells[20]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[20],FXRGBA(128,128,  0,255)));
-  colorwells[21]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[21],FXRGBA(128,  0,128,255)));
-  colorwells[22]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[22],FXRGBA(  0,128,128,255)));
-  colorwells[23]->setRGBA(getApp()->reg().readColorEntry("SETTINGS",wellname[23],FXRGBA(  0,128,128,255)));
-
-  // Switch to correct pane
-  panels->setCurrent(getApp()->reg().readIntEntry("SETTINGS","activecolorpane",0));
-
+// Set color from message
+long FXColorSelector::onCmdSetValue(FXObject*,FXSelector,void* ptr){
+  setRGBA((FXColor)(FXuval)ptr);
+  return 1;
   }
 
+
+// Update color selector from a message
+long FXColorSelector::onCmdSetIntValue(FXObject*,FXSelector,void* ptr){
+  setRGBA(*((FXColor*)ptr));
+  return 1;
+  }
+
+
+// Obtain value from color selector
+long FXColorSelector::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
+  *((FXColor*)ptr)=getRGBA();
+  return 1;
+  }
 
 /*******************************************************************************/
 
@@ -438,11 +425,12 @@ long FXColorSelector::onCmdAlphaText(FXObject* sender,FXSelector,void*){
 
 // Update Alpha text fields
 long FXColorSelector::onUpdAlphaText(FXObject* sender,FXSelector,void*){
+  FXString value;
   if(isOpaqueOnly()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_HIDE),NULL);
     }
   else{
-    FXString value=FXStringVal(255.0*rgba[3],1,FALSE);
+    value.fromDouble(255.0f*rgba[3],1,0);
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&value);
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SHOW),NULL);
     }
@@ -456,7 +444,7 @@ long FXColorSelector::onUpdAlphaSlider(FXObject* sender,FXSelector,void*){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_HIDE),NULL);
     }
   else{
-    FXint value=(FXint)(255.0*rgba[3]);
+    FXint value=(FXint)(255.0f*rgba[3]);
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETINTVALUE),(void*)&value);
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SHOW),NULL);
     }
@@ -516,7 +504,7 @@ long FXColorSelector::onCmdRGBSlider(FXObject*,FXSelector sel,void*){
 // Update well from RGB text fields
 long FXColorSelector::onCmdRGBText(FXObject*,FXSelector sel,void*){
   FXint which=FXSELID(sel)-ID_RGB_RED_TEXT;
-  rgba[which]=0.003921568627f*FXFloatVal(rgbatext[which]->getText());
+  rgba[which]=0.003921568627f*rgbatext[which]->getText().toFloat();
   fxrgb_to_hsv(hsva[0],hsva[1],hsva[2],rgba[0],rgba[1],rgba[2]);
   updateWell();
   if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)well->getRGBA());
@@ -527,7 +515,7 @@ long FXColorSelector::onCmdRGBText(FXObject*,FXSelector sel,void*){
 // Update RGB text fields
 long FXColorSelector::onUpdRGBText(FXObject*,FXSelector sel,void*){
   FXint which=FXSELID(sel)-ID_RGB_RED_TEXT;
-  rgbatext[which]->setText(FXStringVal(255.0f*rgba[which],1,FALSE));
+  rgbatext[which]->setText(FXString::value(255.0f*rgba[which],1,0));
   return 1;
   }
 
@@ -561,7 +549,7 @@ long FXColorSelector::onCmdHSVSlider(FXObject*,FXSelector sel,void*){
 long FXColorSelector::onCmdHSVText(FXObject*,FXSelector sel,void*){
   const FXfloat factor[3]={1.0f,0.01f,0.01f};
   FXint which=FXSELID(sel)-ID_HSV_HUE_TEXT;
-  hsva[which]=factor[which]*FXFloatVal(hsvatext[which]->getText());
+  hsva[which]=factor[which]*hsvatext[which]->getText().toFloat();
   fxhsv_to_rgb(rgba[0],rgba[1],rgba[2],hsva[0],hsva[1],hsva[2]);
   updateWell();
   if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)well->getRGBA());
@@ -573,7 +561,7 @@ long FXColorSelector::onCmdHSVText(FXObject*,FXSelector sel,void*){
 long FXColorSelector::onUpdHSVText(FXObject*,FXSelector sel,void*){
   const FXfloat factor[3]={1.0f,100.0f,100.0f};
   FXint which=FXSELID(sel)-ID_HSV_HUE_TEXT;
-  hsvatext[which]->setText(FXStringVal(hsva[which]*factor[which],1,FALSE));
+  hsvatext[which]->setText(FXString::value(hsva[which]*factor[which],1,0));
   return 1;
   }
 
@@ -605,7 +593,7 @@ long FXColorSelector::onCmdCMYSlider(FXObject*,FXSelector sel,void*){
 
 long FXColorSelector::onCmdCMYText(FXObject*,FXSelector sel,void*){
   FXint which=FXSELID(sel)-ID_CMY_CYAN_TEXT;
-  FXfloat val=0.003921568627f*FXFloatVal(cmytext[which]->getText());
+  FXfloat val=0.003921568627f*cmytext[which]->getText().toFloat();
   rgba[which]=1.0f-val;
   fxrgb_to_hsv(hsva[0],hsva[1],hsva[2],rgba[0],rgba[1],rgba[2]);
   hsva[3]=rgba[3];
@@ -618,7 +606,7 @@ long FXColorSelector::onCmdCMYText(FXObject*,FXSelector sel,void*){
 long FXColorSelector::onUpdCMYText(FXObject*,FXSelector sel,void*){
   FXint which=FXSELID(sel)-ID_CMY_CYAN_TEXT;
   FXfloat val=255.0f-255.0f*rgba[which];
-  cmytext[which]->setText(FXStringVal(val,1,FALSE));
+  cmytext[which]->setText(FXString::value(val,1,0));
   return 1;
   }
 
@@ -633,12 +621,15 @@ long FXColorSelector::onUpdCMYSlider(FXObject*,FXSelector sel,void*){
 
 /*******************************************************************************/
 
-// Color picker
+
+// Color picker; note, dc released prior to callback
 long FXColorSelector::onCmdColorPick(FXObject*,FXSelector,void* ptr){
-  FXPoint *point=(FXPoint*)ptr;
-  FXDCWindow dc(getRoot());
-  setRGBA(dc.readPixel(point->x,point->y));
-  if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)well->getRGBA());
+  FXColor color;
+  {
+    FXDCWindow dc(getRoot());
+    color=dc.readPixel(((FXPoint*)ptr)->x,((FXPoint*)ptr)->y);
+  }
+  setRGBA(color,true);
   return 1;
   }
 
@@ -669,80 +660,40 @@ long FXColorSelector::onCmdWell(FXObject*,FXSelector,void*){
 
 // Update main well
 void FXColorSelector::updateWell(){
-  well->setRGBA(FXRGBA((int)(rgba[0]*255.0),(int)(rgba[1]*255.0),(int)(rgba[2]*255.0),(int)(rgba[3]*255.0)));
+  well->setRGBA(FXRGBA((int)(rgba[0]*255.0f),(int)(rgba[1]*255.0f),(int)(rgba[2]*255.0f),(int)(rgba[3]*255.0f)));
   }
 
-
 /*******************************************************************************/
-
 
 // Clicked on color in list
 long FXColorSelector::onCmdList(FXObject*,FXSelector,void* ptr){
-  FXint index=(FXint)(FXuval)ptr;
-  FXColor clr=fxcolornames[index].color;
-  if(isOpaqueOnly()) clr|=FXRGBA(0,0,0,255);
-  rgba[0]=0.003921568627f*FXREDVAL(clr);
-  rgba[1]=0.003921568627f*FXGREENVAL(clr);
-  rgba[2]=0.003921568627f*FXBLUEVAL(clr);
-  rgba[3]=0.003921568627f*FXALPHAVAL(clr);
-  fxrgb_to_hsv(hsva[0],hsva[1],hsva[2],rgba[0],rgba[1],rgba[2]);
-  hsva[3]=rgba[3];
-  updateWell();
-  if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)well->getRGBA());
+  setRGBA(list->getItemColor((FXint)(FXuval)ptr),true);
   return 1;
   }
-
 
 /*******************************************************************************/
-
-
-// Custom well changed
-long FXColorSelector::onChgCustomWell(FXObject*,FXSelector sel,void* ptr){
-  FXColor color=(FXColor)(FXuval)ptr;
-  FXuint which=FXSELID(sel)-ID_CUSTOM_FIRST;
-  FXASSERT(which<24);
-  getApp()->reg().writeColorEntry("SETTINGS",wellname[which],color);
-  return 1;
-  }
-
 
 // Custom well clicked
 long FXColorSelector::onCmdCustomWell(FXObject*,FXSelector,void* ptr){
-  FXColor color=(FXColor)(FXuval)ptr;
-  if(isOpaqueOnly()) color|=FXRGBA(0,0,0,255);
-  setRGBA(color);
-  if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)well->getRGBA());
+  setRGBA((FXColor)(FXuval)ptr,true);
   return 1;
   }
-
-
-// Switching active pane
-long FXColorSelector::onCmdActivePane(FXObject*,FXSelector,void* ptr){
-  getApp()->reg().writeIntEntry("SETTINGS","activecolorpane",(FXint)(FXival)ptr);
-  return 1;
-  }
-
 
 /*******************************************************************************/
 
 
-// Set color
-long FXColorSelector::onCmdSetValue(FXObject*,FXSelector,void* ptr){
-  setRGBA((FXColor)(FXuval)ptr);
-  return 1;
-  }
-
-
 // Change RGBA color
-void FXColorSelector::setRGBA(FXColor clr){
-  if(clr!=well->getRGBA()){
-    rgba[0]=0.003921568627f*FXREDVAL(clr);
-    rgba[1]=0.003921568627f*FXGREENVAL(clr);
-    rgba[2]=0.003921568627f*FXBLUEVAL(clr);
-    rgba[3]=0.003921568627f*FXALPHAVAL(clr);
+void FXColorSelector::setRGBA(FXColor color,FXbool notify){
+  if(isOpaqueOnly()) color|=FXRGBA(0,0,0,255);
+  if(color!=well->getRGBA()){
+    rgba[0]=0.003921568627f*FXREDVAL(color);
+    rgba[1]=0.003921568627f*FXGREENVAL(color);
+    rgba[2]=0.003921568627f*FXBLUEVAL(color);
+    rgba[3]=0.003921568627f*FXALPHAVAL(color);
     fxrgb_to_hsv(hsva[0],hsva[1],hsva[2],rgba[0],rgba[1],rgba[2]);
     hsva[3]=rgba[3];
-    well->setRGBA(clr);
+    well->setRGBA(color);
+    if(target && notify) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)color);
     }
   }
 
@@ -753,26 +704,48 @@ FXColor FXColorSelector::getRGBA() const {
   }
 
 
-// Return true if only opaque colors allowed
-FXbool FXColorSelector::isOpaqueOnly() const {
-  return well->isOpaqueOnly();
+// Change active panel
+void FXColorSelector::setActivePanel(FXint pnl){
+  panels->setCurrent(pnl);
+  }
+
+
+// Return active panel
+FXint FXColorSelector::getActivePanel() const {
+  return panels->getCurrent();
+  }
+
+
+// Change well color
+void FXColorSelector::setWellColor(FXint w,FXColor clr){
+  colorwells[w]->setRGBA(clr);
+  }
+
+
+// Return well color
+FXColor FXColorSelector::getWellColor(FXint w) const {
+  return colorwells[w]->getRGBA();
   }
 
 
 // Change opaque only mode
 void FXColorSelector::setOpaqueOnly(FXbool opaque){
   if(opaque){
-    well->setOpaqueOnly(TRUE);
+    well->setOpaqueOnly(true);
     setRGBA(well->getRGBA() | FXRGBA(0,0,0,255));
     }
   else{
-    well->setOpaqueOnly(FALSE);
+    well->setOpaqueOnly(false);
     }
   }
 
 
-/*******************************************************************************/
+// Return true if only opaque colors allowed
+FXbool FXColorSelector::isOpaqueOnly() const {
+  return well->isOpaqueOnly();
+  }
 
+/*******************************************************************************/
 
 // Save data
 void FXColorSelector::save(FXStream& store) const {

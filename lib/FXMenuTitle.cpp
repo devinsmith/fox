@@ -3,40 +3,43 @@
 *                       M e n u   T i t l e   W i d g e t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMenuTitle.cpp,v 1.52 2006/01/22 17:58:36 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXMenuPane.h"
 #include "FXMenuTitle.h"
@@ -51,6 +54,8 @@
   - Look into SEL_FOCUS_SELF some more...
   - GUI update disabled while menu is popped up.
   - Menu shows besides Menu Title if menubar is vertical.
+  - FIXME popping a menu and leaving the cursor inside the menu title
+    somehow does not allow keyboard navigation.
 */
 
 
@@ -91,8 +96,7 @@ FXIMPLEMENT(FXMenuTitle,FXMenuCaption,FXMenuTitleMap,ARRAYNUMBER(FXMenuTitleMap)
 
 
 // Make a menu title button
-FXMenuTitle::FXMenuTitle(FXComposite* p,const FXString& text,FXIcon* ic,FXPopup* pup,FXuint opts):
-  FXMenuCaption(p,text,ic,opts){
+FXMenuTitle::FXMenuTitle(FXComposite* p,const FXString& text,FXIcon* ic,FXPopup* pup,FXuint opts):FXMenuCaption(p,text,ic,opts){
   flags|=FLAG_ENABLED;
   textColor=getApp()->getForeColor();
   seltextColor=getApp()->getForeColor();
@@ -116,7 +120,7 @@ void FXMenuTitle::detach(){
 
 
 // If window can have focus
-bool FXMenuTitle::canFocus() const { return true; }
+FXbool FXMenuTitle::canFocus() const { return true; }
 
 
 // Get default width
@@ -159,9 +163,10 @@ long FXMenuTitle::onFocusOut(FXObject* sender,FXSelector sel,void* ptr){
 // Enter
 long FXMenuTitle::onEnter(FXObject* sender,FXSelector sel,void* ptr){
   FXMenuCaption::onEnter(sender,sel,ptr);
-  if(!isEnabled()) return 1;
-  if(canFocus() && getParent()->getFocus()) setFocus();
-  update();
+  if(isEnabled()){
+    if(canFocus() && getParent()->getFocus()) setFocus();
+    update();
+    }
   return 1;
   }
 
@@ -169,8 +174,9 @@ long FXMenuTitle::onEnter(FXObject* sender,FXSelector sel,void* ptr){
 // Leave
 long FXMenuTitle::onLeave(FXObject* sender,FXSelector sel,void* ptr){
   FXMenuCaption::onLeave(sender,sel,ptr);
-  if(!isEnabled()) return 1;
-  update();
+  if(isEnabled()){
+    update();
+    }
   return 1;
   }
 
@@ -327,7 +333,6 @@ void FXMenuTitle::setFocus(){
   }
 
 
-
 // Out of focus chain
 void FXMenuTitle::killFocus(){
   FXMenuCaption::killFocus();
@@ -356,7 +361,6 @@ long FXMenuTitle::onPaint(FXObject*,FXSelector,void* ptr){
     if(isActive()){
       dc.setForeground(selbackColor);
       dc.fillRectangle(1,1,width-2,height-2);
-      //drawSunkenRectangle(dc,0,0,width,height);
       dc.setForeground(shadowColor);
       dc.fillRectangle(0,0,width,1);
       dc.fillRectangle(0,0,1,height);
@@ -369,7 +373,6 @@ long FXMenuTitle::onPaint(FXObject*,FXSelector,void* ptr){
     else if(underCursor()){
       dc.setForeground(backColor);
       dc.fillRectangle(1,1,width-2,height-2);
-      //drawRaisedRectangle(dc,0,0,width,height);
       dc.setForeground(shadowColor);
       dc.fillRectangle(0,height-1,width,1);
       dc.fillRectangle(width-1,0,1,height);
@@ -420,7 +423,7 @@ long FXMenuTitle::onPaint(FXObject*,FXSelector,void* ptr){
 
 
 // Test if logically inside
-bool FXMenuTitle::contains(FXint parentx,FXint parenty) const {
+FXbool FXMenuTitle::contains(FXint parentx,FXint parenty) const {
   FXint x,y;
   if(FXMenuCaption::contains(parentx,parenty)) return true;
   if(getMenu() && getMenu()->shown()){

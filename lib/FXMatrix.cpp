@@ -3,35 +3,38 @@
 *                   M a t r i x   C o n t a i n e r   O b j e c t               *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMatrix.cpp,v 1.35 2006/01/22 17:58:35 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXMatrix.h"
 
@@ -93,8 +96,7 @@ FXIMPLEMENT(FXMatrix,FXPacker,FXMatrixMap,ARRAYNUMBER(FXMatrixMap))
 
 
 // Make a vertical one
-FXMatrix::FXMatrix(FXComposite* p,FXint n,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
+FXMatrix::FXMatrix(FXComposite* p,FXint n,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
   num=FXCLAMP(1,n,MAXNUM);
   }
 
@@ -112,22 +114,22 @@ FXWindow* FXMatrix::childAtRowCol(FXint r,FXint c) const {
 
 // Get child's row
 FXint FXMatrix::rowOfChild(const FXWindow* child) const {
-  register FXint i=indexOfChild(child);
+  FXint i=indexOfChild(child);
   return (options&MATRIX_BY_COLUMNS) ? i/num : i%num;
   }
 
 
 // Get child's column
 FXint FXMatrix::colOfChild(const FXWindow* child) const {
-  register FXint i=indexOfChild(child);
+  FXint i=indexOfChild(child);
   return (options&MATRIX_BY_COLUMNS) ? i%num : i/num;
   }
 
 
 // Focus moved up
 long FXMatrix::onFocusUp(FXObject*,FXSelector,void* ptr){
-  register FXWindow *child;
-  register FXint r,c;
+  FXWindow *child;
+  FXint r,c;
   if(getFocus()){
     r=rowOfChild(getFocus());
     c=colOfChild(getFocus());
@@ -154,8 +156,8 @@ long FXMatrix::onFocusUp(FXObject*,FXSelector,void* ptr){
 
 // Focus moved down
 long FXMatrix::onFocusDown(FXObject*,FXSelector,void* ptr){
-  register FXWindow *child;
-  register FXint r,c;
+  FXWindow *child;
+  FXint r,c;
   if(getFocus()){
     r=rowOfChild(getFocus());
     c=colOfChild(getFocus());
@@ -182,8 +184,8 @@ long FXMatrix::onFocusDown(FXObject*,FXSelector,void* ptr){
 
 // Focus moved to left
 long FXMatrix::onFocusLeft(FXObject*,FXSelector,void* ptr){
-  register FXWindow *child;
-  register FXint r,c;
+  FXWindow *child;
+  FXint r,c;
   if(getFocus()){
     r=rowOfChild(getFocus());
     c=colOfChild(getFocus());
@@ -210,8 +212,8 @@ long FXMatrix::onFocusLeft(FXObject*,FXSelector,void* ptr){
 
 // Focus moved to right
 long FXMatrix::onFocusRight(FXObject*,FXSelector,void* ptr){
-  register FXWindow *child;
-  register FXint r,c;
+  FXWindow *child;
+  FXint r,c;
   if(getFocus()){
     r=rowOfChild(getFocus());
     c=colOfChild(getFocus());
@@ -270,9 +272,9 @@ FXint FXMatrix::getNumColumns() const {
 
 // Compute minimum width based on child layout hints
 FXint FXMatrix::getDefaultWidth(){
-  register FXint c,n,w,nzcol=0,wmax=0,mw=0;
-  register FXWindow *child;
-  register FXuint hints;
+  FXint c,n,w,nzcol=0,wmax=0,mw=0;
+  FXWindow *child;
+  FXuint hints;
   FXint colw[MAXNUM];
   for(c=0; c<MAXNUM; c++) colw[c]=0;
   if(options&PACK_UNIFORM_WIDTH) mw=maxChildWidth();
@@ -299,9 +301,9 @@ FXint FXMatrix::getDefaultWidth(){
 
 // Compute minimum height based on child layout hints
 FXint FXMatrix::getDefaultHeight(){
-  register FXint r,n,h,nzrow=0,hmax=0,mh=0;
-  register FXWindow *child;
-  register FXuint hints;
+  FXint r,n,h,nzrow=0,hmax=0,mh=0;
+  FXWindow *child;
+  FXuint hints;
   FXint rowh[MAXNUM];
   for(r=0; r<MAXNUM; r++) rowh[r]=0;
   if(options&PACK_UNIFORM_HEIGHT) mh=maxChildHeight();
@@ -325,12 +327,11 @@ FXint FXMatrix::getDefaultHeight(){
   }
 
 
-
 // Recalculate layout
 void FXMatrix::layout(){
   FXint ncol,nrow,nzcol,nzrow,r,c,x,y,w,h,n,e,t;
   FXint rowh[MAXNUM],colw[MAXNUM];
-  FXbool srow[MAXNUM],scol[MAXNUM];
+  FXuchar srow[MAXNUM],scol[MAXNUM];
   FXint left,right,top,bottom,cw,rh;
   FXint mw=0,mh=0;
   FXint hremain,vremain;
@@ -418,7 +419,7 @@ void FXMatrix::layout(){
       }
     }
 
-  // Substract spacing for non-zero rows/columns
+  // Subtract spacing for non-zero rows/columns
   if(nzcol>1) hremain-=(nzcol-1)*hspacing;
   if(nzrow>1) vremain-=(nzrow-1)*vspacing;
 

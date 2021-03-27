@@ -3,36 +3,39 @@
 *                       D o c k H a n d l e r   W i d g e t                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDockHandler.cpp,v 1.8 2006/01/22 17:58:23 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXDockHandler.h"
 
@@ -106,8 +109,7 @@ FXDockHandler::FXDockHandler(){
 
 
 // Construct and init
-FXDockHandler::FXDockHandler(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
+FXDockHandler::FXDockHandler(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
   flags|=FLAG_SHOWN|FLAG_ENABLED;
   dragCursor=getApp()->getDefaultCursor(DEF_MOVE_CURSOR);
   target=tgt;
@@ -117,7 +119,7 @@ FXDockHandler::FXDockHandler(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint 
 
 
 // Can have focus
-bool FXDockHandler::canFocus() const { return true; }
+FXbool FXDockHandler::canFocus() const { return true; }
 
 
 // Moved
@@ -141,7 +143,9 @@ long FXDockHandler::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
   handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
   if(isEnabled()){
     flags=(flags&~(FLAG_UPDATE|FLAG_DODRAG))|FLAG_TRYDRAG;
-#ifndef WIN32
+#ifdef WIN32
+    grab();
+#else
     Display *display=(Display*)getApp()->getDisplay();
     const unsigned long mask=CWBackPixmap|CWWinGravity|CWBitGravity|CWBorderPixel|CWOverrideRedirect|CWSaveUnder|CWEventMask|CWDontPropagate|CWColormap|CWCursor;
     XSetWindowAttributes wattr;
@@ -155,10 +159,10 @@ long FXDockHandler::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
     wattr.backing_store=NotUseful;
     wattr.backing_planes=0;
     wattr.backing_pixel=0;
-    wattr.save_under=FALSE;
-    wattr.event_mask=ButtonPressMask|ButtonReleaseMask|PointerMotionMask|KeyPressMask|KeyReleaseMask | FocusChangeMask|StructureNotifyMask | StructureNotifyMask|ExposureMask|PropertyChangeMask|EnterWindowMask|LeaveWindowMask;
+    wattr.save_under=false;
+    wattr.event_mask=ButtonPressMask|ButtonReleaseMask|PointerMotionMask|KeyPressMask|KeyReleaseMask|FocusChangeMask|StructureNotifyMask|ExposureMask|PropertyChangeMask|EnterWindowMask|LeaveWindowMask;
     wattr.do_not_propagate_mask=KeyPressMask|KeyReleaseMask|ButtonPressMask|ButtonReleaseMask|PointerMotionMask|ButtonMotionMask;
-    wattr.override_redirect=TRUE;
+    wattr.override_redirect=true;
     wattr.colormap=DefaultColormap(display,DefaultScreen(display));
     wattr.cursor=None;
     xxx=XCreateWindow(display,RootWindow(display,DefaultScreen(display)),0,0,1,1,0,DefaultDepth(display,DefaultScreen(display)),InputOutput,DefaultVisual(display,DefaultScreen(display)),mask,&wattr);
@@ -167,8 +171,6 @@ long FXDockHandler::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
     xid=xxx;
     grab();
     xid=tempxid;
-#else
-    grab();
 #endif
     update();
     }
@@ -179,20 +181,23 @@ long FXDockHandler::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
 // Released LEFT button
 long FXDockHandler::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
   if(isEnabled()){
-    if(flags&FLAG_DODRAG){handle(this,FXSEL(SEL_ENDDRAG,0),ptr);}
+    FXuint flg=flags;
     flags=(flags&~(FLAG_TRYDRAG|FLAG_DODRAG))|FLAG_UPDATE;
-#ifndef WIN32
-    Display *display=(Display*)getApp()->getDisplay();
-    FXID tempxid=xid;
-    xid=xxx;
-    ungrab();
-    xid=tempxid;
-    getApp()->hash.remove((void*)xxx);
-    XDestroyWindow(display,xxx);
-    xxx=0;
+    if(flg&(FLAG_DODRAG|FLAG_TRYDRAG)){
+#ifdef WIN32
+      ungrab();
 #else
-    ungrab();
+      Display *display=(Display*)getApp()->getDisplay();
+      FXID tempxid=xid;
+      xid=xxx;
+      ungrab();
+      xid=tempxid;
+      getApp()->hash.remove((void*)xxx);
+      XDestroyWindow(display,xxx);
+      xxx=0;
 #endif
+      }
+    if(flg&FLAG_DODRAG){handle(this,FXSEL(SEL_ENDDRAG,0),ptr);}
     update();
     }
   return 1;

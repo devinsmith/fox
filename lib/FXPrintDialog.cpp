@@ -3,30 +3,30 @@
 *                        P r i n t   J o b   D i a l o g                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXPrintDialog.cpp,v 1.54 2006/01/22 17:58:37 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "fxascii.h"
-#include "FXThread.h"
+#include "FXMutex.h"
+#include "FXElement.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXStat.h"
@@ -35,10 +35,14 @@
 #include "FXPoint.h"
 #include "FXRectangle.h"
 #include "FXObjectList.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCPrint.h"
+#include "FXApp.h"
 #include "FXGIFIcon.h"
 #include "FXRecentFiles.h"
 #include "FXFrame.h"
@@ -185,6 +189,11 @@ using namespace FX;
 namespace FX {
 
 
+// Furnish our own version
+extern FXAPI FXint __sscanf(const FXchar* string,const FXchar* format,...);
+extern FXAPI FXint __snprintf(FXchar* string,FXint length,const FXchar* format,...);
+
+
 // Map
 FXDEFMAP(FXPrintDialog) FXPrintDialogMap[]={
   FXMAPFUNC(SEL_COMMAND,FXPrintDialog::ID_TO_PRINTER,FXPrintDialog::onCmdToPrinter),
@@ -230,8 +239,7 @@ FXIMPLEMENT(FXPrintDialog,FXDialogBox,FXPrintDialogMap,ARRAYNUMBER(FXPrintDialog
 
 
 // Separator item
-FXPrintDialog::FXPrintDialog(FXWindow* owner,const FXString& caption,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXDialogBox(owner,caption,opts|DECOR_TITLE|DECOR_BORDER|DECOR_RESIZE,x,y,w,h,0,0,0,0,4,4){
+FXPrintDialog::FXPrintDialog(FXWindow* own,const FXString& caption,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXDialogBox(own,caption,opts|DECOR_TITLE|DECOR_BORDER|DECOR_RESIZE,x,y,w,h,0,0,0,0,4,4){
   FXchar key[20],name[100];
   //const FXchar *paper;
 
@@ -305,10 +313,10 @@ FXPrintDialog::FXPrintDialog(FXWindow* owner,const FXString& caption,FXuint opts
 
   // Layout
   FXGroupBox *orientation=new FXGroupBox(right,tr("Layout"),GROUPBOX_TITLE_LEFT|FRAME_RIDGE|LAYOUT_FILL_X|LAYOUT_TOP|LAYOUT_FILL_Y,0,0,0,0, 10,10,5,5);
-  new FXLabel(orientation,FXString::null,portraitIcon,LAYOUT_SIDE_LEFT|LAYOUT_CENTER_Y|LAYOUT_RIGHT|JUSTIFY_CENTER_X|JUSTIFY_CENTER_Y|LAYOUT_CENTER_Y);
+  new FXLabel(orientation,FXString::null,portraitIcon,LAYOUT_SIDE_LEFT|LAYOUT_RIGHT|JUSTIFY_CENTER_X|JUSTIFY_CENTER_Y|LAYOUT_CENTER_Y);
   orientportrait=new FXRadioButton(orientation,tr("Portrait"),this,ID_PORTRAIT,LAYOUT_SIDE_LEFT|ICON_BEFORE_TEXT|JUSTIFY_CENTER_Y|LAYOUT_CENTER_Y);
-  orientlanscape=new FXRadioButton(orientation,tr("Landscape"),this,ID_LANDSCAPE,LAYOUT_SIDE_RIGHT|ICON_BEFORE_TEXT|JUSTIFY_CENTER_Y|LAYOUT_CENTER_Y);
-  new FXLabel(orientation,FXString::null,landscapeIcon,LAYOUT_SIDE_RIGHT|LAYOUT_CENTER_Y|LAYOUT_RIGHT|JUSTIFY_CENTER_X|JUSTIFY_CENTER_Y|LAYOUT_CENTER_Y);
+  orientlanscape=new FXRadioButton(orientation,tr("Landscape"),this,ID_LANDSCAPE,LAYOUT_SIDE_RIGHT|ICON_BEFORE_TEXT|JUSTIFY_CENTER_Y);
+  new FXLabel(orientation,FXString::null,landscapeIcon,LAYOUT_SIDE_RIGHT|LAYOUT_RIGHT|JUSTIFY_CENTER_X|JUSTIFY_CENTER_Y|LAYOUT_CENTER_Y);
 
   // Paper
   FXGroupBox *paperdims=new FXGroupBox(right,tr("Paper Size"),GROUPBOX_TITLE_LEFT|FRAME_RIDGE|LAYOUT_FILL_X|LAYOUT_TOP|LAYOUT_FILL_Y,0,0,0,0, 10,10,5,5);
@@ -316,11 +324,11 @@ FXPrintDialog::FXPrintDialog(FXWindow* owner,const FXString& caption,FXuint opts
   media->setNumVisible(6);
 
   // Fill up with some defaults
-  sendtoprinter->setCheck(TRUE);
-  printall->setCheck(TRUE);
-  firstpagefirst->setCheck(TRUE);
-  printinblacknwhite->setCheck(TRUE);
-  orientportrait->setCheck(TRUE);
+  sendtoprinter->setCheck(true);
+  printall->setCheck(true);
+  firstpagefirst->setCheck(true);
+  printinblacknwhite->setCheck(true);
+  orientportrait->setCheck(true);
 
   // Initial focus on printer name
   printername->setFocus();
@@ -335,7 +343,7 @@ FXPrintDialog::FXPrintDialog(FXWindow* owner,const FXString& caption,FXuint opts
 
   // List paper sizes
   for(int i=0; ; i++){
-    sprintf(key,"%d",i);
+    __snprintf(key,sizeof(key),"%d",i);
     if(getApp()->reg().readFormatEntry("PAPER",key,"[%[^]]] %*f %*f %*f %*f %*f %*f",name)!=1) break;
     media->appendItem(name);
     }
@@ -361,7 +369,7 @@ FXPrintDialog::FXPrintDialog(FXWindow* owner,const FXString& caption,FXuint opts
   printer.mediasize=getApp()->reg().readIntEntry("PRINTER","media",0);
 
   // Obtain size
-  sprintf(key,"%d",printer.mediasize);
+  __snprintf(key,sizeof(key),"%d",printer.mediasize);
 
   // Parse size
   getApp()->reg().readFormatEntry("PAPER",key,"[%[^]]] %lf %lf %lf %lf %lf %lf",name,&printer.mediawidth,&printer.mediaheight,&printer.leftmargin,&printer.rightmargin,&printer.topmargin,&printer.bottommargin);
@@ -371,19 +379,19 @@ FXPrintDialog::FXPrintDialog(FXWindow* owner,const FXString& caption,FXuint opts
   printer.flags=0;
 
   // Landscape or portrait
-  if(getApp()->reg().readIntEntry("PRINTER","landscape",FALSE))
+  if(getApp()->reg().readIntEntry("PRINTER","landscape",false))
     printer.flags|=PRINT_LANDSCAPE;
   else
     printer.flags&=~PRINT_LANDSCAPE;
 
   // Print to file or printer
-  if(getApp()->reg().readIntEntry("PRINTER","printtofile",FALSE))
+  if(getApp()->reg().readIntEntry("PRINTER","printtofile",false))
     printer.flags|=PRINT_DEST_FILE;
   else
     printer.flags&=~PRINT_DEST_FILE;
 
   // Color prints
-  if(getApp()->reg().readIntEntry("PRINTER","color",FALSE))
+  if(getApp()->reg().readIntEntry("PRINTER","color",false))
     printer.flags|=PRINT_COLOR;
   else
     printer.flags&=~PRINT_COLOR;
@@ -404,23 +412,23 @@ void FXPrintDialog::create(){
 
   // Use CUPS to determine list of printers
   cups_dest_t *dests;
-  int          num_dests;
+  FXint        num_dests;
 
   // Obtain list of destinations
   num_dests=cupsGetDests(&dests);
 
   // Fill list of printers
-  for(int d=0; d<num_dests; d++){
+  for(FXint d=0; d<num_dests; d++){
     printername->appendItem(dests[d].name);
     if(printer.name==dests[d].name) printername->setCurrentItem(d);
     }
 
 #else
 
-  char name[1000];
+  FXchar name[1000];
   FILE *pc;
-  char buf[1000];
-  int i;
+  FXchar buf[1000];
+  FXuint i;
 
   // Open printcap file, found as per registry setting
   // You may have change this setting for your particular system
@@ -436,7 +444,7 @@ void FXPrintDialog::create(){
 
     // Extra info if printcap has been generated by Printtool
     if(strncmp(buf,"##PRINTTOOL3##",14)==0){
-      if(sscanf(buf,"%*s %*s %*s %*s %*s %*s %s",name)!=1) name[0]=0;
+      if(__sscanf(buf,"%*s %*s %*s %*s %*s %*s %s",name)!=1) name[0]=0;
       continue;
       }
 
@@ -446,7 +454,7 @@ void FXPrintDialog::create(){
       }
 
     // Snarf printer name (we read until the ':' or the '|' which separates aliases)
-    for(i=0; i<1000 && buf[i]!=0 && buf[i]!=':' && buf[i]!='|'; i++);
+    for(i=0; i<ARRAYNUMBER(buf)-1 && buf[i]!=0 && buf[i]!=':' && buf[i]!='|'; i++){}
     buf[i]=0;
 
     // Append human-readable info, if any
@@ -477,35 +485,33 @@ void FXPrintDialog::create(){
 
   // Determine list of printers on Windows NT
   if(osvi.dwPlatformId==VER_PLATFORM_WIN32_NT){
-    DWORD dwFlags=PRINTER_ENUM_LOCAL|PRINTER_ENUM_CONNECTIONS;
     DWORD dwBytesNeeded,dwNumPrinters;
-    EnumPrinters(dwFlags,NULL,4,NULL,0,&dwBytesNeeded,&dwNumPrinters);
-    PRINTER_INFO_4 *prtinfo;
-    if(FXMALLOC(&prtinfo,BYTE,dwBytesNeeded)){
-      if(EnumPrinters(dwFlags,NULL,4,(LPBYTE)prtinfo,dwBytesNeeded,&dwBytesNeeded,&dwNumPrinters)){
-	for(p=0; p<dwNumPrinters; p++){
+    EnumPrinters(PRINTER_ENUM_LOCAL|PRINTER_ENUM_CONNECTIONS,NULL,4,NULL,0,&dwBytesNeeded,&dwNumPrinters);
+    PRINTER_INFO_4 *prtinfo=(PRINTER_INFO_4*)malloc(dwBytesNeeded);
+    if(prtinfo){
+      if(EnumPrinters(PRINTER_ENUM_LOCAL|PRINTER_ENUM_CONNECTIONS,NULL,4,(LPBYTE)prtinfo,dwBytesNeeded,&dwBytesNeeded,&dwNumPrinters)){
+        for(p=0; p<dwNumPrinters; p++){
           printername->appendItem(prtinfo[p].pPrinterName);
           if(printer.name==prtinfo[p].pPrinterName) printername->setCurrentItem(p);
           }
-	}
-      FXFREE(&prtinfo);
+        }
+      free(prtinfo);
       }
     }
 
   // Determine list of printers on Windows 9x
   else if(osvi.dwPlatformId==VER_PLATFORM_WIN32_WINDOWS){
-    DWORD dwFlags=PRINTER_ENUM_LOCAL;
     DWORD dwBytesNeeded,dwNumPrinters;
-    EnumPrinters(dwFlags,NULL,5,NULL,0,&dwBytesNeeded,&dwNumPrinters);
-    PRINTER_INFO_5 *prtinfo;
-    if(FXMALLOC(&prtinfo,BYTE,dwBytesNeeded)){
-      if(EnumPrinters(dwFlags,NULL,5,(LPBYTE)prtinfo,dwBytesNeeded,&dwBytesNeeded,&dwNumPrinters)){
+    EnumPrinters(PRINTER_ENUM_LOCAL,NULL,5,NULL,0,&dwBytesNeeded,&dwNumPrinters);
+    PRINTER_INFO_5 *prtinfo=(PRINTER_INFO_5*)malloc(dwBytesNeeded);
+    if(prtinfo){
+      if(EnumPrinters(PRINTER_ENUM_LOCAL,NULL,5,(LPBYTE)prtinfo,dwBytesNeeded,&dwBytesNeeded,&dwNumPrinters)){
         for(p=0; p<dwNumPrinters; p++){
           printername->appendItem(prtinfo[p].pPrinterName);
           if(printer.name==prtinfo[p].pPrinterName) printername->setCurrentItem(p);
           }
-	}
-      FXFREE(&prtinfo);
+        }
+      free(prtinfo);
       }
     }
 
@@ -515,7 +521,7 @@ void FXPrintDialog::create(){
 
 // Send to printer
 long FXPrintDialog::onCmdToPrinter(FXObject*,FXSelector,void*){
-  getApp()->reg().writeIntEntry("PRINTER","printtofile",FALSE);
+  getApp()->reg().writeIntEntry("PRINTER","printtofile",false);
   printer.name=printername->getText();
   printer.flags&=~PRINT_DEST_FILE;
   FXTRACE((100,"Print to printer: %s\n",printer.name.text()));
@@ -587,7 +593,7 @@ long FXPrintDialog::onUpdToPrinter(FXObject* sender,FXSelector,void*){
 
 // Send to file
 long FXPrintDialog::onCmdToFile(FXObject*,FXSelector,void*){
-  getApp()->reg().writeIntEntry("PRINTER","printtofile",TRUE);
+  getApp()->reg().writeIntEntry("PRINTER","printtofile",true);
   printer.name=filename->getText();
   printer.flags|=PRINT_DEST_FILE;
   FXTRACE((100,"Print to file: %s\n",printer.name.text()));
@@ -735,7 +741,7 @@ long FXPrintDialog::onUpdPrinterName(FXObject* sender,FXSelector,void*){
 
 // Portrait
 long FXPrintDialog::onCmdPortrait(FXObject*,FXSelector,void*){
-  getApp()->reg().writeIntEntry("PRINTER","landscape",FALSE);
+  getApp()->reg().writeIntEntry("PRINTER","landscape",false);
   printer.flags&=~PRINT_LANDSCAPE;
   return 1;
   }
@@ -750,7 +756,7 @@ long FXPrintDialog::onUpdPortrait(FXObject* sender,FXSelector,void*){
 
 // Landscape
 long FXPrintDialog::onCmdLandscape(FXObject*,FXSelector,void*){
-  getApp()->reg().writeIntEntry("PRINTER","landscape",TRUE);
+  getApp()->reg().writeIntEntry("PRINTER","landscape",true);
   printer.flags|=PRINT_LANDSCAPE;
   return 1;
   }
@@ -824,7 +830,7 @@ long FXPrintDialog::onUpdPages(FXObject* sender,FXSelector sel,void*){
 
 // Color
 long FXPrintDialog::onCmdColor(FXObject*,FXSelector,void*){
-  getApp()->reg().writeIntEntry("PRINTER","color",TRUE);
+  getApp()->reg().writeIntEntry("PRINTER","color",true);
   printer.flags|=PRINT_COLOR;
   return 1;
   }
@@ -839,7 +845,7 @@ long FXPrintDialog::onUpdColor(FXObject* sender,FXSelector,void*){
 
 // Gray
 long FXPrintDialog::onCmdGray(FXObject*,FXSelector,void*){
-  getApp()->reg().writeIntEntry("PRINTER","color",FALSE);
+  getApp()->reg().writeIntEntry("PRINTER","color",false);
   printer.flags&=~PRINT_COLOR;
   return 1;
   }
@@ -939,7 +945,7 @@ long FXPrintDialog::onCmdMedia(FXObject*,FXSelector,void*){
   FXchar key[20],name[100];
   printer.mediasize=media->getCurrentItem();
   getApp()->reg().writeIntEntry("PRINTER","media",printer.mediasize);
-  sprintf(key,"%d",printer.mediasize);
+  __snprintf(key,sizeof(key),"%d",printer.mediasize);
   getApp()->reg().readFormatEntry("PAPER",key,"[%[^]]] %lf %lf %lf %lf %lf %lf",name,&printer.mediawidth,&printer.mediaheight,&printer.leftmargin,&printer.rightmargin,&printer.topmargin,&printer.bottommargin);
   FXTRACE((100,"Media=\"%s\" w=%g h=%g lm=%g rm=%g tm=%g bm=%g\n",name,printer.mediawidth,printer.mediaheight,printer.leftmargin,printer.rightmargin,printer.topmargin,printer.bottommargin));
   return 1;

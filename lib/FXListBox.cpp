@@ -3,40 +3,42 @@
 *                        L i s t   B o x   O b j e c t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXListBox.cpp,v 1.63.2.2 2007/06/07 20:17:57 fox Exp $                       *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
 #include "FXObjectList.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
 #include "FXFont.h"
-#include "FXDC.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXApp.h"
 #include "FXFrame.h"
 #include "FXLabel.h"
 #include "FXTextField.h"
@@ -75,8 +77,11 @@ FXDEFMAP(FXListBox) FXListBoxMap[]={
   FXMAPFUNC(SEL_FOCUS_DOWN,0,FXListBox::onFocusDown),
   FXMAPFUNC(SEL_UPDATE,FXListBox::ID_LIST,FXListBox::onListUpdate),
   FXMAPFUNC(SEL_CLICKED,FXListBox::ID_LIST,FXListBox::onListClicked),
-  FXMAPFUNC(SEL_COMMAND,FXListBox::ID_LIST,FXListBox::onListClicked),
+  FXMAPFUNC(SEL_DOUBLECLICKED,FXListBox::ID_LIST,FXListBox::onListClicked),
   FXMAPFUNC(SEL_CHANGED,FXListBox::ID_LIST,FXListBox::onListChanged),
+  FXMAPFUNC(SEL_DELETED,FXListBox::ID_LIST,FXListBox::onListForward),
+  FXMAPFUNC(SEL_INSERTED,FXListBox::ID_LIST,FXListBox::onListForward),
+  FXMAPFUNC(SEL_COMMAND,FXListBox::ID_LIST,FXListBox::onListCommand),
   FXMAPFUNC(SEL_LEFTBUTTONPRESS,FXListBox::ID_FIELD,FXListBox::onFieldButton),
   FXMAPFUNC(SEL_MOUSEWHEEL,FXListBox::ID_FIELD,FXListBox::onMouseWheel),
   FXMAPFUNC(SEL_COMMAND,FXListBox::ID_SETVALUE,FXListBox::onCmdSetValue),
@@ -90,16 +95,15 @@ FXIMPLEMENT(FXListBox,FXPacker,FXListBoxMap,ARRAYNUMBER(FXListBoxMap))
 
 
 // List box
-FXListBox::FXListBox(FXComposite *p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXPacker(p,opts,x,y,w,h, 0,0,0,0, 0,0){
+FXListBox::FXListBox(FXComposite *p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXPacker(p,opts,x,y,w,h,0,0,0,0,0,0){
   flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
-  field=new FXButton(this," ",NULL,this,FXListBox::ID_FIELD,ICON_BEFORE_TEXT|JUSTIFY_LEFT, 0,0,0,0, pl,pr,pt,pb);
+  field=new FXButton(this," ",NULL,this,FXListBox::ID_FIELD,ICON_BEFORE_TEXT|JUSTIFY_LEFT,0,0,0,0,pl,pr,pt,pb);
   field->setBackColor(getApp()->getBackColor());
   pane=new FXPopup(this,FRAME_LINE);
   list=new FXList(pane,this,FXListBox::ID_LIST,LIST_BROWSESELECT|LIST_AUTOSELECT|LAYOUT_FILL_X|LAYOUT_FILL_Y|SCROLLERS_TRACK|HSCROLLING_OFF);
-  button=new FXMenuButton(this,FXString::null,NULL,pane,FRAME_RAISED|FRAME_THICK|MENUBUTTON_DOWN|MENUBUTTON_ATTACH_RIGHT, 0,0,0,0, 0,0,0,0);
+  button=new FXMenuButton(this,FXString::null,NULL,pane,FRAME_RAISED|FRAME_THICK|MENUBUTTON_DOWN|MENUBUTTON_ATTACH_RIGHT,0,0,0,0,0,0,0,0);
   button->setXOffset(border);
   button->setYOffset(border);
   flags&=~FLAG_UPDATE;  // Never GUI update
@@ -203,32 +207,41 @@ long FXListBox::onCmdSetIntValue(FXObject*,FXSelector,void* ptr){
 
 // Forward GUI update of list to target; but only if pane is not popped
 long FXListBox::onListUpdate(FXObject*,FXSelector,void*){
-  return target && !isPaneShown() && target->tryHandle(this,FXSEL(SEL_UPDATE,message),NULL);
+  return target && !isMenuShown() && target->tryHandle(this,FXSEL(SEL_UPDATE,message),NULL);
   }
 
 
-// Item in list widget changed
+// Forward message from list widget
+long FXListBox::onListForward(FXObject*,FXSelector sel,void* ptr){
+  return target && target->tryHandle(this,FXSEL(FXSELTYPE(sel),message),ptr);
+  }
+
+
+// Forward message from list widget
 long FXListBox::onListChanged(FXObject*,FXSelector,void* ptr){
+  field->setText(list->getItemText((FXint)(FXival)ptr));        // FIXME but also called in notify callbacks...
+  field->setIcon(list->getItemIcon((FXint)(FXival)ptr));
   return target && target->tryHandle(this,FXSEL(SEL_CHANGED,message),ptr);
   }
 
 
-// Forward clicked message from list to target
-long FXListBox::onListClicked(FXObject*,FXSelector sel,void* ptr){
-  button->handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
-  if(FXSELTYPE(sel)==SEL_COMMAND){
-    field->setText(getItemText((FXint)(FXival)ptr));
-    field->setIcon(getItemIcon((FXint)(FXival)ptr));
-    if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),ptr);
-    }
-  return 1;
+// Clicked inside or outside an item in the list; unpost the pane
+long FXListBox::onListClicked(FXObject*,FXSelector,void*){
+  return button->handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
   }
 
+
+// Clicked on an item in the list; issue a callback
+long FXListBox::onListCommand(FXObject*,FXSelector,void* ptr){
+  field->setText(list->getItemText((FXint)(FXival)ptr));
+  field->setIcon(list->getItemIcon((FXint)(FXival)ptr));
+  return target && target->tryHandle(this,FXSEL(SEL_COMMAND,message),ptr);
+  }
 
 
 // Pressed left button in text field
 long FXListBox::onFieldButton(FXObject*,FXSelector,void*){
-  button->handle(this,FXSEL(SEL_COMMAND,ID_POST),NULL);    // Post the list
+  button->showMenu(true);
   return 1;
   }
 
@@ -246,7 +259,7 @@ long FXListBox::onFocusUp(FXObject*,FXSelector,void*){
     if(index<0) index=getNumItems()-1;
     else if(0<index) index--;
     if(0<=index && index<getNumItems()){
-      setCurrentItem(index,TRUE);
+      setCurrentItem(index,true);
       }
     return 1;
     }
@@ -261,7 +274,7 @@ long FXListBox::onFocusDown(FXObject*,FXSelector,void*){
     if(index<0) index=0;
     else if(index<getNumItems()-1) index++;
     if(0<=index && index<getNumItems()){
-      setCurrentItem(index,TRUE);
+      setCurrentItem(index,true);
       }
     return 1;
     }
@@ -283,7 +296,7 @@ long FXListBox::onMouseWheel(FXObject*,FXSelector,void* ptr){
       else if(0<index) index--;
       }
     if(0<=index && index<getNumItems()){
-      setCurrentItem(index,TRUE);
+      setCurrentItem(index,true);
       }
     return 1;
     }
@@ -319,7 +332,7 @@ FXbool FXListBox::isItemCurrent(FXint index) const {
 void FXListBox::setCurrentItem(FXint index,FXbool notify){
   FXint current=list->getCurrentItem();
   if(current!=index){
-    list->setCurrentItem(index);
+    list->setCurrentItem(index,notify);
     list->makeItemVisible(index);
     if(0<=index){
       field->setIcon(list->getItemIcon(index));
@@ -329,7 +342,6 @@ void FXListBox::setCurrentItem(FXint index,FXbool notify){
       field->setIcon(NULL);
       field->setText(" ");
       }
-    if(notify && target){target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXival)index);}
     }
   }
 
@@ -347,9 +359,9 @@ FXString FXListBox::getItem(FXint index) const {
 
 
 // Replace text of item at index
-FXint FXListBox::setItem(FXint index,const FXString& text,FXIcon* icon,void* ptr){
+FXint FXListBox::setItem(FXint index,const FXString& text,FXIcon* icon,FXptr ptr,FXbool notify){
   if(index<0 || list->getNumItems()<=index){ fxerror("%s::setItem: index out of range.\n",getClassName()); }
-  list->setItem(index,text,icon,ptr);
+  list->setItem(index,text,icon,ptr,notify);
   if(isItemCurrent(index)){
     field->setIcon(icon);
     field->setText(text);
@@ -360,9 +372,22 @@ FXint FXListBox::setItem(FXint index,const FXString& text,FXIcon* icon,void* ptr
 
 
 // Fill list by appending items from array of strings
-FXint FXListBox::fillItems(const FXchar** strings,FXIcon* icon,void* ptr){
-  register FXint numberofitems=list->getNumItems();
-  register FXint n=list->fillItems(strings,icon,ptr);
+FXint FXListBox::fillItems(const FXchar *const *strings,FXIcon* icon,FXptr ptr,FXbool notify){
+  FXint numberofitems=list->getNumItems();
+  FXint n=list->fillItems(strings,icon,ptr,notify);
+  if(numberofitems<=list->getCurrentItem()){
+    field->setIcon(list->getItemIcon(list->getCurrentItem()));
+    field->setText(list->getItemText(list->getCurrentItem()));
+    }
+  recalc();
+  return n;
+  }
+
+
+// Fill list by appending items from array of strings
+FXint FXListBox::fillItems(const FXString* strings,FXIcon* icon,FXptr ptr,FXbool notify){
+  FXint numberofitems=list->getNumItems();
+  FXint n=list->fillItems(strings,icon,ptr,notify);
   if(numberofitems<=list->getCurrentItem()){
     field->setIcon(list->getItemIcon(list->getCurrentItem()));
     field->setText(list->getItemText(list->getCurrentItem()));
@@ -373,9 +398,9 @@ FXint FXListBox::fillItems(const FXchar** strings,FXIcon* icon,void* ptr){
 
 
 // Fill list by appending items from newline separated strings
-FXint FXListBox::fillItems(const FXString& strings,FXIcon* icon,void* ptr){
-  register FXint numberofitems=list->getNumItems();
-  register FXint n=list->fillItems(strings,icon,ptr);
+FXint FXListBox::fillItems(const FXString& strings,FXIcon* icon,FXptr ptr,FXbool notify){
+  FXint numberofitems=list->getNumItems();
+  FXint n=list->fillItems(strings,icon,ptr,notify);
   if(numberofitems<=list->getCurrentItem()){
     field->setIcon(list->getItemIcon(list->getCurrentItem()));
     field->setText(list->getItemText(list->getCurrentItem()));
@@ -386,9 +411,9 @@ FXint FXListBox::fillItems(const FXString& strings,FXIcon* icon,void* ptr){
 
 
 // Insert item at index
-FXint FXListBox::insertItem(FXint index,const FXString& text,FXIcon* icon,void* ptr){
+FXint FXListBox::insertItem(FXint index,const FXString& text,FXIcon* icon,FXptr ptr,FXbool notify){
   if(index<0 || list->getNumItems()<index){ fxerror("%s::insertItem: index out of range.\n",getClassName()); }
-  list->insertItem(index,text,icon,ptr);
+  list->insertItem(index,text,icon,ptr,notify);
   if(isItemCurrent(index)){
     field->setIcon(icon);
     field->setText(text);
@@ -399,33 +424,33 @@ FXint FXListBox::insertItem(FXint index,const FXString& text,FXIcon* icon,void* 
 
 
 // Append item
-FXint FXListBox::appendItem(const FXString& text,FXIcon* icon,void* ptr){
-  list->appendItem(text,icon,ptr);
-  if(isItemCurrent(getNumItems()-1)){
+FXint FXListBox::appendItem(const FXString& text,FXIcon* icon,FXptr ptr,FXbool notify){
+  FXint index=list->appendItem(text,icon,ptr,notify);
+  if(isItemCurrent(index)){
     field->setIcon(icon);
     field->setText(text);
     }
   recalc();
-  return getNumItems()-1;
+  return index;
   }
 
 
 // Prepend item
-FXint FXListBox::prependItem(const FXString& text,FXIcon* icon,void* ptr){
-  list->prependItem(text,icon,ptr);
-  if(isItemCurrent(0)){
+FXint FXListBox::prependItem(const FXString& text,FXIcon* icon,FXptr ptr,FXbool notify){
+  FXint index=list->prependItem(text,icon,ptr,notify);
+  if(isItemCurrent(index)){
     field->setIcon(icon);
     field->setText(text);
     }
   recalc();
-  return 0;
+  return index;
   }
 
 
 // Move item from oldindex to newindex
-FXint FXListBox::moveItem(FXint newindex,FXint oldindex){
+FXint FXListBox::moveItem(FXint newindex,FXint oldindex,FXbool notify){
   FXint current=list->getCurrentItem();
-  list->moveItem(newindex,oldindex);
+  list->moveItem(newindex,oldindex,notify);
   if(current!=list->getCurrentItem()){
     current=list->getCurrentItem();
     if(0<=current){
@@ -443,9 +468,9 @@ FXint FXListBox::moveItem(FXint newindex,FXint oldindex){
 
 
 // Extract item from list
-FXListItem* FXListBox::extractItem(FXint index){
-  register FXint current=list->getCurrentItem();
-  register FXListItem *result=list->extractItem(index);
+FXListItem* FXListBox::extractItem(FXint index,FXbool notify){
+  FXint current=list->getCurrentItem();
+  FXListItem *result=list->extractItem(index,notify);
   if(index==current){
     current=list->getCurrentItem();
     if(0<=current){
@@ -463,9 +488,9 @@ FXListItem* FXListBox::extractItem(FXint index){
 
 
 // Remove given item
-void FXListBox::removeItem(FXint index){
-  register FXint current=list->getCurrentItem();
-  list->removeItem(index);
+void FXListBox::removeItem(FXint index,FXbool notify){
+  FXint current=list->getCurrentItem();
+  list->removeItem(index,notify);
   if(index==current){
     current=list->getCurrentItem();
     if(0<=current){
@@ -482,8 +507,8 @@ void FXListBox::removeItem(FXint index){
 
 
 // Remove all items
-void FXListBox::clearItems(){
-  list->clearItems();
+void FXListBox::clearItems(FXbool notify){
+  list->clearItems(notify);
   field->setIcon(NULL);
   field->setText(" ");
   recalc();
@@ -497,7 +522,7 @@ FXint FXListBox::findItem(const FXString& text,FXint start,FXuint flgs) const {
 
 
 // Get item by data
-FXint FXListBox::findItemByData(const void *ptr,FXint start,FXuint flgs) const {
+FXint FXListBox::findItemByData(FXptr ptr,FXint start,FXuint flgs) const {
   return list->findItemByData(ptr,start,flgs);
   }
 
@@ -531,20 +556,44 @@ FXIcon* FXListBox::getItemIcon(FXint index) const {
 
 
 // Set item data
-void FXListBox::setItemData(FXint index,void* ptr) const {
+void FXListBox::setItemData(FXint index,FXptr ptr) const {
   list->setItemData(index,ptr);
   }
 
 
 // Get item data
-void* FXListBox::getItemData(FXint index) const {
+FXptr FXListBox::getItemData(FXint index) const {
   return list->getItemData(index);
   }
 
 
+// Return true if item is enabled
+FXbool FXListBox::isItemEnabled(FXint index) const {
+  return list->isItemEnabled(index);
+  }
+
+
+// Enable item
+FXbool FXListBox::enableItem(FXint index){
+  return list->enableItem(index);
+  }
+
+
+// Disable item
+FXbool FXListBox::disableItem(FXint index){
+  return list->disableItem(index);
+  }
+
+
+// Show menu
+void FXListBox::showMenu(FXbool shw){
+  button->showMenu(shw);
+  }
+
+
 // Is the pane shown
-FXbool FXListBox::isPaneShown() const {
-  return pane->shown();
+FXbool FXListBox::isMenuShown() const {
+  return button->isMenuShown();
   }
 
 
@@ -560,6 +609,18 @@ void FXListBox::setFont(FXFont* fnt){
 // Obtain font
 FXFont* FXListBox::getFont() const {
   return field->getFont();
+  }
+
+
+// Change popup pane shrinkwrap mode
+void FXListBox::setShrinkWrap(FXbool flag){
+  pane->setShrinkWrap(flag);
+  }
+
+
+// Return popup pane shrinkwrap mode
+FXbool FXListBox::getShrinkWrap() const {
+  return pane->getShrinkWrap();
   }
 
 

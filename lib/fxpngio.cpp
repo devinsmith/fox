@@ -3,27 +3,28 @@
 *                         P N G    I n p u t / O u t p u t                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxpngio.cpp,v 1.40 2006/01/22 17:58:54 fox Exp $                         *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
+#include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
+#include "FXElement.h"
 #include "FXStream.h"
 #ifdef HAVE_PNG_H
 #include "png.h"
@@ -36,6 +37,7 @@
     http://www.graphicswiz.com/png/
     http://www.inforamp.net/~poynton
     http://www.libpng.org/pub/png/
+    https://libspng.org/download.html (new!)
 */
 
 using namespace FX;
@@ -45,9 +47,11 @@ using namespace FX;
 namespace FX {
 
 
-extern FXAPI bool fxcheckPNG(FXStream& store);
-extern FXAPI bool fxloadPNG(FXStream& store,FXColor*& data,FXint& width,FXint& height);
-extern FXAPI bool fxsavePNG(FXStream& store,const FXColor* data,FXint width,FXint height);
+#ifndef FXLOADPNG
+extern FXAPI FXbool fxcheckPNG(FXStream& store);
+extern FXAPI FXbool fxloadPNG(FXStream& store,FXColor*& data,FXint& width,FXint& height);
+extern FXAPI FXbool fxsavePNG(FXStream& store,const FXColor* data,FXint width,FXint height);
+#endif
 
 
 #ifdef HAVE_PNG_H
@@ -89,7 +93,7 @@ static void user_warning_fn(png_structp,png_const_charp){
 
 
 // Check if stream contains a PNG
-bool fxcheckPNG(FXStream& store){
+FXbool fxcheckPNG(FXStream& store){
   FXuchar signature[8];
   store.load(signature,8);
   store.position(-8,FXFromCurrent);
@@ -98,7 +102,7 @@ bool fxcheckPNG(FXStream& store){
 
 
 // Load a PNG image
-bool fxloadPNG(FXStream& store,FXColor*& data,FXint& width,FXint& height){
+FXbool fxloadPNG(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   png_structp png_ptr;
   png_infop info_ptr;
   png_uint_32 ww,hh,i;
@@ -122,9 +126,11 @@ bool fxloadPNG(FXStream& store,FXColor*& data,FXint& width,FXint& height){
     }
 
   // Set error handling
+#if (PNG_LIBPNG_VER < 10500)
   if(setjmp(png_jmpbuf(png_ptr))){
-
-    // Free all of the memory associated with the png_ptr and info_ptr
+#else
+  if(setjmp((*png_set_longjmp_fn((png_ptr),(png_longjmp_ptr)longjmp,sizeof(jmp_buf))))){
+#endif
     png_destroy_read_struct(&png_ptr,&info_ptr,(png_infopp)NULL);
     return false;
     }
@@ -145,6 +151,9 @@ bool fxloadPNG(FXStream& store,FXColor*& data,FXint& width,FXint& height){
 
   // tell libpng to strip 16 bit/color files down to 8 bits/color
   png_set_strip_16(png_ptr);
+
+  // rgb(a)->bgr(a)
+  png_set_bgr(png_ptr);
 
   // Expand paletted colors into true RGB triplets
   if(color_type==PNG_COLOR_TYPE_PALETTE) png_set_expand(png_ptr);
@@ -169,16 +178,14 @@ bool fxloadPNG(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   png_read_update_info(png_ptr,info_ptr);
 
   // Make room for data
-  FXMALLOC(&data,FXColor,hh*ww);
-  if(!data){
+  if(!allocElms(data,hh*ww)){
     png_destroy_read_struct(&png_ptr,&info_ptr,(png_infopp)NULL);
     return false;
     }
 
   // Row pointers
-  FXMALLOC(&row_pointers,png_bytep,hh);
-  if(!row_pointers){
-    FXFREE(&data);
+  if(!allocElms(row_pointers,hh)){
+    freeElms(data);
     png_destroy_read_struct(&png_ptr,&info_ptr,(png_infopp)NULL);
     return false;
     }
@@ -200,7 +207,7 @@ bool fxloadPNG(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   png_destroy_read_struct(&png_ptr,&info_ptr,(png_infopp)NULL);
 
   // Get rid of it
-  FXFREE(&row_pointers);
+  freeElms(row_pointers);
 
   width=ww;
   height=hh;
@@ -211,10 +218,8 @@ bool fxloadPNG(FXStream& store,FXColor*& data,FXint& width,FXint& height){
 
 /*******************************************************************************/
 
-
-
 // Save a PNG image
-bool fxsavePNG(FXStream& store,const FXColor* data,FXint width,FXint height){
+FXbool fxsavePNG(FXStream& store,const FXColor* data,FXint width,FXint height){
   png_structp png_ptr;
   png_infop info_ptr;
   png_bytep *row_pointers;
@@ -235,7 +240,11 @@ bool fxsavePNG(FXStream& store,const FXColor* data,FXint width,FXint height){
     }
 
   // Set error handling.
+#if (PNG_LIBPNG_VER < 10500)
   if(setjmp(png_jmpbuf(png_ptr))){
+#else
+  if(setjmp((*png_set_longjmp_fn((png_ptr),(png_longjmp_ptr)longjmp,sizeof(jmp_buf))))){
+#endif
     png_destroy_write_struct(&png_ptr,&info_ptr);
     return false;
     }
@@ -245,11 +254,14 @@ bool fxsavePNG(FXStream& store,const FXColor* data,FXint width,FXint height){
 
   // Set the header
   png_set_IHDR(png_ptr,info_ptr,width,height,8,PNG_COLOR_TYPE_RGB_ALPHA,PNG_INTERLACE_NONE,PNG_COMPRESSION_TYPE_BASE,PNG_FILTER_TYPE_BASE);
+
+  // Use bgr instead of rgb
+  png_set_bgr(png_ptr);
+
   png_write_info(png_ptr,info_ptr);
 
   // Row pointers
-  FXMALLOC(&row_pointers,png_bytep,height);
-  if(!row_pointers){
+  if(!allocElms(row_pointers,height)){
     png_destroy_write_struct(&png_ptr,&info_ptr);
     return false;
     }
@@ -269,7 +281,7 @@ bool fxsavePNG(FXStream& store,const FXColor* data,FXint width,FXint height){
   png_destroy_write_struct(&png_ptr,&info_ptr);
 
   // Get rid of it
-  FXFREE(&row_pointers);
+  freeElms(row_pointers);
 
   return true;
   }
@@ -282,13 +294,14 @@ bool fxsavePNG(FXStream& store,const FXColor* data,FXint width,FXint height){
 
 
 // Check if stream contains a PNG
-bool fxcheckPNG(FXStream&){
+FXbool fxcheckPNG(FXStream&){
   return false;
   }
 
 
 // Stub routine
-bool fxloadPNG(FXStream&,FXColor*& data,FXint& width,FXint& height){
+FXbool fxloadPNG(FXStream&,FXColor*& data,FXint& width,FXint& height){
+  static const FXColor color[2]={FXRGB(0,0,0),FXRGB(255,255,255)};
   static const FXuchar png_bits[] = {
    0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00, 0x80, 0xfd, 0xff, 0xff, 0xbf,
    0x05, 0x00, 0x00, 0xa0, 0x05, 0x00, 0x00, 0xa0, 0x05, 0x00, 0x00, 0xa0,
@@ -301,10 +314,9 @@ bool fxloadPNG(FXStream&,FXColor*& data,FXint& width,FXint& height){
    0x45, 0x20, 0x24, 0xa2, 0x45, 0x20, 0xc4, 0xa1, 0x05, 0x00, 0x00, 0xa0,
    0x05, 0x00, 0x00, 0xa0, 0x05, 0x00, 0x00, 0xa0, 0xfd, 0xff, 0xff, 0xbf,
    0x01, 0x00, 0x00, 0x80, 0xff, 0xff, 0xff, 0xff};
-  register FXint p;
-  FXMALLOC(&data,FXColor,32*32);
-  for(p=0; p<32*32; p++){
-    data[p]=(png_bits[p>>3]&(1<<(p&7))) ? FXRGB(0,0,0) : FXRGB(255,255,255);
+  allocElms(data,32*32);
+  for(FXint p=0; p<32*32; p++){
+    data[p]=color[(png_bits[p>>3]>>(p&7))&1];
     }
   width=32;
   height=32;
@@ -313,7 +325,7 @@ bool fxloadPNG(FXStream&,FXColor*& data,FXint& width,FXint& height){
 
 
 // Stub routine
-bool fxsavePNG(FXStream&,const FXColor*,FXint,FXint){
+FXbool fxsavePNG(FXStream&,const FXColor*,FXint,FXint){
   return false;
   }
 

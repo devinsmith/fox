@@ -3,40 +3,43 @@
 *                          M e n u C h e c k   W i d g e t                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2002,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMenuCheck.cpp,v 1.30 2006/01/22 17:58:36 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXMenuCommand.h"
 #include "FXMenuCheck.h"
@@ -87,15 +90,14 @@ FXIMPLEMENT(FXMenuCheck,FXMenuCommand,FXMenuCheckMap,ARRAYNUMBER(FXMenuCheckMap)
 // Command menu item
 FXMenuCheck::FXMenuCheck(){
   boxColor=0;
-  check=FALSE;
+  check=false;
   }
 
 
 // Command menu item
-FXMenuCheck::FXMenuCheck(FXComposite* p,const FXString& text,FXObject* tgt,FXSelector sel,FXuint opts):
-  FXMenuCommand(p,text,NULL,tgt,sel,opts){
+FXMenuCheck::FXMenuCheck(FXComposite* p,const FXString& text,FXObject* tgt,FXSelector sel,FXuint opts):FXMenuCommand(p,text,NULL,tgt,sel,opts){
   boxColor=getApp()->getBackColor();
-  check=FALSE;
+  check=false;
   }
 
 
@@ -119,7 +121,7 @@ FXint FXMenuCheck::getDefaultHeight(){
 
 
 // Check button
-void FXMenuCheck::setCheck(FXbool s){
+void FXMenuCheck::setCheck(FXuchar s){
   if(check!=s){
     check=s;
     update();
@@ -129,35 +131,35 @@ void FXMenuCheck::setCheck(FXbool s){
 
 // Change state to checked
 long FXMenuCheck::onCheck(FXObject*,FXSelector,void*){
-  setCheck(TRUE);
+  setCheck(true);
   return 1;
   }
 
 
 // Change state to unchecked
 long FXMenuCheck::onUncheck(FXObject*,FXSelector,void*){
-  setCheck(FALSE);
+  setCheck(false);
   return 1;
   }
 
 
 // Change state to indeterminate
 long FXMenuCheck::onUnknown(FXObject*,FXSelector,void*){
-  setCheck(MAYBE);
+  setCheck(maybe);
   return 1;
   }
 
 
 // Update value from a message
 long FXMenuCheck::onCmdSetValue(FXObject*,FXSelector,void* ptr){
-  setCheck((FXbool)(FXuval)ptr);
+  setCheck((FXuchar)(FXuval)ptr);
   return 1;
   }
 
 
 // Update value from a message
 long FXMenuCheck::onCmdSetIntValue(FXObject*,FXSelector,void* ptr){
-  setCheck((FXbool)*((FXint*)ptr));
+  setCheck((FXuchar)*((FXint*)ptr));
   return 1;
   }
 
@@ -321,7 +323,7 @@ long FXMenuCheck::onPaint(FXObject*,FXSelector,void* ptr){
   dc.drawRectangle(xx,yy,9,9);
 
   // Draw the check
-  if(check!=FALSE){
+  if(check!=false){
     FXSegment seg[6];
     seg[0].x1=2+xx; seg[0].y1=4+yy; seg[0].x2=4+xx; seg[0].y2=6+yy;
     seg[1].x1=2+xx; seg[1].y1=5+yy; seg[1].x2=4+xx; seg[1].y2=7+yy;
@@ -330,7 +332,7 @@ long FXMenuCheck::onPaint(FXObject*,FXSelector,void* ptr){
     seg[4].x1=4+xx; seg[4].y1=7+yy; seg[4].x2=8+xx; seg[4].y2=3+yy;
     seg[5].x1=4+xx; seg[5].y1=8+yy; seg[5].x2=8+xx; seg[5].y2=4+yy;
     if(isEnabled()){
-      if(check==MAYBE)
+      if(check==maybe)
         dc.setForeground(shadowColor);
       else
         dc.setForeground(textColor);

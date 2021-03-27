@@ -3,40 +3,41 @@
 *               D e v i c e   C o n t e x t   B a s e   C l a s s               *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDC.cpp,v 1.38 2006/01/22 17:58:21 fox Exp $                            *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
-#include "FXId.h"
 #include "FXVisual.h"
 #include "FXRegion.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXApp.h"
 #include "FXDC.h"
 
 
@@ -127,6 +128,7 @@ FXDC::FXDC(FXApp* a):app(a){
   fill=FILL_SOLID;
   rule=RULE_EVEN_ODD;
   rop=BLT_SRC;
+  fillElms(dashpat,4,32);
   dashpat[0]=4;
   dashpat[1]=4;
   dashlen=2;
@@ -259,24 +261,28 @@ void FXDC::fillConcavePolygonRel(const FXPoint*,FXuint){ }
 void FXDC::fillComplexPolygonRel(const FXPoint*,FXuint){ }
 
 
-// Draw string with base line starting at x, y
-void FXDC::drawText(FXint,FXint,const FXchar*,FXuint){
-  }
+// Fill vertical gradient rectangle
+void FXDC::fillVerticalGradient(FXint,FXint,FXint,FXint,FXColor,FXColor){ }
+
+
+// Fill horizontal gradient rectangle
+void FXDC::fillHorizontalGradient(FXint,FXint,FXint,FXint,FXColor,FXColor){ }
 
 
 // Draw string with base line starting at x, y
-void FXDC::drawText(FXint,FXint,const FXString&){
-  }
+void FXDC::drawText(FXint,FXint,const FXchar*,FXuint){ }
+
+
+// Draw string with base line starting at x, y
+void FXDC::drawText(FXint,FXint,const FXString&){ }
 
 
 // Draw text starting at x, y over filled background
-void FXDC::drawImageText(FXint,FXint,const FXchar*,FXuint){
-  }
+void FXDC::drawImageText(FXint,FXint,const FXchar*,FXuint){ }
 
 
 // Draw text starting at x, y over filled background
-void FXDC::drawImageText(FXint,FXint,const FXString&){
-  }
+void FXDC::drawImageText(FXint,FXint,const FXString&){ }
 
 
 // Draw area from source
@@ -329,7 +335,8 @@ void FXDC::setBackground(FXColor clr){
 
 // Set dash pattern
 void FXDC::setDashes(FXuint dashoffset,const FXchar *dashpattern,FXuint dashlength){
-  register FXuint len,i;
+  FXuint len,i;
+  if(dashlength>32){ fxerror("FXDCWindow::setDashes: bad dashlength parameter.\n"); }
   for(i=len=0; i<dashlength; i++){
     dashpat[i]=dashpattern[i];
     len+=(FXuint)dashpattern[i];

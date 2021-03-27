@@ -3,28 +3,28 @@
 *                          P P M   I n p u t / O u t p u t                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2003,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2003,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxppmio.cpp,v 1.13.2.2 2009/01/16 01:20:37 fox Exp $                         *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
+#include "FXElement.h"
 #include "FXStream.h"
 
 
@@ -43,14 +43,19 @@ using namespace FX;
 namespace FX {
 
 
-extern FXAPI bool fxcheckPPM(FXStream& store);
-extern FXAPI bool fxloadPPM(FXStream& store,FXColor*& data,FXint& width,FXint& height);
-extern FXAPI bool fxsavePPM(FXStream& store,const FXColor *data,FXint width,FXint height);
+#ifndef FXLOADPPM
+extern FXAPI FXbool fxcheckPPM(FXStream& store);
+extern FXAPI FXbool fxloadPPM(FXStream& store,FXColor*& data,FXint& width,FXint& height);
+extern FXAPI FXbool fxsavePPM(FXStream& store,const FXColor *data,FXint width,FXint height);
+#endif
+
+// Furnish our own version
+extern FXAPI FXint __snprintf(FXchar* string,FXint length,const FXchar* format,...);
 
 
 // Read one integer
 static FXint getint(FXStream& store){
-  register FXint num=0;
+  FXint num=0;
   FXuchar c;
   while(!store.eof()){
     store >> c;
@@ -72,7 +77,7 @@ static FXint getint(FXStream& store){
 
 
 // Check if stream contains a PPM
-bool fxcheckPPM(FXStream& store){
+FXbool fxcheckPPM(FXStream& store){
   FXuchar signature[2];
   store.load(signature,2);
   store.position(-2,FXFromCurrent);
@@ -81,10 +86,10 @@ bool fxcheckPPM(FXStream& store){
 
 
 // Load image from stream
-bool fxloadPPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
-  register FXint npixels,i,j,maxvalue=1;
-  register FXuchar *pp;
-  FXuchar magic,format,byte,r,g,b;
+FXbool fxloadPPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
+  FXint npixels,i,j,maxvalue=1;
+  FXuchar *pp;
+  FXuchar magic,format,byte;
 
   // Null out
   data=NULL;
@@ -93,109 +98,109 @@ bool fxloadPPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
 
   // Check magic byte
   store >> magic;
-  if(magic!='P') return false;
+  if(magic=='P'){
 
-  // Check format
-  // "P1" = ascii bitmap, "P2" = ascii greymap, "P3" = ascii pixmap,
-  // "P4" = raw bitmap, "P5" = raw greymap, "P6" = raw pixmap
-  store >> format;
-  if(format<'1' || format>'6') return false;
+    // Check format
+    // "P1" = Ascii bitmap,
+    // "P2" = Ascii greymap,
+    // "P3" = Ascii pixmap,
+    // "P4" = Raw bitmap,
+    // "P5" = Raw greymap,
+    // "P6" = Raw pixmap
+    store >> format;
+    if('1'<=format && format<='6'){
 
-  // Get size
-  width=getint(store);
-  height=getint(store);
-  if(width<1 || height<1) return false;
-  npixels=width*height;
+      // Get size
+      width=getint(store);
+      height=getint(store);
 
-  // Get maximum value
-  if(format!='1' && format!='4'){
-    maxvalue=getint(store);
-    if(maxvalue<=0 || maxvalue>=256) return false;
+      // Sanity check
+      if(0<width && 0<height){
+        npixels=width*height;
+
+        // Get maximum value
+        if(format!='1' && format!='4'){
+          maxvalue=getint(store);
+          if(maxvalue<=0 || maxvalue>=256) return false;
+          }
+
+        FXTRACE((100,"fxloadPPM: width=%d height=%d type=%c \n",width,height,format));
+
+        // Allocate buffer
+        if(callocElms(data,npixels)){
+
+          // Read it
+          pp=(FXuchar*)data;
+          switch(format){
+            case '1':   // Ascii bitmap
+              for(i=0; i<height; i++){
+                for(j=0; j<width; j++,pp+=4){
+                  byte=getint(store);
+                  pp[2] = byte?255:0;
+                  pp[1] = pp[2];
+                  pp[0] = pp[2];
+                  pp[3] = 255;
+                  }
+                }
+              break;
+            case '2':   // Ascii greymap
+              for(i=0; i<height; i++){
+                for(j=0; j<width; j++,pp+=4){
+                  pp[2] = getint(store);
+                  pp[1] = pp[2];
+                  pp[0] = pp[2];
+                  pp[3] = 255;
+                  }
+                }
+              break;
+            case '3':   // Ascii pixmap
+              for(i=0; i<height; i++){
+                for(j=0; j<width; j++,pp+=4){
+                  pp[2] = getint(store);
+                  pp[1] = getint(store);
+                  pp[0] = getint(store);
+                  pp[3] = 255;
+                  }
+                }
+              break;
+            case '4':   // Binary bitmap
+              for(i=0; i<height; i++){
+                for(j=0; j<width; j++,byte<<=1,pp+=4){
+                  if((j&7)==0){ store >> byte; }
+                  pp[2] = (byte&0x80)?255:0;
+                  pp[1] = pp[2];
+                  pp[0] = pp[2];
+                  pp[3] = 255;
+                  }
+                }
+              break;
+            case '5':   // Binary greymap
+              for(i=0; i<height; i++){
+                for(j=0; j<width; j++,pp+=4){
+                  store >> pp[2];
+                  pp[1] =  pp[2];
+                  pp[0] =  pp[2];
+                  pp[3] =  255;
+                  }
+                }
+              break;
+            case '6':   // Binary pixmap
+              for(i=0; i<height; i++){
+                for(j=0; j<width; j++,pp+=4){
+                  store >> pp[2];
+                  store >> pp[1];
+                  store >> pp[0];
+                  pp[3] =  255;
+                  }
+                }
+              break;
+            }
+          return true;
+          }
+        }
+      }
     }
-
-  //FXTRACE((1,"fxloadPPM: width=%d height=%d type=%c \n",width,height,format));
-
-  // Allocate buffer
-  if(!FXCALLOC(&data,FXColor,npixels)) return false;
-
-  // Read it
-  pp=(FXuchar*)data;
-  switch(format){
-    case '1':   // ascii bitmap
-      for(i=0; i<height; i++){
-        for(j=0; j<width; j++,byte<<=1,pp+=4){
-          byte=getint(store);
-          g=byte?255:0;
-          pp[0]=g;
-          pp[1]=g;
-          pp[2]=g;
-          pp[3]=255;
-          }
-        }
-      break;
-    case '2':   // ascii greymap
-      for(i=0; i<height; i++){
-        for(j=0; j<width; j++,pp+=4){
-          g=getint(store);
-          pp[0]=g;
-          pp[1]=g;
-          pp[2]=g;
-          pp[3]=255;
-          }
-        }
-      break;
-    case '3':   // ascii pixmap
-      for(i=0; i<height; i++){
-        for(j=0; j<width; j++,pp+=4){
-          r=getint(store);
-          g=getint(store);
-          b=getint(store);
-          pp[0]=r;
-          pp[1]=g;
-          pp[2]=b;
-          pp[3]=255;
-          }
-        }
-      break;
-    case '4':   // binary bitmap
-      for(i=0; i<height; i++){
-        for(j=0; j<width; j++,byte<<=1,pp+=4){
-          if((j&7)==0){ store >> byte; }
-          g=(byte&0x80)?255:0;
-          pp[0]=g;
-          pp[1]=g;
-          pp[2]=g;
-          pp[3]=255;
-          }
-        }
-      break;
-    case '5':   // binary greymap
-      for(i=0; i<height; i++){
-        for(j=0; j<width; j++,pp+=4){
-          store >> g;
-          pp[0]=g;
-          pp[1]=g;
-          pp[2]=g;
-          pp[3]=255;
-          }
-        }
-      break;
-    case '6':   // binary pixmap
-      for(i=0; i<height; i++){
-        for(j=0; j<width; j++,pp+=4){
-          store >> r;
-          store >> g;
-          store >> b;
-          pp[0]=r;
-          pp[1]=g;
-          pp[2]=b;
-          pp[3]=255;
-          }
-        }
-      break;
-    }
-
-  return true;
+  return false;
   }
 
 
@@ -203,30 +208,27 @@ bool fxloadPPM(FXStream& store,FXColor*& data,FXint& width,FXint& height){
 
 
 // Save a bmp file to a stream
-bool fxsavePPM(FXStream& store,const FXColor *data,FXint width,FXint height){
-  register const FXuchar *pp=(const FXuchar*)data;
-  register FXint i,j,nsize;
-  FXchar size[20];
+FXbool fxsavePPM(FXStream& store,const FXColor *data,FXint width,FXint height){
+  if(data && 0<width && 0<height){
+    const FXuchar *pp=(const FXuchar*)data;
+    FXint i,j,nsize;
+    FXchar size[32];
 
-  // Must make sense
-  if(!pp || width<=0 || height<=0) return false;
+    // Save header
+    nsize=__snprintf(size,sizeof(size),"P6\n%d %d\n255\n",width,height);
+    store.save(size,nsize);
 
-  // Save header
-  store.save("P6\n",3);
-  nsize=sprintf(size,"%d %d\n",width,height);
-  store.save(size,nsize);
-  store.save("255\n",4);
-
-  // 24-bit/pixel
-  for(i=0; i<height; i++){
-    for(j=0; j<width; j++){
-      store << *pp++;
-      store << *pp++;
-      store << *pp++;
-      pp++;
+    // 24-bit/pixel
+    for(i=0; i<height; i++){
+      for(j=0; j<width; j++,pp+=4){
+        store << pp[2];
+        store << pp[1];
+        store << pp[0];
+        }
       }
+    return true;
     }
-  return true;
+  return false;
   }
 
 }

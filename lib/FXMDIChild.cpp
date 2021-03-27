@@ -3,43 +3,46 @@
 *          M u l t i p l e   D o c u m e n t   C h i l d   W i n d o w          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMDIChild.cpp,v 1.96.2.3 2007/04/10 21:05:07 fox Exp $                      *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
+#include "FXMutex.h"
+#include "FXRunnable.h"
+#include "FXAutoThreadStorageKey.h"
 #include "FXThread.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
-#include "FXIcon.h"
-#include "FXGIFIcon.h"
+#include "FXEvent.h"
 #include "FXWindow.h"
-#include "FXFrame.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
+#include "FXGIFIcon.h"
 #include "FXLabel.h"
 #include "FXButton.h"
 #include "FXMenuButton.h"
@@ -82,6 +85,8 @@ namespace FX {
 FXDEFMAP(FXMDIChild) FXMDIChildMap[]={
   FXMAPFUNC(SEL_PAINT,0,FXMDIChild::onPaint),
   FXMAPFUNC(SEL_MOTION,0,FXMDIChild::onMotion),
+  FXMAPFUNC(SEL_ENTER,0,FXMDIChild::onEnter),
+  FXMAPFUNC(SEL_LEAVE,0,FXMDIChild::onLeave),
   FXMAPFUNC(SEL_FOCUSIN,0,FXMDIChild::onFocusIn),
   FXMAPFUNC(SEL_FOCUSOUT,0,FXMDIChild::onFocusOut),
   FXMAPFUNC(SEL_LEFTBUTTONPRESS,0,FXMDIChild::onLeftBtnPress),
@@ -157,8 +162,7 @@ FXMDIChild::FXMDIChild(){
 
 
 // Create MDI Child Window
-FXMDIChild::FXMDIChild(FXMDIClient* p,const FXString& name,FXIcon* ic,FXPopup* pup,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXComposite(p,opts,x,y,w,h),title(name){
+FXMDIChild::FXMDIChild(FXMDIClient* p,const FXString& name,FXIcon* ic,FXPopup* pup,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXComposite(p,opts,x,y,w,h),title(name){
   flags|=FLAG_ENABLED|FLAG_SHOWN;
   windowbtn=new FXMDIWindowButton(this,pup,this,FXWindow::ID_MDI_WINDOW);
   minimizebtn=new FXMDIMinimizeButton(this,this,FXWindow::ID_MDI_MINIMIZE,FRAME_RAISED);
@@ -251,8 +255,8 @@ void FXMDIChild::layout(){
   th=FXMAX3(fh,mh,bh)+2;
   bx=width-BORDERWIDTH-bw-2;
   by=BORDERWIDTH+(th-bh)/2;
-  windowbtn->position(BORDERWIDTH+2,BORDERWIDTH+(th-mh)/2,mw,mh);
-  if(options&MDI_MAXIMIZED){
+  if(isMaximized()){
+    windowbtn->hide();
     deletebtn->hide();
     maximizebtn->hide();
     minimizebtn->hide();
@@ -263,10 +267,12 @@ void FXMDIChild::layout(){
       contents->show();
       }
     }
-  else if(options&MDI_MINIMIZED){
+  else if(isMinimized()){
+    windowbtn->position(BORDERWIDTH+2,BORDERWIDTH+(th-mh)/2,mw,mh);
     deletebtn->position(bx,by,bw,bh); bx-=bw+3;
     maximizebtn->position(bx,by,bw,bh); bx-=bw+3;
     restorebtn->position(bx,by,bw,bh);
+    windowbtn->show();
     deletebtn->show();
     maximizebtn->show();
     minimizebtn->hide();
@@ -276,9 +282,11 @@ void FXMDIChild::layout(){
       }
     }
   else{
+    windowbtn->position(BORDERWIDTH+2,BORDERWIDTH+(th-mh)/2,mw,mh);
     deletebtn->position(bx,by,bw,bh); bx-=bw+3;
     maximizebtn->position(bx,by,bw,bh); bx-=bw+3;
     minimizebtn->position(bx,by,bw,bh);
+    windowbtn->show();
     deletebtn->show();
     maximizebtn->show();
     minimizebtn->show();
@@ -292,10 +300,31 @@ void FXMDIChild::layout(){
   }
 
 
+// Restore window
+FXbool FXMDIChild::restore(FXbool notify){
+  if(isMaximized() || isMinimized()){
+    if(isMinimized()){
+      iconPosX=xpos;
+      iconPosY=ypos;
+      iconWidth=width;
+      iconHeight=height;
+      }
+    xpos=normalPosX;
+    ypos=normalPosY;
+    width=normalWidth;
+    height=normalHeight;
+    options&=~(MDI_MINIMIZED|MDI_MAXIMIZED);
+    recalc();
+    if(notify && target){target->tryHandle(this,FXSEL(SEL_RESTORE,message),NULL);}
+    }
+  return true;
+  }
+
+
 // Maximize window
 FXbool FXMDIChild::maximize(FXbool notify){
-  if(!(options&MDI_MAXIMIZED)){
-    if(options&MDI_MINIMIZED){
+  if(!isMaximized()){
+    if(isMinimized()){
       iconPosX=xpos;
       iconPosY=ypos;
       iconWidth=width;
@@ -316,14 +345,14 @@ FXbool FXMDIChild::maximize(FXbool notify){
     recalc();
     if(notify && target){target->tryHandle(this,FXSEL(SEL_MAXIMIZE,message),NULL);}
     }
-  return TRUE;
+  return true;
   }
 
 
 // Minimize window
 FXbool FXMDIChild::minimize(FXbool notify){
-  if(!(options&MDI_MINIMIZED)){
-    if(!(options&MDI_MAXIMIZED)){
+  if(!isMinimized()){
+    if(!isMaximized()){
       normalPosX=xpos;
       normalPosY=ypos;
       normalWidth=width;
@@ -338,35 +367,17 @@ FXbool FXMDIChild::minimize(FXbool notify){
     recalc();
     if(notify && target){target->tryHandle(this,FXSEL(SEL_MINIMIZE,message),NULL);}
     }
-  return TRUE;
+  return true;
   }
 
 
-// Restore window
-FXbool FXMDIChild::restore(FXbool notify){
-  if(options&(MDI_MINIMIZED|MDI_MAXIMIZED)){
-    if(options&MDI_MINIMIZED){
-      iconPosX=xpos;
-      iconPosY=ypos;
-      iconWidth=width;
-      iconHeight=height;
-      }
-    xpos=normalPosX;
-    ypos=normalPosY;
-    width=normalWidth;
-    height=normalHeight;
-    options&=~(MDI_MINIMIZED|MDI_MAXIMIZED);
-    recalc();
-    if(notify && target){target->tryHandle(this,FXSEL(SEL_RESTORE,message),NULL);}
-    }
-  return TRUE;
-  }
-
-
-// Close MDI window, return TRUE if actually closed
+// Close MDI window, return true if actually closed
 FXbool FXMDIChild::close(FXbool notify){
+  FXMDIChild *alternative=(FXMDIChild*)(getNext()?getNext():getPrev());
   FXMDIClient *client=(FXMDIClient*)getParent();
-  FXMDIChild *alternative;
+
+  // Deactivate this window
+  client->setActiveChild(alternative,notify);
 
   // See if OK to close
   if(!notify || !target || !target->tryHandle(this,FXSEL(SEL_CLOSE,message),NULL)){
@@ -375,19 +386,18 @@ FXbool FXMDIChild::close(FXbool notify){
     setTarget(NULL);
     setSelector(0);
 
-    // Try find another window to activate
-    alternative=(FXMDIChild*)(getNext()?getNext():getPrev());
-
-    // First make sure we're inactive
-    client->setActiveChild(alternative,notify);
-
     // Self destruct
     delete this;
 
     // Was closed
-    return TRUE;
+    return true;
     }
-  return FALSE;
+
+  // Reactivate window, we're not closing
+  client->setActiveChild(this,notify);
+
+  // Didn't close
+  return false;
   }
 
 
@@ -406,13 +416,13 @@ FXbool FXMDIChild::isMinimized() const {
 // Move this window to the specified position in the parent's coordinates
 void FXMDIChild::move(FXint x,FXint y){
   FXComposite::move(x,y);
-  if(!(options&(MDI_MAXIMIZED|MDI_MINIMIZED))){
-    normalPosX=x;
-    normalPosY=y;
-    }
-  else if(options&MDI_MINIMIZED){
+  if(isMinimized()){
     iconPosX=x;
     iconPosY=y;
+    }
+  else if(!isMaximized()){
+    normalPosX=x;
+    normalPosY=y;
     }
   }
 
@@ -420,13 +430,13 @@ void FXMDIChild::move(FXint x,FXint y){
 // Resize this window to the specified width and height
 void FXMDIChild::resize(FXint w,FXint h){
   FXComposite::resize(w,h);
-  if(!(options&(MDI_MAXIMIZED|MDI_MINIMIZED))){
-    normalWidth=w;
-    normalHeight=h;
-    }
-  else if(options&MDI_MINIMIZED){
+  if(isMinimized()){
     iconWidth=w;
     iconHeight=h;
+    }
+  else if(!isMaximized()){
+    normalWidth=w;
+    normalHeight=h;
     }
   }
 
@@ -434,17 +444,17 @@ void FXMDIChild::resize(FXint w,FXint h){
 // Move and resize this window in the parent's coordinates
 void FXMDIChild::position(FXint x,FXint y,FXint w,FXint h){
   FXComposite::position(x,y,w,h);
-  if(!(options&(MDI_MAXIMIZED|MDI_MINIMIZED))){
-    normalPosX=x;
-    normalPosY=y;
-    normalWidth=w;
-    normalHeight=h;
-    }
-  else if(options&MDI_MINIMIZED){
+  if(isMinimized()){
     iconPosX=x;
     iconPosY=y;
     iconWidth=w;
     iconHeight=h;
+    }
+  else if(!isMaximized()){
+    normalPosX=x;
+    normalPosY=y;
+    normalWidth=w;
+    normalHeight=h;
     }
   }
 
@@ -452,18 +462,18 @@ void FXMDIChild::position(FXint x,FXint y,FXint w,FXint h){
 // Into focus chain
 void FXMDIChild::setFocus(){
   FXMDIClient *client=(FXMDIClient*)getParent();
-  client->setActiveChild(this,TRUE);
+  client->setActiveChild(this,true);
   FXComposite::setFocus();
   }
 
 
 // If window can have focus
-bool FXMDIChild::canFocus() const { return true; }
+FXbool FXMDIChild::canFocus() const { return true; }
 
 
 // Change cursor based on location over window
-void FXMDIChild::changeCursor(FXint x,FXint y){
-  switch(where(x,y)){
+void FXMDIChild::changeCursor(FXuchar which){
+  switch(which){
     case DRAG_TOP:
     case DRAG_BOTTOM:
       setDefaultCursor(getApp()->getDefaultCursor(DEF_DRAGH_CURSOR));
@@ -492,18 +502,11 @@ void FXMDIChild::changeCursor(FXint x,FXint y){
   }
 
 
-// Revert cursor to normal one
-void FXMDIChild::revertCursor(){
-  setDefaultCursor(getApp()->getDefaultCursor(DEF_ARROW_CURSOR));
-  setDragCursor(getApp()->getDefaultCursor(DEF_ARROW_CURSOR));
-  }
-
-
 // Draw rubberband box
 void FXMDIChild::drawRubberBox(FXint x,FXint y,FXint w,FXint h){
   if(BORDERWIDTH*2<w && BORDERWIDTH*2<h){
     FXDCWindow dc(getParent());
-    dc.clipChildren(FALSE);
+    dc.clipChildren(false);
     dc.setFunction(BLT_SRC_XOR_DST);
     dc.setForeground(getParent()->getBackColor());
     //dc.drawHashBox(xx,yy,w,h,BORDERWIDTH);
@@ -515,8 +518,7 @@ void FXMDIChild::drawRubberBox(FXint x,FXint y,FXint w,FXint h){
 
 // Draw animation morphing from old to new rectangle
 void FXMDIChild::animateRectangles(FXint ox,FXint oy,FXint ow,FXint oh,FXint nx,FXint ny,FXint nw,FXint nh){
-  FXlong pause=getApp()->getAnimSpeed()*1000000L;
-  if(xid && pause){
+  if(xid && getApp()->getAnimSpeed()){
     FXDCWindow dc(getParent());
     FXint bx,by,bw,bh,s,t;
     dc.clipChildren(false);
@@ -531,7 +533,7 @@ void FXMDIChild::animateRectangles(FXint ox,FXint oy,FXint ow,FXint oh,FXint nx,
       if(BORDERWIDTH*2<bw && BORDERWIDTH*2<bh){
         dc.drawHashBox(bx,by,bw,bh,BORDERWIDTH);
         getApp()->flush(true);
-        FXThread::sleep(pause);
+        FXThread::sleep(getApp()->getAnimSpeed());
         dc.drawHashBox(bx,by,bw,bh,BORDERWIDTH);
         getApp()->flush(true);
         }
@@ -557,7 +559,7 @@ long FXMDIChild::onPaint(FXObject*,FXSelector,void* ptr){
   dc.fillRectangle(ev->rect.x,ev->rect.y,ev->rect.w,ev->rect.h);
 
   // Only draw stuff when not maximized
-  if(!(options&MDI_MAXIMIZED)){
+  if(!isMaximized()){
 
     // Compute sizes
     fh=font->getFontHeight();
@@ -582,8 +584,13 @@ long FXMDIChild::onPaint(FXObject*,FXSelector,void* ptr){
     dc.fillRectangle(width-1,0,1,height);
 
     // Draw title background
-    dc.setForeground(isActive() ? (hasFocus() ? titleBackColor : shadowColor) : backColor);
-    dc.fillRectangle(BORDERWIDTH,BORDERWIDTH,width-BORDERWIDTH*2,th);
+    if(isActive()){
+      dc.fillHorizontalGradient(BORDERWIDTH,BORDERWIDTH,width-BORDERWIDTH*2,th,(hasFocus()?titleBackColor:shadowColor),backColor);
+      }
+    else{
+      dc.setForeground(backColor);
+      dc.fillRectangle(BORDERWIDTH,BORDERWIDTH,width-BORDERWIDTH*2,th);
+      }
 
     // Draw title
     if(!title.empty()){
@@ -615,7 +622,7 @@ long FXMDIChild::onPaint(FXObject*,FXSelector,void* ptr){
       }
 
     // Draw inner border
-    if(!(options&MDI_MINIMIZED)){
+    if(!isMinimized()){
       dc.setForeground(shadowColor);
       dc.fillRectangle(BORDERWIDTH,BORDERWIDTH+th,width-BORDERWIDTH*2-1,1);
       dc.fillRectangle(BORDERWIDTH,BORDERWIDTH+th,1,height-th-BORDERWIDTH*2-1);
@@ -640,7 +647,7 @@ long FXMDIChild::onPaint(FXObject*,FXSelector,void* ptr){
 
 
 // Find out where window was grabbed
-FXuchar FXMDIChild::where(FXint x,FXint y){
+FXuchar FXMDIChild::where(FXint x,FXint y) const {
   FXuchar code=DRAG_NONE;
   FXint fh,mh,bh,th;
   fh=font->getFontHeight();
@@ -656,16 +663,27 @@ FXuchar FXMDIChild::where(FXint x,FXint y){
   }
 
 
-// Focus on widget itself
-long FXMDIChild::onFocusSelf(FXObject*,FXSelector,void* ptr){
-  setFocus();
-  if(contentWindow()) contentWindow()->handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
+// Entering window
+long FXMDIChild::onEnter(FXObject* sender,FXSelector sel,void* ptr){
+  FXComposite::onEnter(sender,sel,ptr);
+  if(mode==DRAG_NONE){ changeCursor(where(((FXEvent*)ptr)->win_x,((FXEvent*)ptr)->win_y)); }
   return 1;
-//  if(contentWindow() && contentWindow()->handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr)) return 1;
-//  setFocus();
-//  return 1;   ///// FIXME See ScrollWindow /////
-//  FXWindow *child=contentWindow();
-//  return child && child->handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
+  }
+
+
+// Leaving window
+long FXMDIChild::onLeave(FXObject* sender,FXSelector sel,void* ptr){
+  FXComposite::onLeave(sender,sel,ptr);
+  if(mode==DRAG_NONE){ changeCursor(DRAG_NONE); }
+  return 1;
+  }
+
+
+// Focus on widget itself and try put focus on the content window as well
+long FXMDIChild::onFocusSelf(FXObject* sender,FXSelector,void* ptr){            // See FXScrollWindow
+  setFocus();
+  if(contentWindow()) contentWindow()->handle(sender,FXSEL(SEL_FOCUS_SELF,0),ptr);
+  return 1;
   }
 
 
@@ -699,7 +717,7 @@ long FXMDIChild::onFocusOut(FXObject* sender,FXSelector sel,void* ptr){
 
 // Pressed LEFT button
 long FXMDIChild::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
-  register FXEvent *event=(FXEvent*)ptr;
+  FXEvent *event=(FXEvent*)ptr;
   flags&=~FLAG_TIP;
   handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
   if(isEnabled()){
@@ -734,7 +752,7 @@ long FXMDIChild::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
 
 // Released LEFT button
 long FXMDIChild::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
-  register FXEvent *event=(FXEvent*)ptr;
+  FXEvent *event=(FXEvent*)ptr;
   if(isEnabled()){
     ungrab();
     if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONRELEASE,message),ptr)) return 1;
@@ -749,17 +767,17 @@ long FXMDIChild::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
         }
       }
     else if(event->click_count==2){
-      if(options&MDI_MINIMIZED){
+      if(isMinimized()){
         animateRectangles(xpos,ypos,width,height,normalPosX,normalPosY,normalWidth,normalHeight);
-        restore(TRUE);
+        restore(true);
         }
-      else if(options&MDI_MAXIMIZED){
+      else if(isMaximized()){
         animateRectangles(xpos,ypos,width,height,normalPosX,normalPosY,normalWidth,normalHeight);
-        restore(TRUE);
+        restore(true);
         }
       else{
         animateRectangles(xpos,ypos,width,height,0,0,getParent()->getWidth(),getParent()->getHeight());
-        maximize(TRUE);
+        maximize(true);
         }
       }
     return 1;
@@ -770,9 +788,9 @@ long FXMDIChild::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
 
 // Moved
 long FXMDIChild::onMotion(FXObject*,FXSelector,void* ptr){
-  register FXEvent *event=(FXEvent*)ptr;
-  register FXint tmp,mousex,mousey;
-  register FXint oldx,oldy,oldw,oldh;
+  FXEvent *event=(FXEvent*)ptr;
+  FXint tmp,mousex,mousey;
+  FXint oldx,oldy,oldw,oldh;
   if(mode!=DRAG_NONE){
 
     // Mouse in FXMDIClient's coordinates
@@ -836,7 +854,7 @@ long FXMDIChild::onMotion(FXObject*,FXSelector,void* ptr){
     }
 
   // Othersize just change cursor based on location
-  changeCursor(event->win_x,event->win_y);
+  changeCursor(where(event->win_x,event->win_y));
   return 0;
   }
 
@@ -917,7 +935,7 @@ long FXMDIChild::onCmdGetIconValue(FXObject*,FXSelector,void* ptr){
   }
 
 
-// Window was selected
+// Window was selected; the pointer is the old active child
 long FXMDIChild::onSelected(FXObject*,FXSelector,void* ptr){    // FIXME
   if(!(flags&FLAG_ACTIVE)){
     if(target) target->tryHandle(this,FXSEL(SEL_SELECTED,message),ptr);
@@ -930,7 +948,7 @@ long FXMDIChild::onSelected(FXObject*,FXSelector,void* ptr){    // FIXME
   }
 
 
-// Window was deselected
+// Window was deselected; the pointer is the new active child
 long FXMDIChild::onDeselected(FXObject*,FXSelector,void* ptr){    // FIXME
   if(flags&FLAG_ACTIVE){
     if(target) target->tryHandle(this,FXSEL(SEL_DESELECTED,message),ptr);
@@ -949,7 +967,7 @@ long FXMDIChild::onDeselected(FXObject*,FXSelector,void* ptr){    // FIXME
 // Restore window command
 long FXMDIChild::onCmdRestore(FXObject*,FXSelector,void*){
   animateRectangles(xpos,ypos,width,height,normalPosX,normalPosY,normalWidth,normalHeight);
-  restore(TRUE);
+  restore(true);
   return 1;
   }
 
@@ -977,7 +995,7 @@ long FXMDIChild::onUpdMenuRestore(FXObject* sender,FXSelector,void*){
 // Maximize window command
 long FXMDIChild::onCmdMaximize(FXObject*,FXSelector,void*){
   animateRectangles(xpos,ypos,width,height,0,0,getParent()->getWidth(),getParent()->getHeight());
-  maximize(TRUE);
+  maximize(true);
   return 1;
   }
 
@@ -992,7 +1010,7 @@ long FXMDIChild::onUpdMaximize(FXObject* sender,FXSelector,void*){
 // Minimize window command
 long FXMDIChild::onCmdMinimize(FXObject*,FXSelector,void*){
   animateRectangles(xpos,ypos,width,height,iconPosX,iconPosY,getDefaultWidth(),getDefaultHeight());
-  minimize(TRUE);
+  minimize(true);
   return 1;
   }
 
@@ -1019,7 +1037,7 @@ long FXMDIChild::onUpdMenuMinimize(FXObject* sender,FXSelector,void*){
 
 // Close window after asking FXMDIChild's target; returns 1 if closed
 long FXMDIChild::onCmdClose(FXObject*,FXSelector,void*){
-  return close(TRUE);
+  return close(true);
   }
 
 

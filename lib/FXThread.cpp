@@ -1,85 +1,57 @@
 /********************************************************************************
 *                                                                               *
-*                 M u l i t h r e a d i n g   S u p p o r t                     *
+*                          T h r e a d   S u p p o r t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2004,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2004,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXThread.cpp,v 1.53.2.12 2008/06/18 20:03:46 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
-#ifdef WIN32
-#if _WIN32_WINNT < 0x0400
-#define _WIN32_WINNT 0x0400
-#endif
-#endif
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXException.h"
+#include "FXString.h"
+#include "FXRunnable.h"
+#include "FXAutoThreadStorageKey.h"
 #include "FXThread.h"
-#ifndef WIN32
-#ifdef __APPLE__
-#ifdef Status
-#undef Status
-#endif
-#ifdef KeyClass
-#undef KeyClass
-#endif
-#include <CoreServices/CoreServices.h>
-#include <pthread.h>
-#else
-#include <pthread.h>
-#include <semaphore.h>
-#endif
-#else
-#include <process.h>
-#endif
-
 
 /*
   Notes:
 
-  - We have a amorphous blob of memory reserved for the mutex implementation.
-    Since we're trying to avoid having to include platform-specific headers
-    in application code, we can't easily know how much to allocate for
-    pthread_mutex_t [or CRITICAL_SECTION].
+  - Note that the FXThreadID is only valid when busy==true, except insofar
+    as when its used to harvest thread exit status like e.g. join!
 
-  - We don't want to allocate dynamically because of the performance
-    issues, and also because obviously, since heap memory is shared between
-    threads, a malloc itself involves locking another mutex, leaving a
-    potential for an unexpected deadlock.
+  - The busy flag is set BEFORE actually spawning the thread, and reset
+    if we were unable to spawn the thread.
+    This is because we don't know how the thread creation is implemented:-
+    its possible that the new thread may already be running for some time
+    before pthread_create() returns successfully.
+    We want to be sure that the flag reflects running state from within
+    the newly spawned thread [we need this in several API's].
 
-  - So we just reserve some memory which we will hope to be enough.  If it
-    ever turns out its not, the assert should trigger and we'll just have
-    to change the source a bit.
+  - Note that cancel() also resets busy since it kills the thread
+    right away; however join() doesn't because then we wait for the
+    thread to finish normally.
 
-  - If you run into this, try to figure out sizeof(pthread_mutex_t) and
-    let me know about it (jeroen@fox-toolkit.org).
+  - About thread suspend/resume.  This does not work on Linux since there is
+    no pthread equivalent for SuspendThread() and ResumeThread().  There is,
+    however, an exceptionally inelegant solution in Boehm's GC code (file
+    linux_threads.c).  But its so ugly we'd rather live without until a real
+    suspend/resume facility is implemented in the linux kernel.
 
-  - I do recommend running this in debug mode first time around on a
-    new platform.
-
-  - Picked unsigned long so as to ensure alignment issues are taken
-    care off.
-
-  - I now believe its safe to set tid=0 after run returns; if FXThread
-    is destroyed then the execution is stopped immediately; if the thread
-    exits, tid is also set to 0.  If the thread is cancelled, tid is also
-    set to 0.  In no circumstance I can see is it possible for run() to
-    return when FXThread no longer exists.
 */
 
 using namespace FX;
@@ -89,210 +61,12 @@ namespace FX {
 
 /*******************************************************************************/
 
-// Unix implementation
-
-#ifndef WIN32
-
-
-// Initialize mutex
-FXMutex::FXMutex(FXbool recursive){
-  pthread_mutexattr_t mutexatt;
-  // If this fails on your machine, determine what value
-  // of sizeof(pthread_mutex_t) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.org!!
-  //FXTRACE((150,"sizeof(pthread_mutex_t)=%d\n",sizeof(pthread_mutex_t)));
-  FXASSERT(sizeof(data)>=sizeof(pthread_mutex_t));
-  pthread_mutexattr_init(&mutexatt);
-  pthread_mutexattr_settype(&mutexatt,recursive?PTHREAD_MUTEX_RECURSIVE:PTHREAD_MUTEX_DEFAULT);
-  pthread_mutex_init((pthread_mutex_t*)data,&mutexatt);
-  pthread_mutexattr_destroy(&mutexatt);
-  }
-
-
-// Lock the mutex
-void FXMutex::lock(){
-  pthread_mutex_lock((pthread_mutex_t*)data);
-  }
-
-
-// Try lock the mutex
-FXbool FXMutex::trylock(){
-  return pthread_mutex_trylock((pthread_mutex_t*)data)==0;
-  }
-
-
-// Unlock mutex
-void FXMutex::unlock(){
-  pthread_mutex_unlock((pthread_mutex_t*)data);
-  }
-
-
-// Test if locked
-FXbool FXMutex::locked(){
-  if(pthread_mutex_trylock((pthread_mutex_t*)data)==0){
-    pthread_mutex_unlock((pthread_mutex_t*)data);
-    return false;
-    }
-  return true;
-  }
-
-
-// Delete mutex
-FXMutex::~FXMutex(){
-  pthread_mutex_destroy((pthread_mutex_t*)data);
-  }
-
-
-/*******************************************************************************/
-
-
-#ifdef __APPLE__
-
-
-// Initialize semaphore
-FXSemaphore::FXSemaphore(FXint initial){
-  // If this fails on your machine, determine what value
-  // of sizeof(MPSemaphoreID*) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.org!!
-  //FXTRACE((150,"sizeof(MPSemaphoreID*)=%d\n",sizeof(MPSemaphoreID*)));
-  FXASSERT(sizeof(data)>=sizeof(MPSemaphoreID*));
-  MPCreateSemaphore(2147483647,initial,(MPSemaphoreID*)data);
-  }
-
-
-// Decrement semaphore
-void FXSemaphore::wait(){
-  MPWaitOnSemaphore(*((MPSemaphoreID*)data),kDurationForever);
-  }
-
-
-// Decrement semaphore but don't block
-FXbool FXSemaphore::trywait(){
-  return MPWaitOnSemaphore(*((MPSemaphoreID*)data),kDurationImmediate)==noErr;
-  }
-
-
-// Increment semaphore
-void FXSemaphore::post(){
-  MPSignalSemaphore(*((MPSemaphoreID*)data));
-  }
-
-
-// Delete semaphore
-FXSemaphore::~FXSemaphore(){
-  MPDeleteSemaphore(*((MPSemaphoreID*)data));
-  }
-
-#else
-
-// Initialize semaphore
-FXSemaphore::FXSemaphore(FXint initial){
-  // If this fails on your machine, determine what value
-  // of sizeof(sem_t) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.org!!
-  //FXTRACE((150,"sizeof(sem_t)=%d\n",sizeof(sem_t)));
-  FXASSERT(sizeof(data)>=sizeof(sem_t));
-  sem_init((sem_t*)data,0,(unsigned int)initial);
-  }
-
-
-// Decrement semaphore
-void FXSemaphore::wait(){
-  sem_wait((sem_t*)data);
-  }
-
-
-// Decrement semaphore but don't block
-FXbool FXSemaphore::trywait(){
-  return sem_trywait((sem_t*)data)==0;
-  }
-
-
-// Increment semaphore
-void FXSemaphore::post(){
-  sem_post((sem_t*)data);
-  }
-
-
-// Delete semaphore
-FXSemaphore::~FXSemaphore(){
-  sem_destroy((sem_t*)data);
-  }
-
-#endif
-
-/*******************************************************************************/
-
-
-// Initialize condition
-FXCondition::FXCondition(){
-  // If this fails on your machine, determine what value
-  // of sizeof(pthread_cond_t) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.org!!
-  //FXTRACE((150,"sizeof(pthread_cond_t)=%d\n",sizeof(pthread_cond_t)));
-  FXASSERT(sizeof(data)>=sizeof(pthread_cond_t));
-  pthread_cond_init((pthread_cond_t*)data,NULL);
-  }
-
-
-// Wake up one single waiting thread
-void FXCondition::signal(){
-  pthread_cond_signal((pthread_cond_t*)data);
-  }
-
-
-// Wake up all waiting threads
-void FXCondition::broadcast(){
-  pthread_cond_broadcast((pthread_cond_t*)data);
-  }
-
-
-// Wait for condition indefinitely
-void FXCondition::wait(FXMutex& mtx){
-  pthread_cond_wait((pthread_cond_t*)data,(pthread_mutex_t*)mtx.data);
-  }
-
-
-// Wait for condition but fall through after timeout
-FXbool FXCondition::wait(FXMutex& mtx,FXlong nsec){
-  register int result;
-  struct timespec ts;
-  ts.tv_sec=nsec/1000000000;
-  ts.tv_nsec=nsec%1000000000;
-x:result=pthread_cond_timedwait((pthread_cond_t*)data,(pthread_mutex_t*)mtx.data,&ts);
-  if(result==EINTR) goto x;
-  return result!=ETIMEDOUT;
-  }
-
-
-// Delete condition
-FXCondition::~FXCondition(){
-  pthread_cond_destroy((pthread_cond_t*)data);
-  }
-
-
-/*******************************************************************************/
-
-// Thread local storage key for back-reference to FXThread
-static pthread_key_t self_key;
-
-// Global initializer for the self_key variable
-struct TLSKEYINIT {
-  TLSKEYINIT(){ pthread_key_create(&self_key,NULL); }
- ~TLSKEYINIT(){ pthread_key_delete(self_key); }
-  };
-
-
-// Extern declaration prevents overzealous optimizer from noticing we're
-// never using this object, and subsequently eliminating it from the code.
-extern TLSKEYINIT initializer;
-
-// Dummy object causes global initializer to run
-TLSKEYINIT initializer;
+// Generate one for the thread itself
+FXAutoThreadStorageKey FXThread::selfKey;
 
 
 // Initialize thread
-FXThread::FXThread():tid(0){
+FXThread::FXThread():tid(0),busy(false){
   }
 
 
@@ -305,108 +79,242 @@ FXThreadID FXThread::id() const {
   }
 
 
-// Return TRUE if this thread is running
+// Return true if this thread is running
 FXbool FXThread::running() const {
-  return tid!=0;
+  return busy;
   }
 
 
-// Start the thread; we associate the FXThread instance with
-// this thread using thread-local storage accessed with self_key.
-// Also, we catch any errors thrown by the thread code here.
-void* FXThread::execute(void* thread){
-  register FXint code=-1;
-  pthread_setspecific(self_key,thread);
+// Change pointer to thread
+void FXThread::self(FXThread* t){
+  FXThread::selfKey.set(t);
+  }
+
+
+// Return pointer to calling thread
+FXThread* FXThread::self(){
+  return (FXThread*)FXThread::selfKey.get();
+  }
+
+
+// Start the thread; we associate the FXThread instance with this thread using thread-local
+// storage accessed with self_key.
+// A special FXThreadException may be used to unroll to this point and return a specific
+// error code from the thread; any other FXException is silently caught here, and causes
+// FXThread to return error-code of -1.
+#if defined(WIN32)
+unsigned int CALLBACK FXThread::function(void* ptr){
+  FXThread *thread=(FXThread*)ptr;
+  FXint code=-1;
+  self(thread);
+  try{
+    code=thread->run();
+    }
+  catch(const FXThreadException& e){    // Graceful thread exit
+    code=e.code();
+    }
+  catch(const FXException& e){          // Our kind of exceptions
+    fxerror("FXThread: caught exception: %s.\n",e.what());
+    }
+  catch(...){                           // Other exceptions
+    fxerror("FXThread: caught unknown exception.\n");
+    }
+  if(self()){ self()->busy=false; }
+  return code;
+  }
+#else
+void* FXThread::function(void* ptr){
+  FXThread *thread=(FXThread*)ptr;
+  FXint code=-1;
+  self(thread);
   pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
   pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
-  try{ code=((FXThread*)thread)->run(); } catch(...){ }
-  ((FXThread*)thread)->tid=0;
+  try{
+    code=thread->run();
+    }
+  catch(const FXThreadException& e){    // Graceful thread exit
+    code=e.code();
+    }
+  catch(const FXException& e){          // Our kind of exceptions
+    fxerror("FXThread: caught exception: %s.\n",e.what());
+    }
+  catch(...){                           // Other exceptions
+    fxerror("FXThread: caught unknown exception.\n");
+    }
+  if(self()){ self()->busy=false; }
   return (void*)(FXival)code;
   }
+#endif
 
 
-// Start thread; make sure that stacksize >= PTHREAD_STACK_MIN.
-// We can't check for it because not all machines have this the
-// PTHREAD_STACK_MIN definition.
-FXbool FXThread::start(unsigned long stacksize){
-  register FXbool code;
+// Start thread
+FXbool FXThread::start(FXuval stacksize){
+#if defined(WIN32)
+  DWORD thd;
+  if(busy){ fxerror("FXThread::start: thread already running.\n"); }
+  if(tid){ fxerror("FXThread::start: thread still attached.\n"); }
+  busy=true;
+  if((tid=(FXThreadID)CreateThread(NULL,stacksize,(LPTHREAD_START_ROUTINE)FXThread::function,this,0,&thd))==NULL) busy=false;
+//  if((tid=(FXThreadID)_beginthreadex(NULL,stacksize,(LPTHREAD_START_ROUTINE)FXThread::function,this,0,&thd))==NULL) busy=false;
+#else
   pthread_attr_t attr;
+  if(busy){ fxerror("FXThread::start: thread already running.\n"); }
+  if(tid){ fxerror("FXThread::start: thread still attached.\n"); }
   pthread_attr_init(&attr);
   pthread_attr_setinheritsched(&attr,PTHREAD_INHERIT_SCHED);
   if(stacksize){ pthread_attr_setstacksize(&attr,stacksize); }
-  //pthread_attr_setdetachstate(&attr,PTHREAD_CREATE_DETACHED);
-  code=pthread_create((pthread_t*)&tid,&attr,FXThread::execute,(void*)this)==0;
+  busy=true;
+#if defined(__USE_POSIX199506) || defined(__USE_UNIX98)
+  sigset_t newset,oldset;
+  sigfillset(&newset);
+  pthread_sigmask(SIG_SETMASK,&newset,&oldset); // No signals except to main thread
+  if(pthread_create((pthread_t*)&tid,&attr,FXThread::function,(void*)this)!=0) busy=false;
+  pthread_sigmask(SIG_SETMASK,&oldset,NULL);    // Restore old mask
+#else
+  if(pthread_create((pthread_t*)&tid,&attr,FXThread::function,(void*)this)!=0) busy=false;
+#endif
   pthread_attr_destroy(&attr);
-  return code;
+#endif
+  return busy;
   }
 
 
 // Suspend calling thread until thread is done
 FXbool FXThread::join(FXint& code){
-  register pthread_t ttid=(pthread_t)tid;
+#if defined(WIN32)
+  if(tid && WaitForSingleObject((HANDLE)tid,INFINITE)==WAIT_OBJECT_0){
+    GetExitCodeThread((HANDLE)tid,(DWORD*)&code);
+    CloseHandle((HANDLE)tid);
+    tid=0;
+    return true;
+    }
+  return false;
+#else
   void *trc=NULL;
-  if(ttid && pthread_join(ttid,&trc)==0){
+  if(tid && pthread_join((pthread_t)tid,&trc)==0){
     code=(FXint)(FXival)trc;
     tid=0;
-    return TRUE;
+    return true;
     }
-  return FALSE;
+  return false;
+#endif
   }
 
 
 // Suspend calling thread until thread is done
 FXbool FXThread::join(){
-  register pthread_t ttid=(pthread_t)tid;
-  if(ttid && pthread_join(ttid,NULL)==0){
+#if defined(WIN32)
+  if(tid && WaitForSingleObject((HANDLE)tid,INFINITE)==WAIT_OBJECT_0){
+    CloseHandle((HANDLE)tid);
     tid=0;
-    return TRUE;
+    return true;
     }
-  return FALSE;
+  return false;
+#else
+  if(tid && pthread_join((pthread_t)tid,NULL)==0){
+    tid=0;
+    return true;
+    }
+  return false;
+#endif
   }
 
 
 // Cancel the thread
 FXbool FXThread::cancel(){
-  register pthread_t ttid=(pthread_t)tid;
-  if(ttid && pthread_cancel(ttid)==0){
-    pthread_join(ttid,NULL);
-    tid=0;
-    return TRUE;
+#if defined(WIN32)
+  if(tid){
+    if(busy && TerminateThread((HANDLE)tid,0)) busy=false;
+    if(CloseHandle((HANDLE)tid)){
+      tid=0;
+      return true;
+      }
     }
-  return FALSE;
+  return false;
+#else
+  if(tid){
+    if(busy && pthread_cancel((pthread_t)tid)==0) busy=false;
+    if(pthread_join((pthread_t)tid,NULL)==0){
+      tid=0;
+      return true;
+      }
+    }
+  return false;
+#endif
   }
 
 
 // Detach thread
 FXbool FXThread::detach(){
-  register pthread_t ttid=(pthread_t)tid;
-  return ttid && pthread_detach(ttid)==0;
+#if defined(WIN32)
+  if(tid && CloseHandle((HANDLE)tid)){
+    tid=0;
+    return true;
+    }
+  return false;
+#else
+  if(tid && pthread_detach((pthread_t)tid)==0){
+    tid=0;
+    return true;
+    }
+  return false;
+#endif
   }
 
 
 // Exit calling thread
 void FXThread::exit(FXint code){
-  if(self()){ self()->tid=0; }
+#if defined(WIN32)
+  if(self()){ self()->busy=false; }
+  ExitThread(code);
+//  _endthreadex(code);
+#else
+  if(self()){ self()->busy=false; }
   pthread_exit((void*)(FXival)code);
+#endif
   }
 
 
 // Yield the thread
 void FXThread::yield(){
+#if defined(WIN32)
+  Sleep(0);
+#else
   sched_yield();                // More portable than pthread_yield()
+#endif
   }
 
 
+#if defined(WIN32)
+
+// Convert 100ns since 01/01/1601 to ns since 01/01/1970
+static inline FXTime fxunixtime(FXTime ft){
+  return (ft-FXLONG(116444736000000000))*FXLONG(100);
+  }
+
+// Convert ns since 01/01/1970 to 100ns since 01/01/1601
+static inline FXTime fxwintime(FXTime ut){
+  return ut/FXLONG(100)+FXLONG(116444736000000000);
+  }
+
+#endif
+
+
 // Get time in nanoseconds since Epoch
-FXlong FXThread::time(){
-#ifdef __USE_POSIX199309
-  const FXlong seconds=1000000000;
+FXTime FXThread::time(){
+#if defined(WIN32)
+  FXTime now;
+  FXASSERT(sizeof(FXTime)==sizeof(FILETIME));
+  GetSystemTimeAsFileTime((FILETIME*)&now);
+  return fxunixtime(now);
+#elif (_POSIX_C_SOURCE >= 199309L)
+  const FXTime seconds=1000000000;
   struct timespec ts;
   clock_gettime(CLOCK_REALTIME,&ts);
   return ts.tv_sec*seconds+ts.tv_nsec;
 #else
-  const FXlong seconds=1000000000;
-  const FXlong microseconds=1000;
+  const FXTime seconds=1000000000;
+  const FXTime microseconds=1000;
   struct timeval tv;
   gettimeofday(&tv,NULL);
   return tv.tv_sec*seconds+tv.tv_usec*microseconds;
@@ -414,465 +322,675 @@ FXlong FXThread::time(){
   }
 
 
-// Sleep for some time
-void FXThread::sleep(FXlong nsec){
-#ifdef __USE_POSIX199309
-  const FXlong seconds=1000000000;
-  struct timespec value;
-  value.tv_sec=nsec/seconds;
-  value.tv_nsec=nsec%seconds;
-  nanosleep(&value,NULL);
+#if defined(WIN32)
+static FXTime frequency=0;
+#endif
+
+// Get steady time in nanoseconds since some arbitrary start time
+FXTime FXThread::steadytime(){
+#if defined(WIN32)
+  const FXTime seconds=1000000000;
+  FXTime now,s,f;
+  FXASSERT(sizeof(FXTime)==sizeof(LARGE_INTEGER));
+  if(__unlikely(frequency==0)){
+    ::QueryPerformanceFrequency((LARGE_INTEGER*)&frequency);
+    }
+  FXASSERT(frequency<FXLONG(9223372036));               // Overflow possible if CPU speed exceeds 9.2GHz
+  ::QueryPerformanceCounter((LARGE_INTEGER*)&now);
+  s=now/frequency;
+  f=now%frequency;
+  return seconds*s + ((seconds*f)/frequency);
+#elif (_POSIX_C_SOURCE >= 199309L)
+  const FXTime seconds=1000000000;
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC,&ts);
+  return ts.tv_sec*seconds+ts.tv_nsec;
 #else
-  const FXlong seconds=1000000000;
-  const FXlong microseconds=1000;
-  const FXlong milliseconds=1000000;
-  struct timeval value;
-  value.tv_usec=(nsec/microseconds)%milliseconds;
-  value.tv_sec=nsec/seconds;
-  select(1,0,0,0,&value);
+  const FXTime seconds=1000000000;
+  const FXTime microseconds=1000;
+  struct timeval tv;
+  gettimeofday(&tv,NULL);
+  return tv.tv_sec*seconds+tv.tv_usec*microseconds;
 #endif
   }
 
 
-// Wake at appointed time
-void FXThread::wakeat(FXlong nsec){
-#ifdef __USE_POSIX199309
-  const FXlong seconds=1000000000;
+// We want to use NtDelayExecution() because it allows for both absolute as well as
+// interval wait times. In addition, it is more accurate than the other system calls.
+// Unfortunately, this is an undocumented NTDLL API; we can use it anyway by using
+// GetProcAddress() on the NTDLL module to dig up its location.
+#if defined(WIN32)
+
+// Typedef a pointer to NtDelayExecution()
+typedef DWORD (WINAPI *PFN_NTDELAYEXECUTION)(BOOLEAN Alertable,LARGE_INTEGER* DelayInterval);
+
+// Declare the stub function
+static DWORD WINAPI NtDelayExecutionStub(BOOLEAN Alertable,LARGE_INTEGER* DelayInterval);
+
+// Pointer to NtDelayExecution, initially pointing to the stub function
+static PFN_NTDELAYEXECUTION fxNtDelayExecution=NtDelayExecutionStub;
+
+// The stub gets the address of actual function, sets the function pointer, then calls
+// actual function; next time around actual function will be called directly.
+static DWORD WINAPI NtDelayExecutionStub(BOOLEAN Alertable,LARGE_INTEGER* DelayInterval){
+  if(fxNtDelayExecution==NtDelayExecutionStub){
+    HMODULE ntdllDll=GetModuleHandleA("ntdll.dll");
+    FXASSERT(ntdllDll);
+    fxNtDelayExecution=(PFN_NTDELAYEXECUTION)GetProcAddress(ntdllDll,"NtDelayExecution");
+    FXASSERT(fxNtDelayExecution);
+    }
+  return fxNtDelayExecution(Alertable,DelayInterval);
+  }
+
+#endif
+
+
+// Make the calling thread sleep for a number of nanoseconds
+void FXThread::sleep(FXTime nsec){
+#if defined(WIN32)
+  if(100<=nsec){
+    FXTime jiffies=-nsec/FXLONG(100);
+    fxNtDelayExecution((BOOLEAN)false,(LARGE_INTEGER*)&jiffies);
+    }
+#elif (_XOPEN_SOURCE >= 600) || (_POSIX_C_SOURCE >= 200112L)
+  const FXTime seconds=1000000000;
   struct timespec value;
-#ifdef __USE_XOPEN2K
-  value.tv_sec=nsec/seconds;
-  value.tv_nsec=nsec%seconds;
-  clock_nanosleep(CLOCK_REALTIME,TIMER_ABSTIME,&value,NULL);
+  if(1<=nsec){
+    value.tv_sec=nsec/seconds;
+    value.tv_nsec=nsec%seconds;
+    while(clock_nanosleep(CLOCK_MONOTONIC,0,&value,&value)!=0){ }
+    }
+#elif (_POSIX_C_SOURCE >= 199309L)
+  const FXTime seconds=1000000000;
+  struct timespec value;
+  if(1<=nsec){
+    value.tv_sec=nsec/seconds;
+    value.tv_nsec=nsec%seconds;
+    while(nanosleep(&value,&value)!=0){ }
+    }
 #else
+  const FXTime seconds=1000000000;
+  const FXTime microseconds=1000;
+  const FXTime milliseconds=1000000;
+  struct timeval value;
+  if(microseconds<=nsec){
+    value.tv_usec=(nsec/microseconds)%milliseconds;
+    value.tv_sec=nsec/seconds;
+    select(0,NULL,NULL,NULL,&value);
+    }
+#endif
+  }
+
+/*
+HANDLE CreateWaitableTimerEx(LPSECURITY_ATTRIBUTES lpTimerAttributes,LPCWSTR lpTimerName,DWORD dwFlags,DWORD dwDesiredAccess);
+BOOL SetWaitableTimer(HANDLE hTimer,const LARGE_INTEGER *lpDueTime,LONG lPeriod,PTIMERAPCROUTINE pfnCompletionRoutine,LPVOID lpArgToCompletionRoutine,BOOL fResume);
+BOOL SetWaitableTimerEx(HANDLE hTimer,const LARGE_INTEGER *lpDueTime,LONG lPeriod,PTIMERAPCROUTINE pfnCompletionRoutine,LPVOID lpArgToCompletionRoutine,PREASON_CONTEXT WakeContext,ULONG TolerableDelay);
+BOOL CancelWaitableTimer(HANDLE hTimer);
+DWORD WaitForSingleObject(HANDLE hHandle,DWORD  dwMilliseconds);
+*/
+
+
+// Wake at appointed absolute time
+void FXThread::wakeat(FXTime nsec){
+#if defined(WIN32)
+  FXTime jiffies=fxwintime(nsec);
+  if(0<=jiffies){
+    fxNtDelayExecution((BOOLEAN)false,(LARGE_INTEGER*)&jiffies);
+    }
+#elif (_XOPEN_SOURCE >= 600) || (_POSIX_C_SOURCE >= 200112L)
+  const FXTime seconds=1000000000;
+  struct timespec value;
+  if(0<=nsec){
+    value.tv_sec=nsec/seconds;
+    value.tv_nsec=nsec%seconds;
+    while(clock_nanosleep(CLOCK_REALTIME,TIMER_ABSTIME,&value,NULL)!=0){ }
+    }
+#elif (_POSIX_C_SOURCE >= 199309L)
+  const FXTime seconds=1000000000;
+  struct timespec value;
   nsec-=FXThread::time();
-  if(nsec<0) nsec=0;
-  value.tv_sec=nsec/seconds;
-  value.tv_nsec=nsec%seconds;
-  nanosleep(&value,NULL);
-#endif
+  if(1<=nsec){
+    value.tv_sec=nsec/seconds;
+    value.tv_nsec=nsec%seconds;
+    while(nanosleep(&value,&value)!=0){ }
+    }
 #else
-  const FXlong seconds=1000000000;
-  const FXlong microseconds=1000;
-  const FXlong milliseconds=1000000;
+  const FXTime seconds=1000000000;
+  const FXTime microseconds=1000;
+  const FXTime milliseconds=1000000;
   struct timeval value;
-  if(nsec<0) nsec=0;
-  value.tv_usec=(nsec/microseconds)%milliseconds;
-  value.tv_sec=nsec/seconds;
-  select(1,0,0,0,&value);
+  nsec-=FXThread::time();
+  if(microseconds<=nsec){
+    value.tv_usec=(nsec/microseconds)%milliseconds;
+    value.tv_sec=nsec/seconds;
+    select(0,NULL,NULL,NULL,&value);
+    }
 #endif
-  }
-
-
-// Return pointer to calling thread's instance
-FXThread* FXThread::self(){
-  return (FXThread*)pthread_getspecific(self_key);
   }
 
 
 // Return thread id of caller
 FXThreadID FXThread::current(){
+#if defined(WIN32)
+//return (FXThreadID)GetCurrentThreadId();
+  return (FXThreadID)GetCurrentThread();
+#else
   return (FXThreadID)pthread_self();
+#endif
+  }
+
+
+// Return number of processors
+FXint FXThread::processors(){
+#if defined(WIN32)                                              // Windows
+  SYSTEM_INFO info={{0}};
+  GetSystemInfo(&info);
+  return info.dwNumberOfProcessors;
+#elif defined(_SC_NPROCESSORS_ONLN)                             // Linux
+  int result;
+  if((result=sysconf(_SC_NPROCESSORS_ONLN))>0){
+    return result;
+    }
+#elif defined(HAVE_SYS_SYSCTL_H)                                // FreeBSD/NetBSD/OpenBSD/MacOSX
+  int mib[4];
+  int result;
+  size_t len;
+  mib[0]=CTL_HW;
+  mib[1]=HW_AVAILCPU;
+  len=sizeof(result);
+  if(sysctl(mib,2,&result,&len,NULL,0)!=-1){
+    return result;
+    }
+  mib[0]=CTL_HW;
+  mib[1]=HW_NCPU;
+  len=sizeof(result);
+  if(sysctl(mib,2,&result,&len,NULL,0)!=-1){
+    return result;
+    }
+#elif defined(__IRIX__) && defined(_SC_NPROC_ONLN)              // IRIX
+  int result;
+  if((result=sysconf(_SC_NPROC_ONLN))>0){
+    return result;
+    }
+#elif defined(hpux) || defined(__hpux) || defined(_hpux)        // HPUX
+  struct pst_dynamic psd;
+  if(!pstat_getdynamic(&psd,sizeof(psd),(size_t)1,0)){
+    return (int)psd.psd_proc_cnt;
+    }
+#endif
+  return 1;
+  }
+
+
+// Return processor index of the calling thread
+FXint FXThread::processor(){
+  if(1<processors()){
+#if defined(WIN32)
+#if (WINVER >= 0x0600)                  // Vista and up
+    return GetCurrentProcessorNumber();
+#endif
+#endif
+#if defined(HAVE_SCHED_GETCPU)
+    return sched_getcpu();
+#endif
+    return -1;
+    }
+  return 0;
+  }
+
+
+// Generate new thread local storage key
+FXThreadStorageKey FXThread::createStorageKey(){
+#if defined(WIN32)
+  return (FXThreadStorageKey)TlsAlloc();
+#else
+  pthread_key_t key;
+  return pthread_key_create(&key,NULL)==0UL ? (FXThreadStorageKey)key : ~0UL;
+#endif
+  }
+
+
+// Dispose of thread local storage key
+void FXThread::deleteStorageKey(FXThreadStorageKey key){
+#if defined(WIN32)
+  TlsFree((DWORD)key);
+#else
+  pthread_key_delete((pthread_key_t)key);
+#endif
+  }
+
+
+// Get thread local storage pointer using key
+void* FXThread::getStorage(FXThreadStorageKey key){
+#if defined(WIN32)
+  return TlsGetValue((DWORD)key);
+#else
+  return pthread_getspecific((pthread_key_t)key);
+#endif
+  }
+
+
+// Set thread local storage pointer using key
+void FXThread::setStorage(FXThreadStorageKey key,void* ptr){
+#if defined(WIN32)
+  TlsSetValue((DWORD)key,ptr);
+#else
+  pthread_setspecific((pthread_key_t)key,ptr);
+#endif
   }
 
 
 // Set thread priority
-void FXThread::priority(FXint prio){
-  register pthread_t ttid=(pthread_t)tid;
-  if(ttid){
+FXbool FXThread::priority(FXThread::Priority prio){
+#if defined(WIN32)
+  if(tid){
+    int pri;
+    switch(prio){
+      case PriorityMinimum:
+        pri=THREAD_PRIORITY_LOWEST;
+        break;
+      case PriorityLower:
+        pri=THREAD_PRIORITY_BELOW_NORMAL;
+        break;
+      case PriorityMedium:
+        pri=THREAD_PRIORITY_NORMAL;
+        break;
+      case PriorityHigher:
+        pri=THREAD_PRIORITY_ABOVE_NORMAL;
+        break;
+      case PriorityMaximum:
+        pri=THREAD_PRIORITY_HIGHEST;
+        break;
+      default:
+        pri=THREAD_PRIORITY_NORMAL;
+        break;
+      }
+    return SetThreadPriority((HANDLE)tid,pri)!=0;
+    }
+  return false;
+#elif defined(__APPLE__) || defined(__minix)
+  return false;
+#else
+  if(tid){
     sched_param sched={0};
-    int pcy=0;
-    pthread_getschedparam(ttid,&pcy,&sched);
+    int plcy=0;
+    if(pthread_getschedparam((pthread_t)tid,&plcy,&sched)==0){
 #if defined(_POSIX_PRIORITY_SCHEDULING)
-    int priomax=sched_get_priority_max(pcy);
-    int priomin=sched_get_priority_min(pcy);
-    sched.sched_priority=FXCLAMP(priomin,prio,priomax);
-#elif defined(PTHREAD_MINPRIORITY)
-    sched.sched_priority=FXCLAMP(PTHREAD_MIN_PRIORITY,prio,PTHREAD_MAX_PRIORITY);
+      int priomax=sched_get_priority_max(plcy);         // Note that range may depend on scheduling policy!
+      int priomin=sched_get_priority_min(plcy);
+#elif defined(PTHREAD_MINPRIORITY) && defined(PTHREAD_MAX_PRIORITY)
+      int priomin=PTHREAD_MIN_PRIORITY;
+      int priomax=PTHREAD_MAX_PRIORITY;
+#else
+      int priomin=0;
+      int priomax=20;
 #endif
-    pthread_setschedparam(ttid,pcy,&sched);
+      if(priomax!=-1 && priomin!=-1){
+        int priomed=(priomax+priomin)/2;
+        switch(prio){
+          case PriorityMinimum:
+            sched.sched_priority=priomin;
+            break;
+          case PriorityLower:
+            sched.sched_priority=(priomin+priomed)/2;
+            break;
+          case PriorityMedium:
+            sched.sched_priority=priomed;
+            break;
+          case PriorityHigher:
+            sched.sched_priority=(priomax+priomed)/2;
+            break;
+          case PriorityMaximum:
+            sched.sched_priority=priomax;
+            break;
+          default:
+            sched.sched_priority=priomed;
+            break;
+          }
+        return pthread_setschedparam((pthread_t)tid,plcy,&sched)==0;
+        }
+      }
     }
+  return false;
+#endif
   }
 
 
 // Return thread priority
-FXint FXThread::priority(){
-  register pthread_t ttid=(pthread_t)tid;
-  if(ttid){
+FXThread::Priority FXThread::priority() const {
+#if defined(WIN32)
+  FXThread::Priority result=PriorityError;
+  if(tid){
+    int pri=GetThreadPriority((HANDLE)tid);
+    if(pri!=THREAD_PRIORITY_ERROR_RETURN){
+      switch(pri){
+        case THREAD_PRIORITY_IDLE:
+          result=PriorityMinimum;
+          break;
+        case THREAD_PRIORITY_BELOW_NORMAL:
+          result=PriorityLower;
+          break;
+        case THREAD_PRIORITY_NORMAL:
+          result=PriorityMedium;
+          break;
+        case THREAD_PRIORITY_ABOVE_NORMAL:
+          result=PriorityHigher;
+          break;
+        case THREAD_PRIORITY_HIGHEST:
+          result=PriorityMaximum;
+          break;
+        default:
+          result=PriorityDefault;
+          break;
+        }
+      }
+    }
+  return result;
+#elif defined(__APPLE__) || defined(__minix)
+  return PriorityError;
+#else
+  FXThread::Priority result=PriorityError;
+  if(tid){
     sched_param sched={0};
-    int pcy=0;
-    pthread_getschedparam(ttid,&pcy,&sched);
-    return sched.sched_priority;
+    int plcy=0;
+    if(pthread_getschedparam((pthread_t)tid,&plcy,&sched)==0){
+#if defined(_POSIX_PRIORITY_SCHEDULING)
+      int priomax=sched_get_priority_max(plcy);         // Note that range may depend on scheduling policy!
+      int priomin=sched_get_priority_min(plcy);
+#elif defined(PTHREAD_MINPRIORITY) && defined(PTHREAD_MAX_PRIORITY)
+      int priomin=PTHREAD_MIN_PRIORITY;
+      int priomax=PTHREAD_MAX_PRIORITY;
+#else
+      int priomin=0;
+      int priomax=32;
+#endif
+      if(priomax!=-1 && priomin!=-1){
+        int priomed=(priomax+priomin)/2;
+        if(sched.sched_priority<priomed){
+          if(sched.sched_priority<=priomin){
+            result=PriorityMinimum;
+            }
+          else{
+            result=PriorityLower;
+            }
+          }
+        else if(sched.sched_priority>priomed){
+          if(sched.sched_priority>=priomax){
+            result=PriorityMaximum;
+            }
+          else{
+            result=PriorityHigher;
+            }
+          }
+        else{
+          result=PriorityMedium;
+          }
+        }
+      return result;
+      }
     }
+  return result;
+#endif
+  }
+
+
+// Set thread scheduling policy
+FXbool FXThread::policy(FXThread::Policy plcy){
+#if defined(WIN32)
+  return false;
+#elif defined(__APPLE__) || defined(__minix)
+  return false;
+#else
+  if(tid){
+    sched_param sched={0};
+    int oldplcy=0;
+    int newplcy=0;
+    if(pthread_getschedparam((pthread_t)tid,&oldplcy,&sched)==0){
+      switch(plcy){
+        case PolicyFifo:
+          newplcy=SCHED_FIFO;
+          break;
+        case PolicyRoundRobin:
+          newplcy=SCHED_RR;
+          break;
+        default:
+          newplcy=SCHED_OTHER;
+          break;
+        }
+#if defined(_POSIX_PRIORITY_SCHEDULING)
+      sched.sched_priority=sched_get_priority_min(newplcy);
+#endif
+      return pthread_setschedparam((pthread_t)tid,newplcy,&sched)==0;
+      }
+    }
+  return false;
+#endif
+  }
+
+
+// Get thread scheduling policy
+FXThread::Policy FXThread::policy() const {
+#if defined(WIN32)
+  return PolicyError;
+#elif defined(__APPLE__) || defined(__minix)
+  return PolicyError;
+#else
+  Policy result=PolicyError;
+  if(tid){
+    sched_param sched={0};
+    int plcy=0;
+    if(pthread_getschedparam((pthread_t)tid,&plcy,&sched)==0){
+      switch(plcy){
+        case SCHED_FIFO:
+          result=PolicyFifo;
+          break;
+        case SCHED_RR:
+          result=PolicyRoundRobin;
+          break;
+        default:
+          result=PolicyDefault;
+          break;
+        }
+      }
+    }
+  return result;
+#endif
+  }
+
+
+// Change thread's processor affinity
+FXbool FXThread::affinity(FXulong mask){
+#if defined(WIN32)
+  const FXulong bit=1;
+  if(tid){
+    FXint ncpus=processors();
+    mask&=((bit<<ncpus)-1);
+    if(mask){
+      return SetThreadAffinityMask((HANDLE)tid,(FXuval)mask)!=0;
+      }
+    }
+#elif defined(HAVE_PTHREAD_SETAFFINITY_NP)
+  const FXulong bit=1;
+  if(tid){
+    FXint ncpus=processors();
+    mask&=((bit<<ncpus)-1);
+    if(mask){
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      for(FXint cpu=0; cpu<ncpus; ++cpu){
+        if((bit<<cpu)&mask){ CPU_SET(cpu,&cpuset); }
+        }
+      return pthread_setaffinity_np((pthread_t)tid,sizeof(cpuset),&cpuset)==0;
+      }
+    }
+#endif
+  return false;
+  }
+
+
+// Get thread's processor affinity
+FXulong FXThread::affinity() const {
+#if defined(WIN32)
+  const FXulong bit=1;
+  if(tid){
+    FXint ncpus=processors();
+    FXuval cpuset=SetThreadAffinityMask((HANDLE)tid,(FXuval)((bit<<ncpus)-1));
+    if(cpuset){
+      SetThreadAffinityMask((HANDLE)tid,cpuset);
+      return (FXulong)cpuset;
+      }
+    }
+#elif defined(HAVE_PTHREAD_SETAFFINITY_NP)
+  const FXulong bit=1;
+  if(tid){
+    FXint ncpus=processors();
+    cpu_set_t cpuset;
+    if(pthread_getaffinity_np((pthread_t)tid,sizeof(cpuset),&cpuset)==0){
+      FXulong mask=0;
+      for(FXint cpu=0; cpu<ncpus; ++cpu){
+        if(CPU_ISSET(cpu,&cpuset)){ mask|=(bit<<cpu); }
+        }
+      return mask;
+      }
+    }
+#endif
   return 0;
   }
 
 
-// Destroy; if it was running, stop it
-FXThread::~FXThread(){
-  register pthread_t ttid=(pthread_t)tid;
-  if(ttid){
-    pthread_cancel(ttid);
+#if defined(WIN32)
+
+// Declare the function signatures
+typedef HRESULT (WINAPI *PFN_SETTHREADDESCRIPTION)(HANDLE hThread,const WCHAR* desc);
+typedef HRESULT (WINAPI *PFN_GETTHREADDESCRIPTION)(HANDLE hThread,WCHAR** desc);
+
+// Declare the stub functions
+static HRESULT WINAPI SetThreadDescriptionStub(HANDLE hThread,const WCHAR* desc);
+static HRESULT WINAPI GetThreadDescriptionStub(HANDLE hThread,WCHAR** desc);
+
+// Pointers to functions, initially pointing to the stub functions
+static PFN_SETTHREADDESCRIPTION fxSetThreadDescription=SetThreadDescriptionStub;
+static PFN_GETTHREADDESCRIPTION fxGetThreadDescription=GetThreadDescriptionStub;
+
+
+// Set thread name (needs late-model Windows 10)
+static HRESULT WINAPI SetThreadDescriptionStub(HANDLE hThread,const WCHAR* desc){
+  if(fxSetThreadDescription==SetThreadDescriptionStub){
+    HMODULE hnddll=GetModuleHandleA("kernel32.dll");
+    fxSetThreadDescription=(PFN_SETTHREADDESCRIPTION)GetProcAddress(hnddll,"SetThreadDescription");
     }
+  if(fxSetThreadDescription){
+    return fxSetThreadDescription(hThread,desc);
+    }
+  return -1;
   }
 
 
-/*******************************************************************************/
+// Get thread name (needs late-model Windows 10)
+static HRESULT WINAPI GetThreadDescriptionStub(HANDLE hThread,WCHAR** desc){
+  if(fxGetThreadDescription==GetThreadDescriptionStub){
+    HMODULE hnddll=GetModuleHandleA("kernel32.dll");
+    fxGetThreadDescription=(PFN_GETTHREADDESCRIPTION)GetProcAddress(hnddll,"GetThreadDescription");
+    }
+  if(fxGetThreadDescription){
+    return fxGetThreadDescription(hThread,desc);
+    }
+  return -1;
+  }
 
-// Windows implementation
+#endif
 
+
+
+// Change thread description
+FXbool FXThread::description(const FXString& desc){
+  if(tid){
+#if defined(WIN32)
+    FXnchar udesc[256];
+    utf2ncs(udesc,desc.text(),ARRAYNUMBER(udesc));
+    return 0<=fxSetThreadDescription((HANDLE)tid,udesc);
+#elif defined(__APPLE__)
+    return pthread_setname_np(desc.text())==0;
+#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+    pthread_setname_np((pthread_t)tid,desc.text());
+    return true;
+#elif defined(HAVE_PTHREAD_SETNAME_NP)
+    return pthread_setname_np((pthread_t)tid,desc.text())==0;
+#endif
+    }
+  return false;
+  }
+
+
+// Return thread description
+FXString FXThread::description() const {
+  if(tid){
+#if defined(WIN32)
+    FXnchar* udesc;
+    if(0<=fxGetThreadDescription((HANDLE)tid,&udesc)){
+      FXchar desc[256];
+      ncs2utf(desc,udesc,ARRAYNUMBER(desc));
+      ::LocalFree(udesc);
+      return desc;
+      }
+#elif defined(__APPLE__)
+    FXchar desc[256];
+    if(pthread_getname_np(*((pthread_t*)&tid),desc,ARRAYNUMBER(desc))==0){
+      return desc;
+      }
+#elif defined(__NetBSD__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+    FXchar desc[256];
+    if(pthread_getname_np((pthread_t)tid,desc,ARRAYNUMBER(desc))==0){
+      return desc;
+      }
+#elif defined(HAVE_PTHREAD_GETNAME_NP)
+    FXchar desc[256];
+    if(pthread_getname_np((pthread_t)tid,desc,ARRAYNUMBER(desc))==0){
+      return desc;
+      }
+#endif
+    }
+  return FXString::null;
+  }
+
+
+// Suspend thread
+FXbool FXThread::suspend(){
+#if defined(WIN32)
+  return tid && (SuspendThread((HANDLE)tid)!=(DWORD)-1L);
+#elif defined(_HPUX_SOURCE)
+  return tid && (pthread_suspend((pthread_t)tid)==0);
+#elif defined(SUNOS)
+  return tid && (thr_suspend((pthread_t)tid)==0);
 #else
-
-// Initialize mutex
-FXMutex::FXMutex(FXbool){
-  // If this fails on your machine, determine what value
-  // of sizeof(CRITICAL_SECTION) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.org!!
-  //FXTRACE((150,"sizeof(CRITICAL_SECTION)=%d\n",sizeof(CRITICAL_SECTION)));
-  FXASSERT(sizeof(data)>=sizeof(CRITICAL_SECTION));
-  InitializeCriticalSection((CRITICAL_SECTION*)data);
-  }
-
-
-// Lock the mutex
-void FXMutex::lock(){
-  EnterCriticalSection((CRITICAL_SECTION*)data);
-  }
-
-
-
-// Try lock the mutex
-FXbool FXMutex::trylock(){
-#if(_WIN32_WINNT >= 0x0400)
-  return TryEnterCriticalSection((CRITICAL_SECTION*)data)!=0;
-#else
-  return FALSE;
+  return false;
 #endif
   }
 
 
-// Unlock mutex
-void FXMutex::unlock(){
-  LeaveCriticalSection((CRITICAL_SECTION*)data);
-  }
-
-
-// Test if locked
-FXbool FXMutex::locked(){
-#if(_WIN32_WINNT >= 0x0400)
-  if(TryEnterCriticalSection((CRITICAL_SECTION*)data)!=0){
-    LeaveCriticalSection((CRITICAL_SECTION*)data);
-    return false;
-    }
-#endif
-  return true;
-  }
-
-
-// Delete mutex
-FXMutex::~FXMutex(){
-  DeleteCriticalSection((CRITICAL_SECTION*)data);
-  }
-
-
-/*******************************************************************************/
-
-
-// Initialize semaphore
-FXSemaphore::FXSemaphore(FXint initial){
-  data[0]=(FXuval)CreateSemaphore(NULL,initial,0x7fffffff,NULL);
-  }
-
-
-// Decrement semaphore
-void FXSemaphore::wait(){
-  WaitForSingleObject((HANDLE)data[0],INFINITE);
-  }
-
-
-// Non-blocking semaphore decrement
-FXbool FXSemaphore::trywait(){
-  return WaitForSingleObject((HANDLE)data[0],0)==WAIT_OBJECT_0;
-  }
-
-
-// Increment semaphore
-void FXSemaphore::post(){
-  ReleaseSemaphore((HANDLE)data[0],1,NULL);
-  }
-
-
-// Delete semaphore
-FXSemaphore::~FXSemaphore(){
-  CloseHandle((HANDLE)data[0]);
-  }
-
-
-/*******************************************************************************/
-
-
-// This is the solution according to Schmidt, the win32-threads
-// implementation thereof which is found inside GCC somewhere.
-// See: (http://www.cs.wustl.edu/~schmidt/win32-cv-1.html).
-//
-// Our implementation however initializes the Event objects in
-// the constructor, under the assumption that you wouldn't be creating
-// a condition object if you weren't planning to use them somewhere.
-
-
-// Initialize condition
-FXCondition::FXCondition(){
-  // If this fails on your machine, notify jeroen@fox-toolkit.org!
-  FXASSERT(sizeof(data)>=sizeof(CRITICAL_SECTION)+sizeof(HANDLE)+sizeof(HANDLE)+sizeof(FXuval));
-  data[0]=(FXuval)CreateEvent(NULL,0,0,NULL);                   // Wakes one, autoreset
-  data[1]=(FXuval)CreateEvent(NULL,1,0,NULL);                   // Wakes all, manual reset
-  data[2]=0;                                                    // Blocked count
-  InitializeCriticalSection((CRITICAL_SECTION*)&data[3]);       // Critical section
-  }
-
-
-// Wake up one single waiting thread
-void FXCondition::signal(){
-  EnterCriticalSection((CRITICAL_SECTION*)&data[3]);
-  int blocked=(data[2]>0);
-  LeaveCriticalSection((CRITICAL_SECTION*)&data[3]);
-  if(blocked) SetEvent((HANDLE)data[0]);
-  }
-
-
-// Wake up all waiting threads
-void FXCondition::broadcast(){
-  EnterCriticalSection((CRITICAL_SECTION*)&data[3]);
-  int blocked=(data[2]>0);
-  LeaveCriticalSection((CRITICAL_SECTION*)&data[3]);
-  if(blocked) SetEvent((HANDLE)data[1]);
-  }
-
-
-// Wait
-void FXCondition::wait(FXMutex& mtx){
-  EnterCriticalSection((CRITICAL_SECTION*)&data[3]);
-  data[2]++;
-  LeaveCriticalSection((CRITICAL_SECTION*)&data[3]);
-  mtx.unlock();
-  DWORD result=WaitForMultipleObjects(2,(HANDLE*)data,0,INFINITE);
-  EnterCriticalSection((CRITICAL_SECTION*)&data[3]);
-  data[2]--;
-  int last_waiter=(result==WAIT_OBJECT_0+1)&&(data[2]==0);      // Unblocked by broadcast & no other blocked threads
-  LeaveCriticalSection((CRITICAL_SECTION*)&data[3]);
-  if(last_waiter) ResetEvent((HANDLE)data[1]);                  // Reset signal
-  mtx.lock();
-  }
-
-
-// Wait using single global mutex
-FXbool FXCondition::wait(FXMutex& mtx,FXlong nsec){
-  EnterCriticalSection((CRITICAL_SECTION*)&data[3]);
-  data[2]++;
-  LeaveCriticalSection((CRITICAL_SECTION*)&data[3]);
-  mtx.unlock();
-  nsec-=FXThread::time();
-  DWORD result=WaitForMultipleObjects(2,(HANDLE*)data,0,nsec/1000000);
-  EnterCriticalSection((CRITICAL_SECTION*)&data[3]);
-  data[2]--;
-  int last_waiter=(result==WAIT_OBJECT_0+1)&&(data[2]==0);      // Unblocked by broadcast & no other blocked threads
-  LeaveCriticalSection((CRITICAL_SECTION*)&data[3]);
-  if(last_waiter) ResetEvent((HANDLE)data[1]);                  // Reset signal
-  mtx.lock();
-  return result!=WAIT_TIMEOUT;
-  }
-
-
-// Delete condition
-FXCondition::~FXCondition(){
-  CloseHandle((HANDLE)data[0]);
-  CloseHandle((HANDLE)data[1]);
-  DeleteCriticalSection((CRITICAL_SECTION*)&data[3]);
-  }
-
-
-/*******************************************************************************/
-
-// Thread local storage key for back-reference to FXThread
-static DWORD self_key=0xffffffff;
-
-// Global initializer for the self_key variable
-struct TLSKEYINIT {
-  TLSKEYINIT(){ self_key=TlsAlloc(); }
- ~TLSKEYINIT(){ TlsFree(self_key); }
-  };
-
-// Extern declaration prevents overzealous optimizer from noticing we're
-// never using this object, and subsequently eliminating it from the code.
-extern TLSKEYINIT initializer;
-
-// Dummy object causes global initializer to run
-TLSKEYINIT initializer;
-
-
-// Initialize thread
-FXThread::FXThread():tid(0){
-  }
-
-
-// Return thread id of this thread object.
-// Purposefully NOT inlined, the tid may be changed by another
-// thread and therefore we must force the compiler to fetch
-// this value fresh each time it is needed!
-FXThreadID FXThread::id() const {
-  return tid;
-  }
-
-
-// Return TRUE if this thread is running
-FXbool FXThread::running() const {
-  return tid!=0;
-  }
-
-
-// Start the thread; we associate the FXThread instance with
-// this thread using thread-local storage accessed with self_key.
-// Also, we catch any errors thrown by the thread code here.
-unsigned int CALLBACK FXThread::execute(void* thread){
-  register FXint code=-1;
-  TlsSetValue(self_key,thread);
-  try{ code=((FXThread*)thread)->run(); } catch(...){ }
-  ((FXThread*)thread)->tid=0;
-  return code;
-  }
-
-
-// Start thread
-FXbool FXThread::start(unsigned long stacksize){
-  DWORD thd;
-  tid=(FXThreadID)CreateThread(NULL,stacksize,(LPTHREAD_START_ROUTINE)FXThread::execute,this,0,&thd);
-  return tid!=NULL;
-  }
-
-
-// Suspend calling thread until thread is done
-FXbool FXThread::join(FXint& code){
-  register HANDLE ttid=(HANDLE)tid;
-  if(ttid && WaitForSingleObject(ttid,INFINITE)==WAIT_OBJECT_0){
-    GetExitCodeThread(ttid,(DWORD*)&code);
-    CloseHandle(ttid);
-    tid=0;
-    return TRUE;
-    }
-  return FALSE;
-  }
-
-
-// Suspend calling thread until thread is done
-FXbool FXThread::join(){
-  register HANDLE ttid=(HANDLE)tid;
-  if(ttid && WaitForSingleObject(ttid,INFINITE)==WAIT_OBJECT_0){
-    CloseHandle(ttid);
-    tid=0;
-    return TRUE;
-    }
-  return FALSE;
-  }
-
-
-// Cancel the thread
-FXbool FXThread::cancel(){
-  register HANDLE ttid=(HANDLE)tid;
-  if(ttid && TerminateThread(ttid,0)){
-    CloseHandle(ttid);
-    tid=0;
-    return TRUE;
-    }
-  return FALSE;
-  }
-
-
-// Detach thread
-FXbool FXThread::detach(){
-  return tid!=0;
-  }
-
-
-// Exit calling thread
-void FXThread::exit(FXint code){
-  if(self()){ self()->tid=0; }
-  ExitThread(code);
-  }
-
-
-// Yield the thread
-void FXThread::yield(){
-  Sleep(0);
-  }
-
-
-// Get time in nanoseconds since Epoch
-FXlong FXThread::time(){
-  FXlong now;
-  GetSystemTimeAsFileTime((FILETIME*)&now);
-#if defined(__CYGWIN__) || defined(__MINGW32__) || defined(__SC__)
-  return (now-116444736000000000LL)*100LL;
+// Resume thread
+FXbool FXThread::resume(){
+#if defined(WIN32)
+  return tid && (ResumeThread((HANDLE)tid)!=(DWORD)-1L);
+#elif defined(_HPUX_SOURCE)
+  return tid && (pthread_resume_np((pthread_t)tid,PTHREAD_COUNT_RESUME_NP)==0);
+#elif defined(SUNOS)
+  return tid && (thr_continue((pthread_t)tid)==0);
 #else
-  return (now-116444736000000000L)*100L;
+  return false;
 #endif
-  }
-
-
-// Sleep for some time
-void FXThread::sleep(FXlong nsec){
-  Sleep(nsec/1000000);
-  }
-
-
-// Wake at appointed time
-void FXThread::wakeat(FXlong nsec){
-  nsec-=FXThread::time();
-  if(nsec<0) nsec=0;
-  Sleep(nsec/1000000);
-  }
-
-
-// Return thread id of caller
-FXThreadID FXThread::current(){
-  return (FXThreadID)GetCurrentThreadId();
-  }
-
-
-// Return pointer to calling thread's instance
-FXThread* FXThread::self(){
-  return (FXThread*)TlsGetValue(self_key);
-  }
-
-
-// Set thread priority
-void FXThread::priority(FXint prio){
-  register HANDLE ttid=(HANDLE)tid;
-  if(ttid){
-    SetThreadPriority(ttid,prio);
-    }
-  }
-
-
-// Return thread priority
-FXint FXThread::priority(){
-  register HANDLE ttid=(HANDLE)tid;
-  if(ttid){
-    return GetThreadPriority(ttid);
-    }
-  return 0;
   }
 
 
 // Destroy
 FXThread::~FXThread(){
-  register HANDLE ttid=(HANDLE)tid;
-  if(ttid){
-    TerminateThread(ttid,0);
-    CloseHandle(ttid);
+  if(self()==this){
+    self(NULL);
+    detach();
+    }
+  else{
+    cancel();
     }
   }
-
-
-#endif
-
 
 }

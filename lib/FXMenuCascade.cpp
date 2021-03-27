@@ -3,39 +3,42 @@
 *                       M e n u   C a s c a d e   W i d g e t                   *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMenuCascade.cpp,v 1.55 2006/01/22 17:58:35 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXMenuPane.h"
 #include "FXMenuCascade.h"
@@ -95,8 +98,7 @@ FXMenuCascade::FXMenuCascade(){
 
 
 // Make cascade menu button
-FXMenuCascade::FXMenuCascade(FXComposite* p,const FXString& text,FXIcon* ic,FXPopup* pup,FXuint opts):
-  FXMenuCaption(p,text,ic,opts){
+FXMenuCascade::FXMenuCascade(FXComposite* p,const FXString& text,FXIcon* ic,FXPopup* pup,FXuint opts):FXMenuCaption(p,text,ic,opts){
   defaultCursor=getApp()->getDefaultCursor(DEF_RARROW_CURSOR);
   flags|=FLAG_ENABLED;
   pane=pup;
@@ -126,7 +128,7 @@ void FXMenuCascade::destroy(){
 
 
 // If window can have focus
-bool FXMenuCascade::canFocus() const { return true; }
+FXbool FXMenuCascade::canFocus() const { return true; }
 
 
 // Pressed button
@@ -159,7 +161,7 @@ long FXMenuCascade::onKeyPress(FXObject*,FXSelector sel,void* ptr){
         FXint x,y;
         getApp()->removeTimeout(this,ID_MENUTIMER);
         translateCoordinatesTo(x,y,getRoot(),width,0);
-        pane->popup(((FXMenuPane*)getParent())->getGrabOwner(),x,y);
+        pane->popup(((FXPopup*)getParent())->getGrabOwner(),x,y);
         return 1;
         }
       break;
@@ -225,7 +227,7 @@ long FXMenuCascade::onCmdPost(FXObject*,FXSelector,void*){
   getApp()->removeTimeout(this,ID_MENUTIMER);
   if(pane && !pane->shown()){
     translateCoordinatesTo(x,y,getRoot(),width,0);
-    pane->popup(((FXMenuPane*)getParent())->getGrabOwner(),x,y);
+    pane->popup(((FXPopup*)getParent())->getGrabOwner(),x,y);
     }
   return 1;
   }
@@ -373,7 +375,7 @@ void FXMenuCascade::drawTriangle(FXDCWindow& dc,FXint l,FXint t,FXint,FXint b){
 
 
 // Test if logically inside
-bool FXMenuCascade::contains(FXint parentx,FXint parenty) const {
+FXbool FXMenuCascade::contains(FXint parentx,FXint parenty) const {
   FXint x,y;
   if(FXMenuCaption::contains(parentx,parenty)) return true;
   if(getMenu() && getMenu()->shown()){
@@ -401,7 +403,7 @@ void FXMenuCascade::load(FXStream& store){
 // Delete it
 FXMenuCascade::~FXMenuCascade(){
   getApp()->removeTimeout(this,ID_MENUTIMER);
-  pane=(FXMenuPane*)-1L;
+  pane=(FXPopup*)-1L;
   }
 
 }

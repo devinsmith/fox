@@ -3,39 +3,41 @@
 *                           B u t t o n    O b j e c t s                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXButton.cpp,v 1.67 2006/01/22 17:58:18 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXShell.h"
 #include "FXButton.h"
@@ -67,8 +69,8 @@ namespace FX {
 
 // Map
 FXDEFMAP(FXButton) FXButtonMap[]={
-  FXMAPFUNC(SEL_PAINT,0,FXButton::onPaint),
   FXMAPFUNC(SEL_UPDATE,0,FXButton::onUpdate),
+  FXMAPFUNC(SEL_PAINT,0,FXButton::onPaint),
   FXMAPFUNC(SEL_ENTER,0,FXButton::onEnter),
   FXMAPFUNC(SEL_LEAVE,0,FXButton::onLeave),
   FXMAPFUNC(SEL_FOCUSIN,0,FXButton::onFocusIn),
@@ -78,13 +80,13 @@ FXDEFMAP(FXButton) FXButtonMap[]={
   FXMAPFUNC(SEL_LEFTBUTTONRELEASE,0,FXButton::onLeftBtnRelease),
   FXMAPFUNC(SEL_KEYPRESS,0,FXButton::onKeyPress),
   FXMAPFUNC(SEL_KEYRELEASE,0,FXButton::onKeyRelease),
-  FXMAPFUNC(SEL_KEYPRESS,FXWindow::ID_HOTKEY,FXButton::onHotKeyPress),
-  FXMAPFUNC(SEL_KEYRELEASE,FXWindow::ID_HOTKEY,FXButton::onHotKeyRelease),
-  FXMAPFUNC(SEL_COMMAND,FXWindow::ID_CHECK,FXButton::onCheck),
-  FXMAPFUNC(SEL_COMMAND,FXWindow::ID_UNCHECK,FXButton::onUncheck),
-  FXMAPFUNC(SEL_COMMAND,FXWindow::ID_SETVALUE,FXButton::onCmdSetValue),
-  FXMAPFUNC(SEL_COMMAND,FXWindow::ID_SETINTVALUE,FXButton::onCmdSetIntValue),
-  FXMAPFUNC(SEL_COMMAND,FXWindow::ID_GETINTVALUE,FXButton::onCmdGetIntValue),
+  FXMAPFUNC(SEL_KEYPRESS,FXButton::ID_HOTKEY,FXButton::onHotKeyPress),
+  FXMAPFUNC(SEL_KEYRELEASE,FXButton::ID_HOTKEY,FXButton::onHotKeyRelease),
+  FXMAPFUNC(SEL_COMMAND,FXButton::ID_CHECK,FXButton::onCheck),
+  FXMAPFUNC(SEL_COMMAND,FXButton::ID_UNCHECK,FXButton::onUncheck),
+  FXMAPFUNC(SEL_COMMAND,FXButton::ID_SETVALUE,FXButton::onCmdSetValue),
+  FXMAPFUNC(SEL_COMMAND,FXButton::ID_SETINTVALUE,FXButton::onCmdSetIntValue),
+  FXMAPFUNC(SEL_COMMAND,FXButton::ID_GETINTVALUE,FXButton::onCmdGetIntValue),
   };
 
 
@@ -99,26 +101,25 @@ FXButton::FXButton(){
 
 
 // Construct and init
-FXButton::FXButton(FXComposite* p,const FXString& text,FXIcon* ic,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXLabel(p,text,ic,opts,x,y,w,h,pl,pr,pt,pb){
+FXButton::FXButton(FXComposite* p,const FXString& text,FXIcon* ic,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXLabel(p,text,ic,opts,x,y,w,h,pl,pr,pt,pb){
   target=tgt;
   message=sel;
   state=STATE_UP;
   if(options&BUTTON_INITIAL){
-    setInitial(TRUE);
-    setDefault(TRUE);
+    setInitial(true);
+    setDefault(true);
     }
   }
 
 
 // If window can have focus
-bool FXButton::canFocus() const { return true; }
+FXbool FXButton::canFocus() const { return true; }
 
 
 // Set focus to this widget
 void FXButton::setFocus(){
   FXLabel::setFocus();
-  if(options&BUTTON_DEFAULT) setDefault(TRUE);
+  if(options&BUTTON_DEFAULT) setDefault(true);
   update();
   }
 
@@ -126,14 +127,14 @@ void FXButton::setFocus(){
 // Kill focus to this widget
 void FXButton::killFocus(){
   FXLabel::killFocus();
-  if(options&BUTTON_DEFAULT) setDefault(MAYBE);
+  if(options&BUTTON_DEFAULT) setDefault(maybe);
   update();
   }
 
 
 // Make widget drawn as default
-void FXButton::setDefault(FXbool enable){
-  FXLabel::setDefault(enable);
+void FXButton::setDefault(FXuchar flag){
+  FXLabel::setDefault(flag);
   update();
   }
 
@@ -276,9 +277,9 @@ long FXButton::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
 long FXButton::onKeyPress(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   flags&=~FLAG_TIP;
-  if(isEnabled() && !(flags&FLAG_PRESSED)){
+  if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr)) return 1;
-    if((event->code==KEY_space || event->code==KEY_KP_Space) || (isDefault() && (event->code==KEY_Return || event->code==KEY_KP_Enter))){
+    if(!(flags&FLAG_PRESSED) && ((event->code==KEY_space || event->code==KEY_KP_Space) || (isDefault() && (event->code==KEY_Return || event->code==KEY_KP_Enter)))){
       if(state!=STATE_ENGAGED) setState(STATE_DOWN);
       flags|=FLAG_PRESSED;
       flags&=~FLAG_UPDATE;
@@ -293,9 +294,9 @@ long FXButton::onKeyPress(FXObject*,FXSelector,void* ptr){
 long FXButton::onKeyRelease(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   FXbool click=(state==STATE_DOWN);
-  if(isEnabled() && (flags&FLAG_PRESSED)){
+  if(isEnabled()){
     if(target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr)) return 1;
-    if((event->code==KEY_space || event->code==KEY_KP_Space) || (isDefault() && (event->code==KEY_Return || event->code==KEY_KP_Enter))){
+    if((flags&FLAG_PRESSED) && ((event->code==KEY_space || event->code==KEY_KP_Space) || (isDefault() && (event->code==KEY_Return || event->code==KEY_KP_Enter)))){
       if(state!=STATE_ENGAGED) setState(STATE_UP);
       flags|=FLAG_UPDATE;
       flags&=~FLAG_PRESSED;

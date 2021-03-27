@@ -3,41 +3,43 @@
 *                        S t a t u s   B a r   W i d g e t                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXStatusBar.cpp,v 1.16 2006/01/22 17:58:42 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
-#include "FXIcon.h"
+#include "FXEvent.h"
 #include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
+#include "FXIcon.h"
 #include "FXFrame.h"
 #include "FXDragCorner.h"
 #include "FXStatusLine.h"
@@ -63,8 +65,7 @@ FXIMPLEMENT(FXStatusBar,FXHorizontalFrame,NULL,0)
 
 
 // Make a status bar
-FXStatusBar::FXStatusBar(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXHorizontalFrame(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
+FXStatusBar::FXStatusBar(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXHorizontalFrame(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
   corner=new FXDragCorner(this);
   status=new FXStatusLine(this);
   }
@@ -72,9 +73,9 @@ FXStatusBar::FXStatusBar(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXin
 
 // Compute minimum width based on child layout hints
 FXint FXStatusBar::getDefaultWidth(){
-  register FXint w,wcum,numc;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint w,wcum,numc;
+  FXWindow* child;
+  FXuint hints;
   wcum=numc=0;
   for(child=corner->getNext(); child; child=child->getNext()){
     if(child->shown()){
@@ -93,9 +94,9 @@ FXint FXStatusBar::getDefaultWidth(){
 
 // Compute minimum height based on child layout hints
 FXint FXStatusBar::getDefaultHeight(){
-  register FXint h,hmax;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint h,hmax;
+  FXWindow* child;
+  FXuint hints;
   hmax=0;
   for(child=corner->getNext(); child; child=child->getNext()){
     if(child->shown()){
@@ -151,7 +152,7 @@ void FXStatusBar::layout(){
   // Child spacing
   if(numc>1) remain-=hspacing*(numc-1);
 
-  // Substract corner width
+  // Subtract corner width
   if((options&STATUSBAR_WITH_DRAGCORNER) && (numc>1)){
     right-=corner->getDefaultWidth();
     remain-=corner->getDefaultWidth();
@@ -163,7 +164,6 @@ void FXStatusBar::layout(){
       hints=child->getLayoutHints();
 
       // Layout child in Y
-      y=child->getY();
       if(hints&LAYOUT_FIX_HEIGHT) h=child->getHeight();
       else h=child->getDefaultHeight();
       extra_space=0;
@@ -180,7 +180,6 @@ void FXStatusBar::layout(){
         y=top+extra_space;
 
       // Layout child in X
-      x=child->getX();
       if(hints&LAYOUT_FIX_WIDTH) w=child->getWidth();
       else w=child->getDefaultWidth();
       extra_space=0;
@@ -246,7 +245,7 @@ void FXStatusBar::layout(){
 
 // Show or hide the drag corner
 void FXStatusBar::setCornerStyle(FXbool withcorner){
-  FXuint opts=withcorner ? (options|STATUSBAR_WITH_DRAGCORNER) : (options&~STATUSBAR_WITH_DRAGCORNER);
+  FXuint opts=(((0-withcorner)^options)&STATUSBAR_WITH_DRAGCORNER)^options;
   if(options!=opts){
     options=opts;
     recalc();
@@ -255,7 +254,7 @@ void FXStatusBar::setCornerStyle(FXbool withcorner){
   }
 
 
-// Return TRUE if drag corner shown
+// Return true if drag corner shown
 FXbool FXStatusBar::getCornerStyle() const {
   return (options&STATUSBAR_WITH_DRAGCORNER)!=0;
   }

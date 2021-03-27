@@ -3,36 +3,39 @@
 *                 S h u t t e r   C o n t a i n e r   W i d g e t               *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Charles W. Warren.   All Rights Reserved.          *
+* Copyright (C) 1998,2020 by Charles W. Warren.   All Rights Reserved.          *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXShutter.cpp,v 1.43 2006/01/22 17:58:41 fox Exp $                       *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXIcon.h"
 #include "FXFrame.h"
@@ -46,9 +49,14 @@
 
 /*
   Notes:
-  - Works now by means of integers, i.e. setCurrent(0) instead of having
-    to hang on to pointers to specific shutter items.
-    Advantage: You can make it connect to other widgets.
+  - Horizontal scrollbar is turned off; this means default width is computed
+    from contents.
+  - Scroll window in collapsed items is not hidden, but made zero-height.  This
+    means content width is still computed properly and thus the FXShutter will
+    get a default width which depends on ALL items, not just the current one.
+  - On a collapsing item, the scrollbar stays the way it was before the collapse
+    started, while on an expanding item, the scrollbar stays off until the item is
+    fully expanded.
 */
 
 using namespace FX;
@@ -69,10 +77,18 @@ FXDEFMAP(FXShutterItem) FXShutterItemMap[]={
 FXIMPLEMENT(FXShutterItem,FXVerticalFrame,FXShutterItemMap,ARRAYNUMBER(FXShutterItemMap))
 
 
-FXShutterItem::FXShutterItem(FXShutter* p,const FXString& text,FXIcon* icon,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXVerticalFrame(p,(opts&~(PACK_UNIFORM_HEIGHT|PACK_UNIFORM_WIDTH)),x,y,w,h,0,0,0,0,0,0){
-  button=new FXButton(this,text,icon,this,FXShutterItem::ID_SHUTTERITEM_BUTTON,FRAME_RAISED|FRAME_THICK|LAYOUT_FILL_X|LAYOUT_TOP|LAYOUT_LEFT,0,0,0,0,0,0,0,0);
-  scrollWindow=new FXScrollWindow(this,VSCROLLER_NEVER|HSCROLLER_NEVER|LAYOUT_FILL_X|LAYOUT_FILL_Y|LAYOUT_LEFT|LAYOUT_TOP,0,0,0,0);
+// Serialization
+FXShutterItem::FXShutterItem(){
+  button=(FXButton*)-1L;
+  scrollWindow=(FXScrollWindow*)-1L;
+  content=(FXVerticalFrame*)-1L;
+  }
+
+
+// Construct shutter item
+FXShutterItem::FXShutterItem(FXShutter* p,const FXString& text,FXIcon* icon,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXVerticalFrame(p,(opts&~(PACK_UNIFORM_HEIGHT|PACK_UNIFORM_WIDTH)),x,y,w,h,0,0,0,0,0,0){
+  button=new FXButton(this,text,icon,this,FXShutterItem::ID_SHUTTERITEM_BUTTON,FRAME_RAISED|FRAME_THICK|LAYOUT_FILL_X,0,0,0,0,0,0,0,0);
+  scrollWindow=new FXScrollWindow(this,HSCROLLING_OFF|LAYOUT_FILL_X|LAYOUT_FIX_HEIGHT,0,0,0,0);
   content=new FXVerticalFrame(scrollWindow,LAYOUT_FILL_X|LAYOUT_FILL_Y|(opts&(PACK_UNIFORM_HEIGHT|PACK_UNIFORM_WIDTH)),0,0,0,0,pl,pr,pt,pb,hs,vs);
   content->setBackColor(getApp()->getShadowColor());
   }
@@ -121,6 +137,23 @@ FXString FXShutterItem::getTipText() const {
   }
 
 
+// Save object to stream
+void FXShutterItem::save(FXStream& store) const {
+  FXVerticalFrame::save(store);
+  store << button;
+  store << scrollWindow;
+  store << content;
+  }
+
+
+// Load object from stream
+void FXShutterItem::load(FXStream& store){
+  FXVerticalFrame::load(store);
+  store >> button;
+  store >> scrollWindow;
+  store >> content;
+  }
+
 
 // Thrash it
 FXShutterItem::~FXShutterItem(){
@@ -150,16 +183,23 @@ FXDEFMAP(FXShutter) FXShutterMap[]={
 FXIMPLEMENT(FXShutter,FXVerticalFrame,FXShutterMap,ARRAYNUMBER(FXShutterMap))
 
 
+// Serialization
+FXShutter::FXShutter(){
+  current=-1;
+  closing=-1;
+  closingHeight=0;
+  heightIncrement=1;
+  }
+
+
 // Make shutter
-FXShutter::FXShutter(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXVerticalFrame(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
+FXShutter::FXShutter(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXVerticalFrame(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
   target=tgt;
   message=sel;
-  heightIncrement=1;
-  closingHeight=0;
-  closingHadScrollbar=FALSE;
-  current=0;
+  current=-1;
   closing=-1;
+  closingHeight=0;
+  heightIncrement=1;
   }
 
 
@@ -173,6 +213,7 @@ long FXShutter::onFocusUp(FXObject* sender,FXSelector sel,void* ptr){
 long FXShutter::onFocusDown(FXObject* sender,FXSelector sel,void* ptr){
   return FXVerticalFrame::onFocusNext(sender,sel,ptr);
   }
+
 
 // Update value from a message
 long FXShutter::onCmdSetValue(FXObject*,FXSelector,void* ptr){
@@ -197,7 +238,7 @@ long FXShutter::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
 
 // Open item
 long FXShutter::onCmdOpen(FXObject*,FXSelector sel,void*){
-  setCurrent(FXSELID(sel)-ID_OPEN_FIRST);
+  setCurrent(FXSELID(sel)-ID_OPEN_FIRST,true);
   return 1;
   }
 
@@ -212,96 +253,94 @@ long FXShutter::onUpdOpen(FXObject* sender,FXSelector sel,void* ptr){
 // The sender of the message is the item to open up
 long FXShutter::onOpenItem(FXObject* sender,FXSelector,void*){
   FXint which=indexOfChild((FXWindow*)sender);
-  FXuint speed=getApp()->getAnimSpeed();
-  FXShutterItem *closingItem;
-  if(current==which) which--;     // Clicking on title button of currently active item should close it; "Markus Fleck" <fleck@gnu.org>
+  if(current==which) which--;
   if(0<=which){
-    if(speed){
-      closing=current;
-      heightIncrement=1;
-      closingItem=(FXShutterItem*)childAtIndex(closing);
-      closingHeight=closingItem->getHeight();
-      closingHadScrollbar=closingItem->scrollWindow->verticalScrollBar()->shown();
-      getApp()->addTimeout(this,ID_SHUTTER_TIMEOUT,speed);
+    FXTime speed=getApp()->getAnimSpeed();
+    if(0<speed){
+      FXShutterItem *closingItem=(FXShutterItem*)childAtIndex(current);
+      if(closingItem){
+        closingHeight=closingItem->getHeight();
+        closing=current;
+        heightIncrement=0;
+        getApp()->addTimeout(this,ID_SHUTTER_TIMEOUT,speed);
+        }
       }
-    current=which;
-    recalc();
-    if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXival)current);
     }
+  setCurrent(which,true);
   return 1;
   }
 
 
 // Shutter Item Animation
 long FXShutter::onTimeout(FXObject*,FXSelector,void*){
-
-  // Closing item got deleted
-  if(closing<0) return 0;
-
-  // Shrink closing item a bit more
-  closingHeight-=heightIncrement;
-  heightIncrement+=5;
-
-  // Force layout again
-  recalc();
-
-  // Still not fully closed?
-  if(closingHeight>0){
-    getApp()->addTimeout(this,ID_SHUTTER_TIMEOUT,getApp()->getAnimSpeed());
-    return 1;
+  if(0<=closing){
+    heightIncrement+=5;
+    closingHeight-=heightIncrement;
+    if(closingHeight<0) closingHeight=0;
+    recalc();
+    if(0<closingHeight){
+      getApp()->addTimeout(this,ID_SHUTTER_TIMEOUT,getApp()->getAnimSpeed());
+      return 1;
+      }
+    closing=-1;
     }
-
-  // Now fully closed
-  closing=-1;
-
   return 1;
   }
 
 
 // Layout
 void FXShutter::layout(){
-  register FXShutterItem* child;
-  register FXint index,numchildren;
-
-  numchildren=numChildren();
+  FXShutterItem* child;
+  FXint i;
 
   // One of the children may have disappeared
-  if(current>=numchildren) current=numchildren-1;
-  if(current==-1 && numchildren>0) current=0;         // Fix by "Martin Welch" <mwelch@totalise.co.uk>
-  if(closing>=numchildren) closing=-1;
+  if(current<0) current=0;
+  if(current>=numChildren()) current=numChildren()-1;
 
   // Force only one of the children to be open
-  for(child=(FXShutterItem*)getFirst(),index=0; child; child=(FXShutterItem*)child->getNext(),index++){
-    if(child->shown()){
-      if(index==current){
-        child->setLayoutHints(LAYOUT_FILL_X|LAYOUT_FILL_Y|LAYOUT_LEFT|LAYOUT_TOP);
-        child->scrollWindow->setScrollStyle((closing>=0) ? (VSCROLLER_NEVER|HSCROLLER_NEVER) : HSCROLLER_NEVER);
-        child->scrollWindow->show();
-        }
-      else if(index==closing){
-        child->setLayoutHints(LAYOUT_FILL_X|LAYOUT_FIX_HEIGHT|LAYOUT_LEFT|LAYOUT_TOP);
-        child->scrollWindow->setScrollStyle(closingHadScrollbar ? (VSCROLLER_ALWAYS|HSCROLLER_NEVER) : (VSCROLLER_NEVER|HSCROLLER_NEVER));
-        child->setHeight(closingHeight);
-        }
-      else{
-        child->setLayoutHints(LAYOUT_FILL_X|LAYOUT_LEFT|LAYOUT_TOP);
-        child->scrollWindow->hide();
-        }
+  for(child=(FXShutterItem*)getFirst(),i=0; child; child=(FXShutterItem*)child->getNext(),i++){
+    if(i==current){           // Expanded or expanded
+      child->setLayoutHints(LAYOUT_FILL_X|LAYOUT_FILL_Y);
+      child->getScrollWindow()->setLayoutHints(LAYOUT_FILL_X|LAYOUT_FILL_Y);
+      }
+    else if(i==closing){      // Collapsing
+      child->setLayoutHints(LAYOUT_FILL_X);
+      child->getScrollWindow()->setLayoutHints(LAYOUT_FILL_X|LAYOUT_FIX_HEIGHT);
+      child->getScrollWindow()->setHeight(closingHeight);
+      }
+    else{                     // Collapsed
+      child->setLayoutHints(LAYOUT_FILL_X);
+      child->getScrollWindow()->setLayoutHints(LAYOUT_FILL_X|LAYOUT_FIX_HEIGHT);
+      child->getScrollWindow()->setHeight(0);
       }
     }
 
   // Then layout normally
   FXVerticalFrame::layout();
-  flags&=~FLAG_DIRTY;
   }
 
 
 // Set current subwindow
-void FXShutter::setCurrent(FXint panel){
-  if(0<=panel && current!=panel){
+void FXShutter::setCurrent(FXint panel,FXbool notify){
+  if(panel!=current && 0<=panel && panel<numChildren()){
     current=panel;
     recalc();
+    if(notify && target){ target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXival)current); }
     }
+  }
+
+
+// Save object to stream
+void FXShutter::save(FXStream& store) const {
+  FXVerticalFrame::save(store);
+  store << current;
+  }
+
+
+// Load object from stream
+void FXShutter::load(FXStream& store){
+  FXVerticalFrame::load(store);
+  store >> current;
   }
 
 

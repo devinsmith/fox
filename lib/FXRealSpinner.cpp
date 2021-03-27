@@ -3,37 +3,40 @@
 *             R e a l - V a l u e d   S p i n n e r  W i d g e t                *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2003,2006 by Bill Baxter.   All Rights Reserved.                *
+* Copyright (C) 2003,2020 by Bill Baxter.   All Rights Reserved.                *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXRealSpinner.cpp,v 1.38.2.1 2006/03/31 21:25:59 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXLabel.h"
 #include "FXTextField.h"
@@ -66,8 +69,8 @@ FXDEFMAP(FXRealSpinner) FXRealSpinnerMap[]={
   FXMAPFUNC(SEL_KEYPRESS,0,FXRealSpinner::onKeyPress),
   FXMAPFUNC(SEL_KEYRELEASE,0,FXRealSpinner::onKeyRelease),
   FXMAPFUNC(SEL_FOCUS_SELF,0,FXRealSpinner::onFocusSelf),
-  FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_ENTRY,FXRealSpinner::onCmdEntry),
   FXMAPFUNC(SEL_CHANGED,FXRealSpinner::ID_ENTRY,FXRealSpinner::onChgEntry),
+  FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_ENTRY,FXRealSpinner::onCmdEntry),
   FXMAPFUNC(SEL_MOUSEWHEEL,FXRealSpinner::ID_ENTRY,FXRealSpinner::onWheelEntry),
   FXMAPFUNC(SEL_UPDATE,FXRealSpinner::ID_INCREMENT,FXRealSpinner::onUpdIncrement),
   FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_INCREMENT,FXRealSpinner::onCmdIncrement),
@@ -76,6 +79,8 @@ FXDEFMAP(FXRealSpinner) FXRealSpinnerMap[]={
   FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_SETVALUE,FXRealSpinner::onCmdSetValue),
   FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_SETINTVALUE,FXRealSpinner::onCmdSetIntValue),
   FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_GETINTVALUE,FXRealSpinner::onCmdGetIntValue),
+  FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_SETLONGVALUE,FXRealSpinner::onCmdSetLongValue),
+  FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_GETLONGVALUE,FXRealSpinner::onCmdGetLongValue),
   FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_SETINTRANGE,FXRealSpinner::onCmdSetIntRange),
   FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_GETINTRANGE,FXRealSpinner::onCmdGetIntRange),
   FXMAPFUNC(SEL_COMMAND,FXRealSpinner::ID_SETREALVALUE,FXRealSpinner::onCmdSetRealValue),
@@ -104,8 +109,7 @@ FXRealSpinner::FXRealSpinner(){
 
 
 // Construct spinner out of dial and a text field
-FXRealSpinner::FXRealSpinner(FXComposite *p,FXint cols,FXObject *tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXPacker(p,opts,x,y,w,h,0,0,0,0,0,0){
+FXRealSpinner::FXRealSpinner(FXComposite *p,FXint cols,FXObject *tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXPacker(p,opts,x,y,w,h,0,0,0,0,0,0){
   flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
@@ -183,6 +187,18 @@ void FXRealSpinner::layout(){
   }
 
 
+// Notification that focus moved to new child
+void FXRealSpinner::changeFocus(FXWindow *child){
+  FXPacker::changeFocus(child);
+  if(child){
+    flags&=~FLAG_UPDATE;
+    }
+  else{
+    flags|=FLAG_UPDATE;
+    }
+  }
+
+
 // Respond to increment message
 long FXRealSpinner::onUpdIncrement(FXObject* sender,FXSelector,void*){
   if(isEnabled() && ((options&REALSPIN_CYCLIC) || (pos<range[1])))
@@ -196,7 +212,7 @@ long FXRealSpinner::onUpdIncrement(FXObject* sender,FXSelector,void*){
 // Respond to increment message
 long FXRealSpinner::onCmdIncrement(FXObject*,FXSelector,void*){
   if(isEnabled() && isEditable()){
-    increment(TRUE);
+    increment(true);
     return 1;
     }
   return 0;
@@ -216,7 +232,7 @@ long FXRealSpinner::onUpdDecrement(FXObject* sender,FXSelector,void*){
 // Respond to decrement message
 long FXRealSpinner::onCmdDecrement(FXObject*,FXSelector,void*){
   if(isEnabled() && isEditable()){
-    decrement(TRUE);
+    decrement(true);
     return 1;
     }
   return 0;
@@ -225,15 +241,14 @@ long FXRealSpinner::onCmdDecrement(FXObject*,FXSelector,void*){
 
 // Rolling mouse wheel in text field behaves as if inside dial
 long FXRealSpinner::onWheelEntry(FXObject*,FXSelector,void* ptr){
-  FXEvent* event=(FXEvent*)ptr;
   if(isEnabled() && isEditable()){
     if(((FXEvent*)ptr)->code>0){
-      if(event->state&CONTROLMASK) incrementByAmount(incr*10.0,TRUE);
-      else increment(TRUE);
+      if(((FXEvent*)ptr)->state&CONTROLMASK) incrementByAmount(incr*10.0,true);
+      else increment(true);
       }
-    else{
-      if(event->state&CONTROLMASK) decrementByAmount(incr*10.0,TRUE);
-      else decrement(TRUE);
+    else if(((FXEvent*)ptr)->code<0){
+      if(((FXEvent*)ptr)->state&CONTROLMASK) decrementByAmount(incr*10.0,true);
+      else decrement(true);
       }
     return 1;
     }
@@ -243,7 +258,7 @@ long FXRealSpinner::onWheelEntry(FXObject*,FXSelector,void* ptr){
 
 // Text field changed
 long FXRealSpinner::onChgEntry(FXObject*,FXSelector,void*){
-  register FXdouble value=FXDoubleVal(textField->getText());
+  FXdouble value=textField->getText().toDouble();
   if(value<range[0]) value=range[0];
   if(value>range[1]) value=range[1];
   if(value!=pos){
@@ -256,7 +271,7 @@ long FXRealSpinner::onChgEntry(FXObject*,FXSelector,void*){
 
 // Text field command
 long FXRealSpinner::onCmdEntry(FXObject*,FXSelector,void*){
-  textField->setText(FXStringVal(pos));       // Put back adjusted value
+  textField->setText(FXString::value(pos));       // Put back adjusted value
   if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)&pos);
   return 1;
   }
@@ -271,7 +286,7 @@ long FXRealSpinner::onKeyPress(FXObject* sender,FXSelector sel,void* ptr){
       case KEY_Up:
       case KEY_KP_Up:
         if(isEditable()){
-          increment(TRUE);
+          increment(true);
           }
         else{
           getApp()->beep();
@@ -280,7 +295,7 @@ long FXRealSpinner::onKeyPress(FXObject* sender,FXSelector sel,void* ptr){
       case KEY_Down:
       case KEY_KP_Down:
         if(isEditable()){
-          decrement(TRUE);
+          decrement(true);
           }
         else{
           getApp()->beep();
@@ -340,6 +355,20 @@ long FXRealSpinner::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
   }
 
 
+// Update value from a message
+long FXRealSpinner::onCmdSetLongValue(FXObject*,FXSelector,void* ptr){
+  setValue((FXint)*((FXlong*)ptr));
+  return 1;
+  }
+
+
+// Obtain value with a message
+long FXRealSpinner::onCmdGetLongValue(FXObject*,FXSelector,void* ptr){
+  *((FXlong*)ptr)=(FXlong)getValue();
+  return 1;
+  }
+
+
 // Update range from a message
 long FXRealSpinner::onCmdSetIntRange(FXObject*,FXSelector,void* ptr){
   setRange((FXdouble)((FXint*)ptr)[0],(FXdouble)((FXint*)ptr)[1]);
@@ -390,13 +419,6 @@ void FXRealSpinner::increment(FXbool notify){
   }
 
 
-#if defined(WIN32) || defined(__sgi) || defined(__sun) || defined(__alpha)
-double round(double x){
-  return (x >= 0) ? floor(x+0.5) : ceil(x-0.5);
-  }
-#endif
-
-
 // Increment spinner by certain amount
 void FXRealSpinner::incrementByAmount(FXdouble amount,FXbool notify){
   if(range[0]<range[1] && 0.0<amount){
@@ -406,9 +428,9 @@ void FXRealSpinner::incrementByAmount(FXdouble amount,FXbool notify){
       }
     else{
       value=pos+amount;
-      if(0<gran) value=gran*round(value/gran);
+      if(0.0<gran) value=gran*Math::round(value/gran);
       if(options&REALSPIN_CYCLIC){
-        value=value-floor((value-range[0])/(range[1]-range[0]))*(range[1]-range[0]);
+        value=value-Math::floor((value-range[0])/(range[1]-range[0]))*(range[1]-range[0]);
         }
       }
     setValue(value,notify);
@@ -431,9 +453,9 @@ void FXRealSpinner::decrementByAmount(FXdouble amount,FXbool notify){
       }
     else{
       value=pos-amount;
-      if(0<gran) value=gran*round(value/gran);
+      if(0.0<gran) value=gran*Math::round(value/gran);
       if(options&REALSPIN_CYCLIC){
-        value=value-floor((value-range[0])/(range[1]-range[0]))*(range[1]-range[0]);
+        value=value-Math::floor((value-range[0])/(range[1]-range[0]))*(range[1]-range[0]);
         }
       }
     setValue(value,notify);
@@ -449,7 +471,7 @@ FXbool FXRealSpinner::isCyclic() const {
 
 // Set spinner cyclic mode
 void FXRealSpinner::setCyclic(FXbool cyclic){
-  if(cyclic) options|=REALSPIN_CYCLIC; else options&=~REALSPIN_CYCLIC;
+  options^=((0-cyclic)^options)&REALSPIN_CYCLIC;
   }
 
 
@@ -469,8 +491,8 @@ void FXRealSpinner::setValue(FXdouble value,FXbool notify){
   if(value<range[0]) value=range[0];
   if(value>range[1]) value=range[1];
   if(pos!=value){
-    textField->setText(FXStringVal(value));
     pos=value;
+    textField->setText(FXString::value(value));
     if(notify && target){target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)&pos);}
     }
   }
@@ -498,8 +520,8 @@ FXbool FXRealSpinner::isTextVisible() const {
 
 
 // Change text visibility
-void FXRealSpinner::setTextVisible(FXbool shown){
-  FXuint opts=shown?(options&~REALSPIN_NOTEXT):(options|REALSPIN_NOTEXT);
+void FXRealSpinner::setTextVisible(FXbool flag){
+  FXuint opts=(((0-flag)^options)&REALSPIN_NOTEXT)^options;
   if(options!=opts){
     options=opts;
     recalc();
@@ -541,7 +563,6 @@ void FXRealSpinner::setTipText(const FXString&  text){
   }
 
 
-
 // Get tip text
 const FXString& FXRealSpinner::getTipText() const {
   return textField->getTipText();
@@ -550,7 +571,7 @@ const FXString& FXRealSpinner::getTipText() const {
 
 // Change spinner style
 void FXRealSpinner::setSpinnerStyle(FXuint style){
-  FXuint opts=(options&~REALSPINNER_MASK) | (style&REALSPINNER_MASK);
+  FXuint opts=((style^options)&REALSPINNER_MASK)^options;
   if(options!=opts){
     if(opts&REALSPIN_NOMIN) range[0]=-DBL_MAX;
     if(opts&REALSPIN_NOMAX) range[1]=DBL_MAX;
@@ -572,7 +593,7 @@ void FXRealSpinner::setEditable(FXbool edit){
   }
 
 
-// Return TRUE if text field is editable
+// Return true if text field is editable
 FXbool FXRealSpinner::isEditable() const {
   return textField->isEditable();
   }

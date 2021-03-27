@@ -3,29 +3,31 @@
 *              P r i v a t e   I n t e r n a l   F u n c t i o n s              *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxpriv.cpp,v 1.47.2.2 2007/06/04 13:09:50 fox Exp $                          *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
-#include "fxpriv.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
+#include "FXElement.h"
+#include "FXMutex.h"
+#include "FXAutoThreadStorageKey.h"
+#include "FXRunnable.h"
 #include "FXThread.h"
 #include "FXStream.h"
 #include "FXString.h"
@@ -33,11 +35,13 @@
 #include "FXPoint.h"
 #include "FXRectangle.h"
 #include "FXObject.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
-#include "FXId.h"
-#include "FXDrawable.h"
+#include "FXEvent.h"
 #include "FXWindow.h"
+#include "FXApp.h"
+#include "fxpriv.h"
 
 
 /*
@@ -54,25 +58,230 @@ using namespace FX;
 
 namespace FX {
 
-// X11
-#ifndef WIN32
+
+#ifdef WIN32            // WIN32
+
+
+// Send data via shared memory
+HANDLE fxsenddata(HWND window,FXuchar* data,FXuint size){
+  HANDLE hMap=0,hMapCopy=0;
+  FXuchar *ptr;
+  DWORD processid;
+  HANDLE process;
+
+  if(data && size){
+    hMap=CreateFileMappingA(INVALID_HANDLE_VALUE,NULL,PAGE_READWRITE,0,size+sizeof(FXuint),"_FOX_DDE");
+    if(hMap){
+      ptr=(FXuchar*)MapViewOfFile((HANDLE)hMap,FILE_MAP_WRITE,0,0,size+sizeof(FXuint));
+      if(ptr){
+        *((FXuint*)ptr)=size;
+        memcpy(ptr+sizeof(FXuint),data,size);
+        UnmapViewOfFile(ptr);
+        }
+      GetWindowThreadProcessId((HWND)window,&processid);
+      process=OpenProcess(PROCESS_DUP_HANDLE,true,processid);
+      DuplicateHandle(GetCurrentProcess(),hMap,process,&hMapCopy,FILE_MAP_ALL_ACCESS,true,DUPLICATE_CLOSE_SOURCE|DUPLICATE_SAME_ACCESS);
+      CloseHandle(process);
+      }
+    return hMapCopy;
+    }
+  return 0;
+  }
+
+
+// Receive data via shared memory
+HANDLE fxrecvdata(HANDLE hMap,FXuchar*& data,FXuint& size){
+  FXuchar *ptr;
+  data=NULL;
+  size=0;
+  if(hMap){
+    ptr=(FXuchar*)MapViewOfFile(hMap,FILE_MAP_READ,0,0,0);
+    if(ptr){
+      size=*((FXuint*)ptr);
+      if(allocElms(data,size)){
+        memcpy(data,ptr+sizeof(FXuint),size);
+        }
+      UnmapViewOfFile(ptr);
+      }
+    CloseHandle(hMap);
+    return hMap;
+    }
+  return 0;
+  }
+
+
+// Send request for data
+HANDLE fxsendrequest(HWND window,HWND requestor,WPARAM type){
+  FXuint loops=100;
+  MSG msg;
+  PostMessage((HWND)window,WM_DND_REQUEST,type,(LPARAM)requestor);
+  while(!PeekMessage(&msg,NULL,WM_DND_REPLY,WM_DND_REPLY,PM_REMOVE)){
+    if(loops==0){ fxwarning("timed out\n"); return 0; }
+    FXThread::sleep(10000000);  // Don't burn too much CPU here:- the other guy needs it more....
+    loops--;
+    }
+  return (HANDLE)msg.wParam;
+  }
+
+
+/*******************************************************************************/
+
+
+// Change PRIMARY selection data
+void FXApp::selectionSetData(const FXWindow*,FXDragType,FXuchar* data,FXuint size){
+  freeElms(ddeData);
+  ddeData=data;
+  ddeSize=size;
+  }
+
+
+// Retrieve PRIMARY selection data
+void FXApp::selectionGetData(const FXWindow*,FXDragType type,FXuchar*& data,FXuint& size){
+  data=NULL;
+  size=0;
+  if(selectionWindow){
+    event.type=SEL_SELECTION_REQUEST;
+    event.target=type;
+    ddeData=NULL;
+    ddeSize=0;
+    selectionWindow->handle(this,FXSEL(SEL_SELECTION_REQUEST,0),&event);
+    data=ddeData;
+    size=ddeSize;
+    ddeData=NULL;
+    ddeSize=0;
+    }
+  }
+
+
+
+// Retrieve PRIMARY selection types
+void FXApp::selectionGetTypes(const FXWindow*,FXDragType*& types,FXuint& numtypes){
+  types=NULL;
+  numtypes=0;
+  if(selectionWindow){
+    dupElms(types,xselTypeList,xselNumTypes);
+    numtypes=xselNumTypes;
+    }
+  }
+
+/*******************************************************************************/
+
+
+// Change CLIPBOARD selection data
+void FXApp::clipboardSetData(const FXWindow*,FXDragType type,FXuchar* data,FXuint size){
+  HGLOBAL hGlobalMemory=GlobalAlloc(GMEM_MOVEABLE,size);
+  if(hGlobalMemory){
+    void *pGlobalMemory=GlobalLock(hGlobalMemory);
+    FXASSERT(pGlobalMemory);
+    memcpy((FXchar*)pGlobalMemory,data,size);
+    GlobalUnlock(hGlobalMemory);
+    SetClipboardData(type,hGlobalMemory);
+    freeElms(data);
+    }
+  }
+
+
+// Retrieve CLIPBOARD selection data
+void FXApp::clipboardGetData(const FXWindow* window,FXDragType type,FXuchar*& data,FXuint& size){
+  data=NULL;
+  size=0;
+  if(IsClipboardFormatAvailable(type)){
+    if(OpenClipboard((HWND)window->id())){
+      HANDLE hClipMemory=GetClipboardData(type);
+      if(hClipMemory){
+        size=(FXuint)GlobalSize(hClipMemory);
+        if(allocElms(data,size)){
+          void *pClipMemory=GlobalLock(hClipMemory);
+          FXASSERT(pClipMemory);
+          memcpy((void*)data,pClipMemory,size);
+          GlobalUnlock(hClipMemory);
+          CloseClipboard();
+          }
+        }
+      }
+    }
+  }
+
+
+// Retrieve CLIPBOARD selection types
+void FXApp::clipboardGetTypes(const FXWindow* window,FXDragType*& types,FXuint& numtypes){
+  FXuint count;
+  types=NULL;
+  numtypes=0;
+  if(OpenClipboard((HWND)window->id())){
+    count=CountClipboardFormats();
+    if(count){
+      allocElms(types,count);
+      UINT format=0;
+      while(numtypes<count && (format=EnumClipboardFormats(format))!=0){
+        types[numtypes++]=format;
+        }
+      }
+    CloseClipboard();
+    }
+  }
+
+/*******************************************************************************/
+
+
+// Change DND selection data
+void FXApp::dragdropSetData(const FXWindow*,FXDragType,FXuchar* data,FXuint size){
+  freeElms(ddeData);
+  ddeData=data;
+  ddeSize=size;
+  }
+
+
+// Retrieve DND selection data
+void FXApp::dragdropGetData(const FXWindow* window,FXDragType type,FXuchar*& data,FXuint& size){
+  HANDLE answer;
+  data=NULL;
+  size=0;
+  if(dragWindow){
+    event.type=SEL_DND_REQUEST;
+    event.target=type;
+    ddeData=NULL;
+    ddeSize=0;
+    dragWindow->handle(this,FXSEL(SEL_DND_REQUEST,0),&event);
+    data=ddeData;
+    size=ddeSize;
+    ddeData=NULL;
+    ddeSize=0;
+    }
+  else{
+    answer=fxsendrequest((HWND)xdndSource,(HWND)window->id(),(WPARAM)type);
+    fxrecvdata(answer,data,size);
+    }
+  }
+
+
+// Retrieve DND selection types
+void FXApp::dragdropGetTypes(const FXWindow*,FXDragType*& types,FXuint& numtypes){
+  dupElms(types,ddeTypeList,ddeNumTypes);
+  numtypes=ddeNumTypes;
+  }
+
+
+/*******************************************************************************/
+
+#else                   // X11
 
 
 // Wait for event of certain type
 static FXbool fxwaitforevent(Display *display,Window window,int type,XEvent& event){
-  FXuint loops=1000;
+  FXuint loops=100;
   while(!XCheckTypedWindowEvent(display,window,type,&event)){
-    if(loops==0){ fxwarning("timed out\n"); return FALSE; }
+    if(loops==0){ fxwarning("timed out\n"); return false; }
     FXThread::sleep(10000000);  // Don't burn too much CPU here:- the other guy needs it more....
     loops--;
     }
-  return TRUE;
+  return true;
   }
 
 
 // Send request for selection info
 Atom fxsendrequest(Display *display,Window window,Atom selection,Atom prop,Atom type,FXuint time){
-  FXuint loops=1000;
+  FXuint loops=100;
   XEvent ev;
   XConvertSelection(display,selection,type,prop,window,time);
   while(!XCheckTypedWindowEvent(display,window,SelectionNotify,&ev)){
@@ -88,7 +297,7 @@ Atom fxsendrequest(Display *display,Window window,Atom selection,Atom prop,Atom 
 Atom fxsendreply(Display *display,Window window,Atom selection,Atom prop,Atom target,FXuint time){
   XEvent se;
   se.xselection.type=SelectionNotify;
-  se.xselection.send_event=TRUE;
+  se.xselection.send_event=true;
   se.xselection.display=display;
   se.xselection.requestor=window;
   se.xselection.selection=selection;
@@ -144,7 +353,7 @@ Atom fxrecvtypes(Display *display,Window window,Atom prop,FXDragType*& types,FXu
   if(prop){
     if(XGetWindowProperty(display,window,prop,0,1024,del,XA_ATOM,&actualtype,&actualformat,&numitems,&bytesleft,&ptr)==Success){
       if(actualtype==XA_ATOM && actualformat==32 && numitems>0){
-        if(FXMALLOC(&types,Atom,numitems)){
+        if(allocElms(types,numitems)){
           memcpy(types,ptr,sizeof(Atom)*numitems);
           numtypes=numitems;
           }
@@ -171,7 +380,7 @@ static FXuint fxrecvprop(Display *display,Window window,Atom prop,Atom& type,FXu
     tfrsize*=(format>>3);
 
     // Grow the array to accomodate new data
-    if(!FXRESIZE(&data,FXuchar,size+tfrsize+1)){ XFree(ptr); break; }
+    if(!resizeElms(data,size+tfrsize+1)){ XFree(ptr); break; }
 
     // Append new data at the end, plus the extra 0.
     memcpy(&data[size],ptr,tfrsize+1);
@@ -249,10 +458,9 @@ Atom fxrecvdata(Display *display,Window window,Atom prop,Atom incr,Atom& type,FX
 /*******************************************************************************/
 
 
-
 // Change PRIMARY selection data
 void FXApp::selectionSetData(const FXWindow*,FXDragType,FXuchar* data,FXuint size){
-  FXFREE(&ddeData);
+  freeElms(ddeData);
   ddeData=data;
   ddeSize=size;
   }
@@ -287,12 +495,12 @@ void FXApp::selectionGetTypes(const FXWindow* window,FXDragType*& types,FXuint& 
   types=NULL;
   numtypes=0;
   if(selectionWindow){
-    FXMEMDUP(&types,xselTypeList,FXDragType,xselNumTypes);
+    dupElms(types,xselTypeList,xselNumTypes);
     numtypes=xselNumTypes;
     }
   else{
     answer=fxsendrequest((Display*)display,window->id(),XA_PRIMARY,ddeAtom,ddeTargets,event.time);
-    fxrecvtypes((Display*)display,window->id(),answer,types,numtypes,TRUE);
+    fxrecvtypes((Display*)display,window->id(),answer,types,numtypes,true);
     }
   }
 
@@ -300,10 +508,9 @@ void FXApp::selectionGetTypes(const FXWindow* window,FXDragType*& types,FXuint& 
 /*******************************************************************************/
 
 
-
 // Change CLIPBOARD selection data
 void FXApp::clipboardSetData(const FXWindow*,FXDragType,FXuchar* data,FXuint size){
-  FXFREE(&ddeData);
+  freeElms(ddeData);
   ddeData=data;
   ddeSize=size;
   }
@@ -338,12 +545,12 @@ void FXApp::clipboardGetTypes(const FXWindow* window,FXDragType*& types,FXuint& 
   types=NULL;
   numtypes=0;
   if(clipboardWindow){
-    FXMEMDUP(&types,xcbTypeList,FXDragType,xcbNumTypes);
+    dupElms(types,xcbTypeList,xcbNumTypes);
     numtypes=xcbNumTypes;
     }
   else{
     answer=fxsendrequest((Display*)display,window->id(),xcbSelection,ddeAtom,ddeTargets,event.time);
-    fxrecvtypes((Display*)display,window->id(),answer,types,numtypes,TRUE);
+    fxrecvtypes((Display*)display,window->id(),answer,types,numtypes,true);
     }
   }
 
@@ -353,7 +560,7 @@ void FXApp::clipboardGetTypes(const FXWindow* window,FXDragType*& types,FXuint& 
 
 // Change DND selection data
 void FXApp::dragdropSetData(const FXWindow*,FXDragType,FXuchar* data,FXuint size){
-  FXFREE(&ddeData);
+  freeElms(ddeData);
   ddeData=data;
   ddeSize=size;
   }
@@ -384,249 +591,9 @@ void FXApp::dragdropGetData(const FXWindow* window,FXDragType type,FXuchar*& dat
 
 // Retrieve DND selection types
 void FXApp::dragdropGetTypes(const FXWindow*,FXDragType*& types,FXuint& numtypes){
-  FXMEMDUP(&types,ddeTypeList,FXDragType,ddeNumTypes);
+  dupElms(types,ddeTypeList,ddeNumTypes);
   numtypes=ddeNumTypes;
   }
-
-
-/*******************************************************************************/
-
-// MSWIN
-
-#else
-
-// Send data via shared memory
-HANDLE fxsenddata(HWND window,FXuchar* data,FXuint size){
-  HANDLE hMap,hMapCopy;
-  FXuchar *ptr;
-  DWORD processid;
-  HANDLE process;
-
-  if(data && size){
-    hMap=CreateFileMappingA(INVALID_HANDLE_VALUE,NULL,PAGE_READWRITE,0,size+sizeof(FXuint),"_FOX_DDE");
-    if(hMap){
-      ptr=(FXuchar*)MapViewOfFile((HANDLE)hMap,FILE_MAP_WRITE,0,0,size+sizeof(FXuint));
-      if(ptr){
-        *((FXuint*)ptr)=size;
-        memcpy(ptr+sizeof(FXuint),data,size);
-        UnmapViewOfFile(ptr);
-        }
-      GetWindowThreadProcessId((HWND)window,&processid);
-      process=OpenProcess(PROCESS_DUP_HANDLE,TRUE,processid);
-      DuplicateHandle(GetCurrentProcess(),hMap,process,&hMapCopy,FILE_MAP_ALL_ACCESS,TRUE,DUPLICATE_CLOSE_SOURCE|DUPLICATE_SAME_ACCESS);
-      CloseHandle(process);
-      }
-    return hMapCopy;
-    }
-  return 0;
-  }
-
-
-// Receive data via shared memory
-HANDLE fxrecvdata(HANDLE hMap,FXuchar*& data,FXuint& size){
-  FXuchar *ptr;
-  data=NULL;
-  size=0;
-  if(hMap){
-    ptr=(FXuchar*)MapViewOfFile(hMap,FILE_MAP_READ,0,0,0);
-    if(ptr){
-      size=*((FXuint*)ptr);
-      if(FXMALLOC(&data,FXuchar,size)){
-        memcpy(data,ptr+sizeof(FXuint),size);
-        }
-      UnmapViewOfFile(ptr);
-      }
-    CloseHandle(hMap);
-    return hMap;
-    }
-  return 0;
-  }
-
-
-// Send request for data
-HANDLE fxsendrequest(HWND window,HWND requestor,WPARAM type){
-  FXuint loops=1000;
-  MSG msg;
-  PostMessage((HWND)window,WM_DND_REQUEST,type,(LPARAM)requestor);
-  while(!PeekMessage(&msg,NULL,WM_DND_REPLY,WM_DND_REPLY,PM_REMOVE)){
-    if(loops==0){ fxwarning("timed out\n"); return 0; }
-    FXThread::sleep(10000000);  // Don't burn too much CPU here:- the other guy needs it more....
-    loops--;
-    }
-  return (HANDLE)msg.wParam;
-  }
-
-
-/*******************************************************************************/
-
-
-// Change PRIMARY selection data
-void FXApp::selectionSetData(const FXWindow*,FXDragType,FXuchar* data,FXuint size){
-  FXFREE(&ddeData);
-  ddeData=data;
-  ddeSize=size;
-  }
-
-
-// Retrieve PRIMARY selection data
-void FXApp::selectionGetData(const FXWindow*,FXDragType type,FXuchar*& data,FXuint& size){
-  data=NULL;
-  size=0;
-  if(selectionWindow){
-    event.type=SEL_SELECTION_REQUEST;
-    event.target=type;
-    ddeData=NULL;
-    ddeSize=0;
-    selectionWindow->handle(this,FXSEL(SEL_SELECTION_REQUEST,0),&event);
-    data=ddeData;
-    size=ddeSize;
-    ddeData=NULL;
-    ddeSize=0;
-    }
-  }
-
-
-
-// Retrieve PRIMARY selection types
-void FXApp::selectionGetTypes(const FXWindow*,FXDragType*& types,FXuint& numtypes){
-  types=NULL;
-  numtypes=0;
-  if(selectionWindow){
-    FXMEMDUP(&types,xselTypeList,FXDragType,xselNumTypes);
-    numtypes=xselNumTypes;
-    }
-  }
-
-/*******************************************************************************/
-
-
-
-
-// Change CLIPBOARD selection data
-void FXApp::clipboardSetData(const FXWindow*,FXDragType type,FXuchar* data,FXuint size){
-  HGLOBAL hGlobalMemory=GlobalAlloc(GMEM_MOVEABLE,size);
-  if(hGlobalMemory){
-    void *pGlobalMemory=GlobalLock(hGlobalMemory);
-    FXASSERT(pGlobalMemory);
-    memcpy((FXchar*)pGlobalMemory,data,size);
-    GlobalUnlock(hGlobalMemory);
-    SetClipboardData(type,hGlobalMemory);
-    FXFREE(&data);
-    }
-  }
-
-
-// Retrieve CLIPBOARD selection data
-void FXApp::clipboardGetData(const FXWindow* window,FXDragType type,FXuchar*& data,FXuint& size){
-  data=NULL;
-  size=0;
-  if(IsClipboardFormatAvailable(type)){
-    if(OpenClipboard((HWND)window->id())){
-      HANDLE hClipMemory=GetClipboardData(type);
-      if(hClipMemory){
-        size=(FXuint)GlobalSize(hClipMemory);
-        if(FXMALLOC(&data,FXuchar,size)){
-          void *pClipMemory=GlobalLock(hClipMemory);
-          FXASSERT(pClipMemory);
-          memcpy((void*)data,pClipMemory,size);
-          GlobalUnlock(hClipMemory);
-          CloseClipboard();
-          }
-        }
-      }
-    }
-  }
-
-
-
-// Retrieve CLIPBOARD selection types
-void FXApp::clipboardGetTypes(const FXWindow* window,FXDragType*& types,FXuint& numtypes){
-  FXuint count;
-  types=NULL;
-  numtypes=0;
-  if(OpenClipboard((HWND)window->id())){
-    count=CountClipboardFormats();
-    if(count){
-      FXMALLOC(&types,FXDragType,count);
-      UINT format=0;
-      while(numtypes<count && (format=EnumClipboardFormats(format))!=0){
-        types[numtypes++]=format;
-        }
-      }
-    CloseClipboard();
-    }
-  }
-
-/*******************************************************************************/
-
-
-
-// Change DND selection data
-void FXApp::dragdropSetData(const FXWindow*,FXDragType,FXuchar* data,FXuint size){
-  FXFREE(&ddeData);
-  ddeData=data;
-  ddeSize=size;
-  }
-
-
-// Retrieve DND selection data
-void FXApp::dragdropGetData(const FXWindow* window,FXDragType type,FXuchar*& data,FXuint& size){
-  HANDLE answer;
-  data=NULL;
-  size=0;
-  if(dragWindow){
-    event.type=SEL_DND_REQUEST;
-    event.target=type;
-    ddeData=NULL;
-    ddeSize=0;
-    dragWindow->handle(this,FXSEL(SEL_DND_REQUEST,0),&event);
-    data=ddeData;
-    size=ddeSize;
-    ddeData=NULL;
-    ddeSize=0;
-    }
-  else{
-    answer=fxsendrequest((HWND)xdndSource,(HWND)window->id(),(WPARAM)type);
-    fxrecvdata(answer,data,size);
-    }
-  }
-
-
-// Retrieve DND selection types
-void FXApp::dragdropGetTypes(const FXWindow*,FXDragType*& types,FXuint& numtypes){
-  FXMEMDUP(&types,ddeTypeList,FXDragType,ddeNumTypes);
-  numtypes=ddeNumTypes;
-  }
-
-
-/*******************************************************************************/
-
-// When called, grab the true API from the DLL if we can
-static BOOL WINAPI MyGetMonitorInfo(HANDLE monitor,MYMONITORINFO* minfo){
-  HINSTANCE hUser32;
-  PFNGETMONITORINFO gmi;
-  if((hUser32=GetModuleHandleA("USER32"))!=NULL && (gmi=(PFNGETMONITORINFO)GetProcAddress(hUser32,"GetMonitorInfoA"))!=NULL){
-    fxGetMonitorInfo=gmi;
-    return fxGetMonitorInfo(monitor,minfo);
-    }
-  return 0;
-  }
-
-
-// When called, grab the true API from the DLL if we can
-static HANDLE WINAPI MyMonitorFromRect(RECT* rect,DWORD flags){
-  HINSTANCE hUser32;
-  PFNMONITORFROMRECT mfr;
-  if((hUser32=GetModuleHandleA("USER32"))!=NULL && (mfr=(PFNMONITORFROMRECT)GetProcAddress(hUser32,"MonitorFromRect"))!=NULL){
-    fxMonitorFromRect=mfr;
-    return fxMonitorFromRect(rect,flags);
-    }
-  return NULL;
-  }
-
-
-PFNGETMONITORINFO fxGetMonitorInfo=MyGetMonitorInfo;
-PFNMONITORFROMRECT fxMonitorFromRect=MyMonitorFromRect;
 
 #endif
 

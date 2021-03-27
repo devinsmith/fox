@@ -3,27 +3,26 @@
 *                    D i r e c t o r y   E n u m e r a t o r                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDir.cpp,v 1.39 2006/01/22 17:58:22 fox Exp $                           *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXString.h"
@@ -57,7 +56,6 @@ struct SPACE {
 struct SPACE {
   DIR*            handle;
   struct dirent*  dp;
-  struct fxdirent result;
   };
 #endif
 
@@ -65,7 +63,7 @@ struct SPACE {
 // Construct directory enumerator
 FXDir::FXDir(){
   // If this fails on your machine, determine what sizeof(SPACE) is
-  // on your machine and mail it to: jeroen@fox-toolkit.org!
+  // on your machine and mail it to: jeroen@fox-toolkit.com!
   //FXTRACE((150,"sizeof(SPACE)=%ld\n",sizeof(SPACE)));
   FXASSERT(sizeof(SPACE)<=sizeof(space));
 #ifdef WIN32
@@ -79,7 +77,7 @@ FXDir::FXDir(){
 // Construct directory enumerator
 FXDir::FXDir(const FXString& path){
   // If this fails on your machine, determine what sizeof(SPACE) is
-  // on your machine and mail it to: jeroen@fox-toolkit.org!
+  // on your machine and mail it to: jeroen@fox-toolkit.com!
   //FXTRACE((150,"sizeof(SPACE)=%ld\n",sizeof(SPACE)));
   FXASSERT(sizeof(SPACE)<=sizeof(space));
 #ifdef WIN32
@@ -92,21 +90,21 @@ FXDir::FXDir(const FXString& path){
 
 
 // Open directory to path, return true if ok.
-bool FXDir::open(const FXString& path){
+FXbool FXDir::open(const FXString& path){
   if(!path.empty()){
 #ifdef WIN32
 #ifdef UNICODE
-    FXnchar buffer[1024];
-    utf2ncs(buffer,path.text(),path.length()+1);
-    wcsncat(buffer,TEXT("\\*"),sizeof(buffer));
+    FXnchar buffer[MAXPATHLEN+2];
+    utf2ncs(buffer,path.text(),MAXPATHLEN);
+    wcsncat(buffer,TEXT("\\*"),MAXPATHLEN+2);
 #else
-    FXchar buffer[1024];
-    strncpy(buffer,path.text(),sizeof(buffer));
-    strncat(buffer,"\\*",sizeof(buffer));
+    FXchar buffer[MAXPATHLEN+2];
+    fxstrlcpy(buffer,path.text(),MAXPATHLEN);
+    fxstrlcat(buffer,"\\*",MAXPATHLEN+2);
 #endif
     ((SPACE*)space)->handle=FindFirstFile(buffer,&((SPACE*)space)->result);
     if(((SPACE*)space)->handle!=INVALID_HANDLE_VALUE){
-      ((SPACE*)space)->first=TRUE;
+      ((SPACE*)space)->first=true;
       return true;
       }
 #else
@@ -121,49 +119,33 @@ bool FXDir::open(const FXString& path){
 
 
 // Returns true if the directory is open
-bool FXDir::isOpen() const {
+FXbool FXDir::isOpen() const {
 #ifdef WIN32
-  return (((SPACE*)space)->handle!=INVALID_HANDLE_VALUE);
+  return (((const SPACE*)space)->handle!=INVALID_HANDLE_VALUE);
 #else
-  return (((SPACE*)space)->handle!=NULL);
+  return (((const SPACE*)space)->handle!=NULL);
 #endif
   }
 
 
-// Get next file name
-bool FXDir::next(){
+// Go to next directory entry and return its name
+FXbool FXDir::next(FXString& name){
   if(isOpen()){
-#ifdef WIN32
+#if defined(WIN32)
     if(((SPACE*)space)->first || FindNextFile(((SPACE*)space)->handle,&((SPACE*)space)->result)){
       ((SPACE*)space)->first=false;
-      return true;
-      }
-#else
-#if defined(FOX_THREAD_SAFE) && !defined(__FreeBSD__) && !defined(__OpenBSD__)
-    if(!readdir_r(((SPACE*)space)->handle,&((SPACE*)space)->result,&((SPACE*)space)->dp) && ((SPACE*)space)->dp){
+      name.assign(((SPACE*)space)->result.cFileName);
       return true;
       }
 #else
     if((((SPACE*)space)->dp=readdir(((SPACE*)space)->handle))!=NULL){
+      name.assign(((SPACE*)space)->dp->d_name);
       return true;
       }
 #endif
-#endif
     }
+  name.clear();
   return false;
-  }
-
-
-// Return current file name
-FXString FXDir::name() const {
-  if(isOpen()){
-#ifdef WIN32
-    return ((SPACE*)space)->result.cFileName;
-#else
-    return ((SPACE*)space)->dp->d_name;
-#endif
-    }
-  return FXString::null;
   }
 
 
@@ -182,18 +164,18 @@ void FXDir::close(){
 
 
 // Create new directory
-bool FXDir::create(const FXString& path,FXuint mode){
+FXbool FXDir::create(const FXString& path,FXuint perm){
   if(!path.empty()){
 #ifdef WIN32
 #ifdef UNICODE
-    FXnchar buffer[1024];
-    utf2ncs(buffer,path.text(),path.length()+1);
+    FXnchar buffer[MAXPATHLEN];
+    utf2ncs(buffer,path.text(),MAXPATHLEN);
     return CreateDirectoryW(buffer,NULL)!=0;
 #else
     return CreateDirectoryA(path.text(),NULL)!=0;
 #endif
 #else
-    return ::mkdir(path.text(),mode)==0;
+    return ::mkdir(path.text(),perm)==0;
 #endif
     }
   return false;
@@ -201,38 +183,18 @@ bool FXDir::create(const FXString& path,FXuint mode){
 
 
 // Remove directory
-bool FXDir::remove(const FXString& path){
+FXbool FXDir::remove(const FXString& path){
   if(!path.empty()){
 #ifdef WIN32
 #ifdef UNICODE
-    FXnchar buffer[1024];
-    utf2ncs(buffer,path.text(),path.length()+1);
+    FXnchar buffer[MAXPATHLEN];
+    utf2ncs(buffer,path.text(),MAXPATHLEN);
     return RemoveDirectoryW(buffer)!=0;
 #else
     return RemoveDirectoryA(path.text())!=0;
 #endif
 #else
     return ::rmdir(path.text())==0;
-#endif
-    }
-  return false;
-  }
-
-
-// Rename directory
-bool FXDir::rename(const FXString& srcpath,const FXString& dstpath){
-  if(srcpath!=dstpath){
-#ifdef WIN32
-#ifdef UNICODE
-    FXnchar oldname[1024],newname[1024];
-    utf2ncs(oldname,srcpath.text(),srcpath.length()+1);
-    utf2ncs(newname,dstpath.text(),dstpath.length()+1);
-    return ::MoveFileW(oldname,newname)!=0;
-#else
-    return ::MoveFileA(srcpath.text(),dstpath.text())!=0;
-#endif
-#else
-    return ::rename(srcpath.text(),dstpath.text())==0;
 #endif
     }
   return false;
@@ -248,7 +210,7 @@ FXint FXDir::listFiles(FXString*& filelist,const FXString& path,const FXString& 
 
   // Get directory stream pointer
   if(dir.isOpen()){
-    FXuint    mode=FILEMATCH_FILE_NAME|FILEMATCH_NOESCAPE;
+    FXuint    mode=(flags&CaseFold)?(FXPath::PathName|FXPath::NoEscape|FXPath::CaseFold):(FXPath::PathName|FXPath::NoEscape);
     FXString *newlist;
     FXint     size=0;
     FXint     count=0;
@@ -256,18 +218,12 @@ FXint FXDir::listFiles(FXString*& filelist,const FXString& path,const FXString& 
     FXString  name;
     FXStat    data;
 
-    // Folding case
-    if(flags&CaseFold) mode|=FILEMATCH_CASEFOLD;
-
     // Loop over directory entries
-    while(dir.next()){
-
-      // Get name
-      name=dir.name();
+    while(dir.next(name)){
 
       // Build full pathname
       pathname=path;
-      if(!ISPATHSEP(pathname[pathname.length()-1])) pathname+=PATHSEPSTRING;
+      if(!ISPATHSEP(pathname.tail())) pathname+=PATHSEPSTRING;
       pathname+=name;
 
       // Get info on file
@@ -276,18 +232,18 @@ FXint FXDir::listFiles(FXString*& filelist,const FXString& path,const FXString& 
 #ifdef WIN32
 
       // Filter out files; a bit tricky...
-      if(!data.isDirectory() && ((flags&NoFiles) || (data.isHidden() && !(flags&HiddenFiles)) || (!(flags&AllFiles) && !FXPath::match(pattern,name,mode)))) continue;
+      if(!data.isDirectory() && ((flags&NoFiles) || (data.isHidden() && !(flags&HiddenFiles)) || (!(flags&AllFiles) && !FXPath::match(name,pattern,mode)))) continue;
 
       // Filter out directories; even more tricky!
-      if(data.isDirectory() && ((flags&NoDirs) || (data.isHidden() && !(flags&HiddenDirs)) || (name[0]=='.' && (name[1]==0 || (name[1]=='.' && name[2]==0 && (flags&NoParent)))) || (!(flags&AllDirs) && !FXPath::match(pattern,name,mode)))) continue;
+      if(data.isDirectory() && ((flags&NoDirs) || (data.isHidden() && !(flags&HiddenDirs)) || ((name[0]=='.' && (name[1]==0 || (name[1]=='.' && name[2]==0))) && (flags&NoParent)) || (!(flags&AllDirs) && !FXPath::match(name,pattern,mode)))) continue;
 
 #else
 
       // Filter out files; a bit tricky...
-      if(!data.isDirectory() && ((flags&NoFiles) || (name[0]=='.' && !(flags&HiddenFiles)) || (!(flags&AllFiles) && !FXPath::match(pattern,name,mode)))) continue;
+      if(!data.isDirectory() && ((flags&NoFiles) || (name[0]=='.' && !(flags&HiddenFiles)) || (!(flags&AllFiles) && !FXPath::match(name,pattern,mode)))) continue;
 
       // Filter out directories; even more tricky!
-      if(data.isDirectory() && ((flags&NoDirs) || (name[0]=='.' && (name[1]==0 || (name[1]=='.' && name[2]==0 && (flags&NoParent)) || (name[1]!='.' && !(flags&HiddenDirs)))) || (!(flags&AllDirs) && !FXPath::match(pattern,name,mode)))) continue;
+      if(data.isDirectory() && ((flags&NoDirs) || (name[0]=='.' && !(flags&HiddenDirs)) || ((name[0]=='.' && (name[1]==0 || (name[1]=='.' && name[2]==0))) && (flags&NoParent)) || (!(flags&AllDirs) && !FXPath::match(name,pattern,mode)))) continue;
 
 #endif
 
@@ -295,7 +251,7 @@ FXint FXDir::listFiles(FXString*& filelist,const FXString& path,const FXString& 
       if(count+1>=size){
         size=size?(size<<1):256;
         newlist=new FXString [size];
-        for(int i=0; i<count; i++){
+        for(FXint i=0; i<count; i++){
           newlist[i].adopt(filelist[i]);
           }
         delete [] filelist;
@@ -311,18 +267,18 @@ FXint FXDir::listFiles(FXString*& filelist,const FXString& path,const FXString& 
   }
 
 
-// FIXME maybe an FXDrive class for iteration over drives is better?
-
 // List drives, i.e. roots of directory trees.
 FXint FXDir::listDrives(FXString*& drivelist){
-  register FXint count=0;
+  FXint count=0;
 #ifdef WIN32
-  TCHAR drives[256],*drive;
-  GetLogicalDriveStrings(256,drives);
+  FXchar drives[256];
+  clearElms(drives,ARRAYNUMBER(drives));
+  GetLogicalDriveStringsA(ARRAYNUMBER(drives),drives);
   drivelist=new FXString [33];
-  for(drive=drives; *drive && count<32; drive++){
-    drivelist[count++].assign(drive);
+  for(const FXchar* drive=drives; *drive && count<32; drive++){
+    drivelist[count].assign(drive);
     while(*drive) drive++;
+    count++;
     }
 #else
   drivelist=new FXString [2];
@@ -332,16 +288,39 @@ FXint FXDir::listDrives(FXString*& drivelist){
   }
 
 
+#if 0
+
+FXint FXDir::listShares(FXString*& sharelist){
+  FXint count=0;
+#ifdef WIN32
+#else
+  sharelist=new FXString [2];
+  sharelist[count++].assign(PATHSEP);
+#endif
+  return count;
+  }
+#endif
+
+
+// Create a directories recursively
+FXbool FXDir::createDirectories(const FXString& path,FXuint perm){
+  if(FXPath::isAbsolute(path)){
+    if(FXStat::isDirectory(path)) return true;
+    if(createDirectories(FXPath::upLevel(path),perm)){
+      if(FXDir::create(path,perm)) return true;
+      }
+    }
+  return false;
+  }
+
+
 // Cleanup
 FXDir::~FXDir(){
   close();
   }
 
+
 }
-
-
-
-
 
 
 
@@ -489,121 +468,6 @@ FXint FXDir::listFiles(FXString*& filelist,const FXString& path,const FXString& 
 
 
 
-// List root directories
-void FXDirList::listRootItems(){
-  FXDirItem      *oldlist,*newlist,**po,**pp,**pn,*item,*link;
-  FXIcon         *openicon;
-  FXIcon         *closedicon;
-  FXFileAssoc    *fileassoc;
-  FXString        name;
-  DWORD           mask;
-  UINT            drivetype;
-
-  // Build new insert-order list
-  oldlist=list;
-  newlist=NULL;
-
-  // Assemble lists
-  po=&oldlist;
-  pn=&newlist;
-
-  // Loop over drive letters
-  for(mask=GetLogicalDrives(),name="A:\\"; mask; mask>>=1,name[0]++){
-
-    // Skip unavailable drives
-    if(!(mask&1)) continue;
-
-    // Find it, and take it out from the old list if found
-    for(pp=po; (item=*pp)!=NULL; pp=&item->link){
-      if(comparecase(item->label,name)==0){
-        *pp=item->link;
-        item->link=NULL;
-        po=pp;
-        goto fnd;
-        }
-      }
-
-    // Not found; prepend before list
-    item=(FXDirItem*)appendItem(NULL,name,open_folder,closed_folder,NULL,TRUE);
-
-    // Next gets hung after this one
-fnd:*pn=item;
-    pn=&item->link;
-
-    // Its a folder
-    item->state=FXDirItem::FOLDER|FXDirItem::HASITEMS;
-
-    // Assume no associations
-    fileassoc=NULL;
-    drivetype=GetDriveType(name.text());
-    switch(drivetype){
-      case DRIVE_REMOVABLE:
-        if(name[0]=='A' || name[0]=='B'){
-          openicon=floppyicon;
-          closedicon=floppyicon;
-          }
-        else{
-          openicon=zipdiskicon;
-          closedicon=zipdiskicon;
-          }
-        break;
-      case DRIVE_REMOTE:
-        openicon=networkicon;
-        closedicon=networkicon;
-        break;
-      case DRIVE_CDROM:
-        openicon=cdromicon;
-        closedicon=cdromicon;
-        break;
-      case DRIVE_RAMDISK:
-        openicon=open_folder;
-        closedicon=closed_folder;
-        break;
-      case DRIVE_FIXED:
-        openicon=harddiskicon;
-        closedicon=harddiskicon;
-        break;
-      case DRIVE_UNKNOWN:
-      case DRIVE_NO_ROOT_DIR:
-      default:
-        openicon=open_folder;
-        closedicon=closed_folder;
-        break;
-      }
-    if(associations) fileassoc=associations->findDirBinding(name.text());
-
-    // If association is found, use it
-    if(fileassoc){
-      if(fileassoc->miniicon) closedicon=fileassoc->miniicon;
-      if(fileassoc->miniiconopen) openicon=fileassoc->miniiconopen;
-      }
-
-    // Update item information
-    item->openIcon=openicon;
-    item->closedIcon=closedicon;
-    item->size=0L;
-    item->assoc=fileassoc;
-    item->date=0;
-
-    // Create item
-    if(id()) item->create();
-    }
-
-  // FIXME what about network neighborhood?
-
-  // Wipe items remaining in list:- they have disappeared!!
-  for(item=oldlist; item; item=link){
-    link=item->link;
-    removeItem(item,TRUE);
-    }
-
-  // Remember new list
-  list=newlist;
-  }
-
-
-
-
 
 
 void fxenumWNetContainerResource(NETRESOURCE* netResource,FXObjectListOf<FXStringObject>& netResourceList,DWORD openEnumScope){
@@ -670,12 +534,12 @@ void fxenumWNetContainerResource(NETRESOURCE* netResource,FXObjectListOf<FXStrin
       }
 
     for(DWORD n=0; n < nEntries; n++){
-      bool isContainer=FALSE;
+      FXbool isContainer=false;
 
       // if RESOURCE_CONTEXT was passed to WNetOpenEnum(), dwScope will be
       //  RESOURCE_GLOBALNET
       if(netResources[n].dwScope==RESOURCE_GLOBALNET && (netResources[n].dwUsage&RESOURCEUSAGE_CONTAINER)){
-        isContainer=TRUE;
+        isContainer=true;
 
         //  If RESOURCE_CONTEXT was passed to WNetOpenEnum(), the first entry is
         //  a "self reference". For example, starting from the network root one
@@ -792,64 +656,6 @@ void fxenumWNetContainerResource(NETRESOURCE* netResource,FXObjectListOf<FXStrin
     }
   return count;
   }
-
-
-// Hack code below for testing if volume is mounted
-
-// #if defined (HKS_NT)
-//
-// static int check_nfs (const char* name)
-// {
-// char drive[8];
-//
-// char* cp = strchr (name, ':');
-// if (cp)
-// {
-// strncpy (drive, name, cp - name);
-// drive[cp - name] = '\0';
-// }
-// else
-// {
-// drive[0] = 'A' + _getdrive() - 1;
-// drive[1] = '\0';
-// }
-//
-// strcat (drive, ":\\");
-//
-// return GetDriveType(drive) == DRIVE_REMOTE;
-// }
-//
-// #elif defined(LINUX)
-//
-// static int check_nfs (int fd)
-// {
-// struct statfs statbuf;
-// if (fstatfs(fd,&statbuf) < 0)
-// {
-// RFM_RAISE_SYSTEM_ERROR("statfs");
-// return 0;
-// }
-// if (statbuf.f_type == NFS_SUPER_MAGIC)
-// return 1;
-// else
-// return 0;
-// }
-//
-// #else
-//
-// static int check_nfs (int fd)
-// {
-//
-// struct statvfs statbuf;
-//
-// if (fstatvfs (fd, &statbuf) < 0)
-// {
-// RFM_RAISE_SYSTEM_ERROR ("fstatvfs");
-// }
-// return strncmp (statbuf.f_basetype, "nfs", 3) == 0 || strncmp
-// (statbuf.f_basetype, "NFS", 3) == 0;
-// }
-// #endif
 
 
 

@@ -3,37 +3,40 @@
 *                S p l i t t e r   W i n d o w   O b j e c t                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXSplitter.cpp,v 1.55 2006/02/20 03:32:13 fox Exp $                      *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXSplitter.h"
 
 
@@ -102,8 +105,7 @@ FXSplitter::FXSplitter(){
 
 
 // Make a splitter; it has no interior padding, and no borders
-FXSplitter::FXSplitter(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXComposite(p,opts,x,y,w,h){
+FXSplitter::FXSplitter(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXComposite(p,opts,x,y,w,h){
   flags|=FLAG_ENABLED|FLAG_SHOWN;
   defaultCursor=(options&SPLITTER_VERTICAL) ? getApp()->getDefaultCursor(DEF_VSPLIT_CURSOR) : getApp()->getDefaultCursor(DEF_HSPLIT_CURSOR);
   dragCursor=defaultCursor;
@@ -115,8 +117,7 @@ FXSplitter::FXSplitter(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint 
 
 
 // Make a splitter; it has no interior padding, and no borders
-FXSplitter::FXSplitter(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXComposite(p,opts,x,y,w,h){
+FXSplitter::FXSplitter(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXComposite(p,opts,x,y,w,h){
   flags|=FLAG_ENABLED|FLAG_SHOWN;
   defaultCursor=(options&SPLITTER_VERTICAL) ? getApp()->getDefaultCursor(DEF_VSPLIT_CURSOR) : getApp()->getDefaultCursor(DEF_HSPLIT_CURSOR);
   dragCursor=defaultCursor;
@@ -131,8 +132,8 @@ FXSplitter::FXSplitter(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,F
 
 // Get default width
 FXint FXSplitter::getDefaultWidth(){
-  register FXWindow* child;
-  register FXint wmax,w,numc;
+  FXWindow* child;
+  FXint wmax,w,numc;
   wmax=numc=0;
   if(options&SPLITTER_VERTICAL){
     for(child=getFirst(); child; child=child->getNext()){
@@ -157,8 +158,8 @@ FXint FXSplitter::getDefaultWidth(){
 
 // Get default height
 FXint FXSplitter::getDefaultHeight(){
-  register FXWindow* child;
-  register FXint hmax,h,numc;
+  FXWindow* child;
+  FXint hmax,h,numc;
   hmax=numc=0;
   if(options&SPLITTER_VERTICAL){
     for(child=getFirst(); child; child=child->getNext()){
@@ -295,7 +296,7 @@ void FXSplitter::adjustHLayout(){
     pos=window->getX()+window->getWidth();
     window->position(split,0,pos-split,height);
     pos=split-barsize;
-    for(stretcher=getFirst(); stretcher && !stretcher->shown(); stretcher=stretcher->getNext());
+    for(stretcher=getFirst(); stretcher && !stretcher->shown(); stretcher=stretcher->getNext()){}
     for(child=window->getPrev(); child; child=child->getPrev()){
       if(child->shown()){
         w=child->getWidth();
@@ -311,7 +312,7 @@ void FXSplitter::adjustHLayout(){
     pos=window->getX();
     window->position(pos,0,split-pos,height);
     pos=split+barsize;
-    for(stretcher=getLast(); stretcher && !stretcher->shown(); stretcher=stretcher->getPrev());
+    for(stretcher=getLast(); stretcher && !stretcher->shown(); stretcher=stretcher->getPrev()){}
     for(child=window->getNext(); child; child=child->getNext()){
       if(child->shown()){
         w=child->getWidth();
@@ -335,7 +336,7 @@ void FXSplitter::adjustVLayout(){
     pos=window->getY()+window->getHeight();
     window->position(0,split,width,pos-split);
     pos=split-barsize;
-    for(stretcher=getFirst(); stretcher && !stretcher->shown(); stretcher=stretcher->getNext());
+    for(stretcher=getFirst(); stretcher && !stretcher->shown(); stretcher=stretcher->getNext()){}
     for(child=window->getPrev(); child; child=child->getPrev()){
       if(child->shown()){
         w=child->getWidth();
@@ -351,7 +352,7 @@ void FXSplitter::adjustVLayout(){
     pos=window->getY();
     window->position(0,pos,width,split-pos);
     pos=split+barsize;
-    for(stretcher=getLast(); stretcher && !stretcher->shown(); stretcher=stretcher->getPrev());
+    for(stretcher=getLast(); stretcher && !stretcher->shown(); stretcher=stretcher->getPrev()){}
     for(child=window->getNext(); child; child=child->getNext()){
       if(child->shown()){
         w=child->getWidth();
@@ -368,7 +369,7 @@ void FXSplitter::adjustVLayout(){
 
 // Find child just before split
 FXWindow* FXSplitter::findHSplit(FXint pos){
-  register FXWindow* child=getFirst();
+  FXWindow* child=getFirst();
   if(options&SPLITTER_REVERSED){
     while(child){
       if(child->shown()){
@@ -391,7 +392,7 @@ FXWindow* FXSplitter::findHSplit(FXint pos){
 
 // Find child just before split
 FXWindow* FXSplitter::findVSplit(FXint pos){
-  register FXWindow* child=getFirst();
+  FXWindow* child=getFirst();
   if(options&SPLITTER_REVERSED){
     while(child){
       if(child->shown()){
@@ -414,8 +415,8 @@ FXWindow* FXSplitter::findVSplit(FXint pos){
 
 // Move the horizontal split intelligently
 void FXSplitter::moveHSplit(FXint pos){
-  register FXint smin,smax;
-  register FXuint hints;
+  FXint smin,smax;
+  FXuint hints;
   FXASSERT(window);
   hints=window->getLayoutHints();
   if(options&SPLITTER_REVERSED){
@@ -436,8 +437,8 @@ void FXSplitter::moveHSplit(FXint pos){
 
 // Move the vertical split intelligently
 void FXSplitter::moveVSplit(FXint pos){
-  register FXint smin,smax;
-  register FXuint hints;
+  FXint smin,smax;
+  FXuint hints;
   FXASSERT(window);
   hints=window->getLayoutHints();
   if(options&SPLITTER_REVERSED){
@@ -662,8 +663,8 @@ long FXSplitter::onFocusRight(FXObject*,FXSelector,void* ptr){
 // Draw the horizontal split
 void FXSplitter::drawHSplit(FXint pos){
   FXDCWindow dc(this);
-  dc.clipChildren(FALSE);
-  dc.setFunction(BLT_NOT_DST);   
+  dc.clipChildren(false);
+  dc.setFunction(BLT_NOT_DST);
   dc.fillRectangle(pos,0,barsize,height);
   }
 
@@ -671,8 +672,8 @@ void FXSplitter::drawHSplit(FXint pos){
 // Draw the vertical split
 void FXSplitter::drawVSplit(FXint pos){
   FXDCWindow dc(this);
-  dc.clipChildren(FALSE);
-  dc.setFunction(BLT_NOT_DST);  
+  dc.clipChildren(false);
+  dc.setFunction(BLT_NOT_DST);
   dc.fillRectangle(0,pos,width,barsize);
   }
 

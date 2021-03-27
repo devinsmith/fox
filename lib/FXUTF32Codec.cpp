@@ -3,30 +3,28 @@
 *                      U T F - 3 2  T e x t   C o d e c                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2006 by L.Johnson & J.van der Zijp.  All Rights Reserved.  *
+* Copyright (C) 2002,2020 by L.Johnson & J.van der Zijp.  All Rights Reserved.  *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXUTF32Codec.cpp,v 1.16 2006/01/22 17:58:50 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
-#include "FXDict.h"
 #include "FXString.h"
 #include "FXTextCodec.h"
 #include "FXUTF32Codec.h"
@@ -51,7 +49,7 @@ FXIMPLEMENT(FXUTF32BECodec,FXTextCodec,NULL,0)
 // Convert from utf32be
 FXint FXUTF32BECodec::mb2wc(FXwchar& wc,const FXchar* src,FXint nsrc) const {
   if(nsrc<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
   ((FXuchar*)&wc)[0]=src[0];
   ((FXuchar*)&wc)[1]=src[1];
   ((FXuchar*)&wc)[2]=src[2];
@@ -69,7 +67,7 @@ FXint FXUTF32BECodec::mb2wc(FXwchar& wc,const FXchar* src,FXint nsrc) const {
 // Convert to utf32be
 FXint FXUTF32BECodec::wc2mb(FXchar* dst,FXint ndst,FXwchar wc) const {
   if(ndst<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
   dst[0]=((FXuchar*)&wc)[0];
   dst[1]=((FXuchar*)&wc)[1];
   dst[2]=((FXuchar*)&wc)[2];
@@ -117,7 +115,7 @@ FXIMPLEMENT(FXUTF32LECodec,FXTextCodec,NULL,0)
 // Convert from utf32le
 FXint FXUTF32LECodec::mb2wc(FXwchar& wc,const FXchar* src,FXint nsrc) const {
   if(nsrc<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
   ((FXuchar*)&wc)[0]=src[3];
   ((FXuchar*)&wc)[1]=src[2];
   ((FXuchar*)&wc)[2]=src[1];
@@ -135,7 +133,7 @@ FXint FXUTF32LECodec::mb2wc(FXwchar& wc,const FXchar* src,FXint nsrc) const {
 // Convert to utf32le
 FXint FXUTF32LECodec::wc2mb(FXchar* dst,FXint ndst,FXwchar wc) const {
   if(ndst<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
   dst[3]=((FXuchar*)&wc)[0];
   dst[2]=((FXuchar*)&wc)[1];
   dst[1]=((FXuchar*)&wc)[2];
@@ -183,7 +181,7 @@ FXIMPLEMENT(FXUTF32Codec,FXTextCodec,NULL,0)
 // Convert utf32
 FXint FXUTF32Codec::mb2wc(FXwchar& wc,const FXchar* src,FXint nsrc) const {
   if(nsrc<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
   ((FXuchar*)&wc)[0]=src[0];
   ((FXuchar*)&wc)[1]=src[1];
   ((FXuchar*)&wc)[2]=src[2];
@@ -196,7 +194,7 @@ FXint FXUTF32Codec::mb2wc(FXwchar& wc,const FXchar* src,FXint nsrc) const {
 #endif
   if(wc==BOM_BE){
     if(nsrc<8) return -8;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
     ((FXuchar*)&wc)[0]=src[4];
     ((FXuchar*)&wc)[1]=src[5];
     ((FXuchar*)&wc)[2]=src[6];
@@ -211,7 +209,7 @@ FXint FXUTF32Codec::mb2wc(FXwchar& wc,const FXchar* src,FXint nsrc) const {
     }
   if(wc==BOM_LE){
     if(nsrc<8) return -8;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
     ((FXuchar*)&wc)[0]=src[7];
     ((FXuchar*)&wc)[1]=src[6];
     ((FXuchar*)&wc)[2]=src[5];
@@ -241,11 +239,11 @@ static inline FXint utflen(FXwchar w){
 
 // Count number of utf8 characters needed to convert multi-byte characters from src
 FXint FXUTF32Codec::mb2utflen(const FXchar* src,FXint nsrc) const {
-  register FXint len=0;
+  FXint len=0;
   FXwchar w;
   if(src && 0<nsrc){
     if(nsrc<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
     ((FXuchar*)&w)[0]=src[0];
     ((FXuchar*)&w)[1]=src[1];
     ((FXuchar*)&w)[2]=src[2];
@@ -263,7 +261,7 @@ FXint FXUTF32Codec::mb2utflen(const FXchar* src,FXint nsrc) const {
         }
       while(0<nsrc){
         if(nsrc<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
         ((FXuchar*)&w)[0]=src[0];
         ((FXuchar*)&w)[1]=src[1];
         ((FXuchar*)&w)[2]=src[2];
@@ -284,7 +282,7 @@ FXint FXUTF32Codec::mb2utflen(const FXchar* src,FXint nsrc) const {
       nsrc-=4;
       while(0<nsrc){
         if(nsrc<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
         ((FXuchar*)&w)[0]=src[3];
         ((FXuchar*)&w)[1]=src[2];
         ((FXuchar*)&w)[2]=src[1];
@@ -307,11 +305,11 @@ FXint FXUTF32Codec::mb2utflen(const FXchar* src,FXint nsrc) const {
 
 // Convert multi-byte characters from src to utf8 characters at dst
 FXint FXUTF32Codec::mb2utf(FXchar* dst,FXint ndst,const FXchar* src,FXint nsrc) const {
-  register FXint nw,len=0;
+  FXint nw,len=0;
   FXwchar w;
   if(dst && src && 0<nsrc){
     if(nsrc<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
     ((FXuchar*)&w)[0]=src[0];
     ((FXuchar*)&w)[1]=src[1];
     ((FXuchar*)&w)[2]=src[2];
@@ -329,7 +327,7 @@ FXint FXUTF32Codec::mb2utf(FXchar* dst,FXint ndst,const FXchar* src,FXint nsrc) 
         }
       while(0<nsrc){
         if(nsrc<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
         ((FXuchar*)&w)[0]=src[0];
         ((FXuchar*)&w)[1]=src[1];
         ((FXuchar*)&w)[2]=src[2];
@@ -340,10 +338,10 @@ FXint FXUTF32Codec::mb2utf(FXchar* dst,FXint ndst,const FXchar* src,FXint nsrc) 
         ((FXuchar*)&w)[1]=src[2];
         ((FXuchar*)&w)[0]=src[3];
 #endif
+        if(FX::wc2utf(w)>ndst) break;
+        nw=FX::wc2utf(dst,w);
         src+=4;
         nsrc-=4;
-        nw=wc2utf(dst,ndst,w);
-        if(nw<=0) return nw;
         len+=nw;
         dst+=nw;
         ndst-=nw;
@@ -354,7 +352,7 @@ FXint FXUTF32Codec::mb2utf(FXchar* dst,FXint ndst,const FXchar* src,FXint nsrc) 
       nsrc-=4;
       while(0<nsrc){
         if(nsrc<4) return -4;
-#if FOX_BIGENDIAN
+#if (FOX_BIGENDIAN == 1)
         ((FXuchar*)&w)[0]=src[3];
         ((FXuchar*)&w)[1]=src[2];
         ((FXuchar*)&w)[2]=src[1];
@@ -365,10 +363,10 @@ FXint FXUTF32Codec::mb2utf(FXchar* dst,FXint ndst,const FXchar* src,FXint nsrc) 
         ((FXuchar*)&w)[1]=src[1];
         ((FXuchar*)&w)[0]=src[0];
 #endif
+        if(FX::wc2utf(w)>ndst) break;
+        nw=FX::wc2utf(dst,w);
         src+=4;
         nsrc-=4;
-        nw=wc2utf(dst,ndst,w);
-        if(nw<=0) return nw;
         len+=nw;
         dst+=nw;
         ndst-=nw;
@@ -381,8 +379,8 @@ FXint FXUTF32Codec::mb2utf(FXchar* dst,FXint ndst,const FXchar* src,FXint nsrc) 
 
 // Convert to utf32
 FXint FXUTF32Codec::wc2mb(FXchar* dst,FXint ndst,FXwchar wc) const {
-  if(ndst<4) return -4;
-#if FOX_BIGENDIAN
+  if(ndst<4) return 0;
+#if (FOX_BIGENDIAN == 1)
   dst[0]=((FXuchar*)&wc)[0];
   dst[1]=((FXuchar*)&wc)[1];
   dst[2]=((FXuchar*)&wc)[2];
@@ -399,13 +397,12 @@ FXint FXUTF32Codec::wc2mb(FXchar* dst,FXint ndst,FXwchar wc) const {
 
 // Count multi-byte characters characters needed to convert utf8 from src
 FXint FXUTF32Codec::utf2mblen(const FXchar* src,FXint nsrc) const {
-  register FXint nr,len=0;
-  FXwchar w;
+  FXint nr,len=0;
   if(src && 0<nsrc){
     len+=4;
     while(0<nsrc){
-      nr=utf2wc(w,src,nsrc);
-      if(nr<=0) return nr;
+      nr=FX::wclen(src);
+      if(nr>nsrc) break;
       src+=nr;
       nsrc-=nr;
       len+=4;
@@ -417,10 +414,10 @@ FXint FXUTF32Codec::utf2mblen(const FXchar* src,FXint nsrc) const {
 
 // Convert utf8 characters at src to multi-byte characters at dst
 FXint FXUTF32Codec::utf2mb(FXchar* dst,FXint ndst,const FXchar* src,FXint nsrc) const {
-  register FXint nr,len=0;
+  FXint nr,len=0;
   FXwchar w;
   if(dst && src && 0<nsrc){
-    if(ndst<4) return -4;
+    if(ndst<4) return 0;
     dst[0]='\0';
     dst[1]='\0';
     dst[2]='\xFE';
@@ -428,12 +425,11 @@ FXint FXUTF32Codec::utf2mb(FXchar* dst,FXint ndst,const FXchar* src,FXint nsrc) 
     dst+=4;
     len+=4;
     while(0<nsrc){
-      nr=utf2wc(w,src,nsrc);
-      if(nr<=0) return nr;
-      src+=nr;
-      nsrc-=nr;
-      if(ndst<4) return -4;
-#if FOX_BIGENDIAN
+      nr=FX::wclen(src);
+      if(nr>nsrc) break;
+      w=wc(src);
+      if(ndst<4) break;
+#if (FOX_BIGENDIAN == 1)
       dst[0]=((FXuchar*)&w)[0];
       dst[1]=((FXuchar*)&w)[1];
       dst[2]=((FXuchar*)&w)[2];
@@ -444,6 +440,8 @@ FXint FXUTF32Codec::utf2mb(FXchar* dst,FXint ndst,const FXchar* src,FXint nsrc) 
       dst[2]=((FXuchar*)&w)[1];
       dst[3]=((FXuchar*)&w)[0];
 #endif
+      src+=nr;
+      nsrc-=nr;
       len+=4;
       dst+=4;
       ndst-=4;

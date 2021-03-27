@@ -3,27 +3,26 @@
 *                        P o s t S c r i p t   O u t p u t                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2003,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2003,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxpsio.cpp,v 1.11.2.1 2006/04/14 01:21:01 fox Exp $                          *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
 
@@ -43,7 +42,12 @@ using namespace FX;
 namespace FX {
 
 
-extern FXAPI bool fxsavePS(FXStream& store,const FXColor *data,FXint width,FXint height,FXint paperw=612,FXint paperh=792,FXint margin=35,bool color=true);
+#ifndef FXLOADXBM
+extern FXAPI FXbool fxsavePS(FXStream& store,const FXColor *data,FXint width,FXint height,FXint paperw=612,FXint paperh=792,FXint margin=35,FXbool color=true);
+#endif
+
+// Furnish our own version
+extern FXAPI FXint __vsnprintf(FXchar* string,FXint length,const FXchar* format,va_list args);
 
 
 // Spit output to stream
@@ -51,20 +55,16 @@ static void output(FXStream& store,const char* fmt,...){
   FXchar buffer[1024]; FXint len;
   va_list args;
   va_start(args,fmt);
-#if defined(WIN32) || defined(HAVE_VSNPRINTF)
-  len=vsnprintf(buffer,sizeof(buffer),fmt,args);
-#else
-  len=vsprintf(buffer,fmt,args);
-#endif
+  len=__vsnprintf(buffer,sizeof(buffer),fmt,args);
   va_end(args);
   store.save(buffer,len);
   }
 
 
 // Save image to PostScript file
-bool fxsavePS(FXStream& store,const FXColor* data,FXint width,FXint height,FXint paperw,FXint paperh,FXint margin,bool color){
-  register FXint bx,by,bxx,byy,x,y;
-  register FXuchar *p;
+FXbool fxsavePS(FXStream& store,const FXColor* data,FXint width,FXint height,FXint paperw,FXint paperh,FXint margin,FXbool color){
+  FXint bx,by,bxx,byy,x,y;
+  FXuchar *p;
 
   // Must make sense
   if(!data || width<=0 || height<=0 || paperh<=0 || paperw<=0 || margin<=0) return false;
@@ -129,9 +129,9 @@ bool fxsavePS(FXStream& store,const FXColor* data,FXint width,FXint height,FXint
     p=(FXuchar*)data;
     for(y=0; y<height; y++){
       for(x=0; x<width; x++,p+=4){
-        output(store,"%02x",p[0]);
-        output(store,"%02x",p[1]);
         output(store,"%02x",p[2]);
+        output(store,"%02x",p[1]);
+        output(store,"%02x",p[0]);
         }
       output(store, "\n");
       }
@@ -154,7 +154,7 @@ bool fxsavePS(FXStream& store,const FXColor* data,FXint width,FXint height,FXint
     p=(FXuchar*)data;
     for(y=0; y<height; y++){
       for(x=0; x<width; x++,p+=4){
-        output(store,"%02x",(77*(FXuint)p[0]+151*(FXuint)p[1]+28*(FXuint)p[2])/256);
+        output(store,"%02x",(77*(FXuint)p[2]+151*(FXuint)p[1]+28*(FXuint)p[0])/256);
         }
       output(store,"\n");
       }

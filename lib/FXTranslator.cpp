@@ -3,52 +3,56 @@
 *                       M e s s a g e   T r a n s l a t o r                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXTranslator.cpp,v 1.13 2006/01/22 17:58:49 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
 #include "FXObject.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
+#include "FXSystem.h"
 #include "FXTranslator.h"
 
 
 /*
   Notes:
-  - The input message string may be not UTF-8 but some other code
-    page, the "developer's code page".  If we allow for explicit
-    setting of the "developer's code page" we can perform another
-    translation from code-page -> utf-8 here as well.  This will
-    be convenient since this allows e.g. a russion programmer to
-    just use his editor in koi8 setting.
-  - The above does mean we need to return FXString instead of a
-    pointer, perhaps...
+  - Since the original input string is potentially used as output string if no
+    translation is available, the original input string needs to be UTF8 also.
+  - The tr() function has an extra parameter count to allow translations which
+    require special plural forms dependent on some number.  If set to -1 (default),
+    the first available translation is used.
+  -
 */
+
+#define TOPIC_CONSTRUCT 1000
+#define TOPIC_TRANSLATE 1010
 
 using namespace FX;
 
@@ -62,8 +66,8 @@ FXIMPLEMENT(FXTranslator,FXObject,NULL,0)
 
 
 // Construct translator
-FXTranslator::FXTranslator(FXApp* a):app(a),codec(NULL){
-  FXTRACE((100,"%p->FXTranslator::FXTranslator\n",this));
+FXTranslator::FXTranslator(){
+  FXTRACE((TOPIC_CONSTRUCT,"FXTranslator::FXTranslator()\n"));
   }
 
 /*
@@ -107,8 +111,8 @@ FXTranslator::FXTranslator(FXApp* a):app(a),codec(NULL){
 
 
 // Translate a string
-const FXchar* FXTranslator::tr(const FXchar* context,const FXchar* message,const FXchar* hint) const {
-  FXTRACE((200,"tr context: '%s' message: '%s' hint: '%s'.\n",context,message,hint?hint:""));
+const FXchar* FXTranslator::tr(const FXchar* context,const FXchar* message,const FXchar* hint,FXint count) const {
+  FXTRACE((TOPIC_TRANSLATE,"tr context: '%s' message: '%s' hint: '%s' count: %d.\n",context,message,hint?hint:"",count));
   return message;
   }
 
@@ -127,9 +131,7 @@ void FXTranslator::load(FXStream& store){
 
 // Destroy translator
 FXTranslator::~FXTranslator(){
-  FXTRACE((100,"%p->FXTranslator::~FXTranslator\n",this));
-  app=(FXApp*)-1L;
-  codec=(FXTextCodec*)-1L;
+  FXTRACE((TOPIC_CONSTRUCT,"FXTranslator::~FXTranslator()\n"));
   }
 
 }

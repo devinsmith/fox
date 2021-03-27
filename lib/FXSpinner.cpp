@@ -1,39 +1,42 @@
 /********************************************************************************
 *                                                                               *
-*                             S p i n   B u t t o n                             *
+*                          S p i n n e r   W i d g e t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Lyle Johnson.   All Rights Reserved.               *
+* Copyright (C) 1998,2020 by Lyle Johnson.   All Rights Reserved.               *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXSpinner.cpp,v 1.63 2006/02/07 01:17:26 fox Exp $                       *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXLabel.h"
 #include "FXTextField.h"
@@ -69,8 +72,8 @@ FXDEFMAP(FXSpinner) FXSpinnerMap[]={
   FXMAPFUNC(SEL_KEYPRESS,0,FXSpinner::onKeyPress),
   FXMAPFUNC(SEL_KEYRELEASE,0,FXSpinner::onKeyRelease),
   FXMAPFUNC(SEL_FOCUS_SELF,0,FXSpinner::onFocusSelf),
-  FXMAPFUNC(SEL_COMMAND,FXSpinner::ID_ENTRY,FXSpinner::onCmdEntry),
   FXMAPFUNC(SEL_CHANGED,FXSpinner::ID_ENTRY,FXSpinner::onChgEntry),
+  FXMAPFUNC(SEL_COMMAND,FXSpinner::ID_ENTRY,FXSpinner::onCmdEntry),
   FXMAPFUNC(SEL_MOUSEWHEEL,FXSpinner::ID_ENTRY,FXSpinner::onWheelEntry),
   FXMAPFUNC(SEL_UPDATE,FXSpinner::ID_INCREMENT,FXSpinner::onUpdIncrement),
   FXMAPFUNC(SEL_COMMAND,FXSpinner::ID_INCREMENT,FXSpinner::onCmdIncrement),
@@ -79,6 +82,8 @@ FXDEFMAP(FXSpinner) FXSpinnerMap[]={
   FXMAPFUNC(SEL_COMMAND,FXSpinner::ID_SETVALUE,FXSpinner::onCmdSetValue),
   FXMAPFUNC(SEL_COMMAND,FXSpinner::ID_SETINTVALUE,FXSpinner::onCmdSetIntValue),
   FXMAPFUNC(SEL_COMMAND,FXSpinner::ID_GETINTVALUE,FXSpinner::onCmdGetIntValue),
+  FXMAPFUNC(SEL_COMMAND,FXSpinner::ID_SETLONGVALUE,FXSpinner::onCmdSetLongValue),
+  FXMAPFUNC(SEL_COMMAND,FXSpinner::ID_GETLONGVALUE,FXSpinner::onCmdGetLongValue),
   FXMAPFUNC(SEL_COMMAND,FXSpinner::ID_SETINTRANGE,FXSpinner::onCmdSetIntRange),
   FXMAPFUNC(SEL_COMMAND,FXSpinner::ID_GETINTRANGE,FXSpinner::onCmdGetIntRange),
   };
@@ -102,8 +107,7 @@ FXSpinner::FXSpinner(){
 
 
 // Construct spinner out of two buttons and a text field
-FXSpinner::FXSpinner(FXComposite *p,FXint cols,FXObject *tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXPacker(p,opts,x,y,w,h,0,0,0,0,0,0){
+FXSpinner::FXSpinner(FXComposite *p,FXint cols,FXObject *tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXPacker(p,opts,x,y,w,h,0,0,0,0,0,0){
   flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
@@ -180,6 +184,18 @@ void FXSpinner::layout(){
   }
 
 
+// Notification that focus moved to new child
+void FXSpinner::changeFocus(FXWindow *child){
+  FXPacker::changeFocus(child);
+  if(child){
+    flags&=~FLAG_UPDATE;
+    }
+  else{
+    flags|=FLAG_UPDATE;
+    }
+  }
+
+
 // Respond to increment message
 long FXSpinner::onUpdIncrement(FXObject* sender,FXSelector,void*){
   if(isEnabled() && ((options&SPIN_CYCLIC) || (pos<range[1])))
@@ -193,7 +209,7 @@ long FXSpinner::onUpdIncrement(FXObject* sender,FXSelector,void*){
 // Respond to increment message
 long FXSpinner::onCmdIncrement(FXObject*,FXSelector,void*){
   if(isEnabled() && isEditable()){
-    increment(TRUE);
+    increment(true);
     return 1;
     }
   return 0;
@@ -213,7 +229,7 @@ long FXSpinner::onUpdDecrement(FXObject* sender,FXSelector,void*){
 // Respond to decrement message
 long FXSpinner::onCmdDecrement(FXObject*,FXSelector,void*){
   if(isEnabled() && isEditable()){
-    decrement(TRUE);
+    decrement(true);
     return 1;
     }
   return 0;
@@ -222,15 +238,14 @@ long FXSpinner::onCmdDecrement(FXObject*,FXSelector,void*){
 
 // Rolling mouse wheel in text field works as if hitting up or down buttons
 long FXSpinner::onWheelEntry(FXObject*,FXSelector,void* ptr){
-  FXEvent* event=(FXEvent*)ptr;
   if(isEnabled() && isEditable()){
-    if(event->code>0){
-      if(event->state&CONTROLMASK) incrementByAmount(incr*10,TRUE);
-      else increment(TRUE);
+    if(((FXEvent*)ptr)->code>0){
+      if(((FXEvent*)ptr)->state&CONTROLMASK) incrementByAmount(incr*10,true);
+      else increment(true);
       }
-    else{
-      if(event->state&CONTROLMASK) decrementByAmount(incr*10,TRUE);
-      else decrement(TRUE);
+    else if(((FXEvent*)ptr)->code<0){
+      if(((FXEvent*)ptr)->state&CONTROLMASK) decrementByAmount(incr*10,true);
+      else decrement(true);
       }
     return 1;
     }
@@ -240,7 +255,7 @@ long FXSpinner::onWheelEntry(FXObject*,FXSelector,void* ptr){
 
 // Text field changed
 long FXSpinner::onChgEntry(FXObject*,FXSelector,void*){
-  register FXint value=FXIntVal(textField->getText());
+  FXint value=textField->getText().toInt();
   if(value<range[0]) value=range[0];
   if(value>range[1]) value=range[1];
   if(value!=pos){
@@ -253,7 +268,7 @@ long FXSpinner::onChgEntry(FXObject*,FXSelector,void*){
 
 // Text field command
 long FXSpinner::onCmdEntry(FXObject*,FXSelector,void*){
-  textField->setText(FXStringVal(pos));       // Put back adjusted value
+  textField->setText(FXString::value(pos));       // Put back adjusted value
   if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXival)pos);
   return 1;
   }
@@ -268,7 +283,7 @@ long FXSpinner::onKeyPress(FXObject* sender,FXSelector sel,void* ptr){
       case KEY_Up:
       case KEY_KP_Up:
         if(isEditable()){
-          increment(TRUE);
+          increment(true);
           }
         else{
           getApp()->beep();
@@ -277,7 +292,7 @@ long FXSpinner::onKeyPress(FXObject* sender,FXSelector sel,void* ptr){
       case KEY_Down:
       case KEY_KP_Down:
         if(isEditable()){
-          decrement(TRUE);
+          decrement(true);
           }
         else{
           getApp()->beep();
@@ -333,6 +348,20 @@ long FXSpinner::onCmdSetIntValue(FXObject*,FXSelector,void* ptr){
 // Obtain value from spinner
 long FXSpinner::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
   *((FXint*)ptr)=getValue();
+  return 1;
+  }
+
+
+// Update value from a message
+long FXSpinner::onCmdSetLongValue(FXObject*,FXSelector,void* ptr){
+  setValue((FXint)*((FXlong*)ptr));
+  return 1;
+  }
+
+
+// Obtain value with a message
+long FXSpinner::onCmdGetLongValue(FXObject*,FXSelector,void* ptr){
+  *((FXlong*)ptr)=(FXlong)getValue();
   return 1;
   }
 
@@ -397,7 +426,7 @@ FXbool FXSpinner::isCyclic() const {
 
 // Set spinner cyclic mode
 void FXSpinner::setCyclic(FXbool cyclic){
-  if(cyclic) options|=SPIN_CYCLIC; else options&=~SPIN_CYCLIC;
+  options^=((0-cyclic)^options)&SPIN_CYCLIC;
   }
 
 
@@ -417,8 +446,8 @@ void FXSpinner::setValue(FXint value,FXbool notify){
   if(value<range[0]) value=range[0];
   if(value>range[1]) value=range[1];
   if(pos!=value){
-    textField->setText(FXStringVal(value));
     pos=value;
+    textField->setText(FXString::value(value));
     if(notify && target){target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXival)pos);}
     }
   }
@@ -438,8 +467,8 @@ FXbool FXSpinner::isTextVisible() const {
 
 
 // Change text visibility
-void FXSpinner::setTextVisible(FXbool shown){
-  FXuint opts=shown?(options&~SPIN_NOTEXT):(options|SPIN_NOTEXT);
+void FXSpinner::setTextVisible(FXbool flag){
+  FXuint opts=(((0-flag)^options)&SPIN_NOTEXT)^options;
   if(options!=opts){
     options=opts;
     recalc();
@@ -490,7 +519,7 @@ const FXString& FXSpinner::getTipText() const {
 
 // Change spinner style
 void FXSpinner::setSpinnerStyle(FXuint style){
-  FXuint opts=(options&~SPINNER_MASK) | (style&SPINNER_MASK);
+  FXuint opts=((style^options)&SPINNER_MASK)^options;
   if(options!=opts){
     if(opts&SPIN_NOMIN) range[0]=INTMIN;
     if(opts&SPIN_NOMAX) range[1]=INTMAX;
@@ -512,7 +541,7 @@ void FXSpinner::setEditable(FXbool edit){
   }
 
 
-// Return TRUE if text field is editable
+// Return true if text field is editable
 FXbool FXSpinner::isEditable() const {
   return textField->isEditable();
   }

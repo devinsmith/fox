@@ -3,37 +3,40 @@
 *                        G I F   C u r s o r   O b j e c t                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2006 by Daniel Gehriger.   All Rights Reserved.            *
+* Copyright (C) 2000,2020 by Daniel Gehriger.   All Rights Reserved.            *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXGIFCursor.cpp,v 1.33 2006/01/22 17:58:27 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
+#include "FXElement.h"
 #include "FXStream.h"
 #include "FXMemoryStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXGIFCursor.h"
 
@@ -66,20 +69,18 @@ FXIMPLEMENT(FXGIFCursor,FXCursor,NULL,0)
 // Constructor
 FXGIFCursor::FXGIFCursor(FXApp* a,const void *pix,FXint hx,FXint hy):FXCursor(a,NULL,0,0,0,0){
   if(pix){
-    FXMemoryStream ms;
-    ms.open(FXStreamLoad,(FXuchar*)pix);
-    fxloadGIF(ms,data,width,height);
+    FXMemoryStream ms(FXStreamLoad,(FXuchar*)pix);
+    fxloadGIF(ms,data,width,height,true);
     hotx=FXCLAMP(0,hx,width-1);
     hoty=FXCLAMP(0,hy,height-1);
     options|=CURSOR_OWNED;
-    ms.close();
     }
   }
 
 
 // Save object to stream
-bool FXGIFCursor::savePixels(FXStream& store) const {
-  if(fxsaveGIF(store,data,width,height)){
+FXbool FXGIFCursor::savePixels(FXStream& store) const {
+  if(fxsaveGIF(store,data,width,height,true)){
     return true;
     }
   return false;
@@ -87,9 +88,9 @@ bool FXGIFCursor::savePixels(FXStream& store) const {
 
 
 // Load object from stream
-bool FXGIFCursor::loadPixels(FXStream& store){
-  if(options&CURSOR_OWNED){FXFREE(&data);}
-  if(fxloadGIF(store,data,width,height)){
+FXbool FXGIFCursor::loadPixels(FXStream& store){
+  if(options&CURSOR_OWNED){freeElms(data);}
+  if(fxloadGIF(store,data,width,height,true)){
     options|=CURSOR_OWNED;
     return true;
     }

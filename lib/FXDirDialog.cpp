@@ -3,30 +3,29 @@
 *                D i r e c t o r y   S e l e c t i o n   D i a l o g            *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDirDialog.cpp,v 1.27 2006/01/22 17:58:22 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
@@ -34,14 +33,14 @@
 #include "FXRectangle.h"
 #include "FXStat.h"
 #include "FXFile.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
+#include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXRecentFiles.h"
-#include "FXId.h"
-#include "FXFont.h"
-#include "FXDrawable.h"
-#include "FXWindow.h"
 #include "FXFrame.h"
 #include "FXLabel.h"
 #include "FXButton.h"
@@ -58,7 +57,8 @@
 
 
 /*
-  To do:
+  Notes:
+  - Wraps the FXDirSelector directory selection mega widget.
 */
 
 using namespace FX;
@@ -72,15 +72,13 @@ FXIMPLEMENT(FXDirDialog,FXDialogBox,NULL,0)
 
 
 // Construct directory dialog box
-FXDirDialog::FXDirDialog(FXWindow* owner,const FXString& name,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXDialogBox(owner,name,opts|DECOR_TITLE|DECOR_BORDER|DECOR_RESIZE|DECOR_CLOSE,x,y,w,h,0,0,0,0,4,4){
+FXDirDialog::FXDirDialog(FXWindow* own,const FXString& name,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXDialogBox(own,name,opts|DECOR_TITLE|DECOR_BORDER|DECOR_RESIZE|DECOR_CLOSE,x,y,w,h,4,4,4,4,4,4){
   initdialog();
   }
 
 
 // Construct directory dialog box
-FXDirDialog::FXDirDialog(FXApp* a,const FXString& name,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXDialogBox(a,name,opts|DECOR_TITLE|DECOR_BORDER|DECOR_RESIZE|DECOR_CLOSE,x,y,w,h,0,0,0,0,4,4){
+FXDirDialog::FXDirDialog(FXApp* a,const FXString& name,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXDialogBox(a,name,opts|DECOR_TITLE|DECOR_BORDER|DECOR_RESIZE|DECOR_CLOSE,x,y,w,h,4,4,4,4,4,4){
   initdialog();
   }
 
@@ -117,7 +115,19 @@ FXString FXDirDialog::getDirectory() const {
   }
 
 
-// Return TRUE if showing files as well as directories
+// Change wildcard matching pattern
+void FXDirDialog::setPattern(const FXString& ptrn){
+  dirbox->setPattern(ptrn);
+  }
+
+
+// Return wildcard pattern
+FXString FXDirDialog::getPattern() const {
+  return dirbox->getPattern();
+  }
+
+
+// Return true if showing files as well as directories
 FXbool FXDirDialog::showFiles() const {
   return dirbox->showFiles();
   }
@@ -129,7 +139,7 @@ void FXDirDialog::showFiles(FXbool showing){
   }
 
 
-// Return TRUE if showing hidden files
+// Return true if showing hidden files
 FXbool FXDirDialog::showHiddenFiles() const {
   return dirbox->showHiddenFiles();
   }
@@ -162,6 +172,18 @@ void FXDirDialog::setDirBoxStyle(FXuint style){
 // Return Directory List style
 FXuint FXDirDialog::getDirBoxStyle() const {
   return dirbox->getDirBoxStyle();
+  }
+
+
+// Change file associations
+void FXDirDialog::setAssociations(FXFileAssociations* assoc,FXbool owned){
+  dirbox->setAssociations(assoc,owned);
+  }
+
+
+// Return file associations
+FXFileAssociations* FXDirDialog::getAssociations() const {
+  return dirbox->getAssociations();
   }
 
 

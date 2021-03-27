@@ -3,32 +3,32 @@
 *           S i n g l e - P r e c i s i o n    R a n g e    C l a s s           *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2004,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2004,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXRangef.cpp,v 1.14 2006/01/22 17:58:38 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXVec2f.h"
 #include "FXVec3f.h"
 #include "FXVec4f.h"
+#include "FXMat4f.h"
 #include "FXSpheref.h"
 #include "FXRangef.h"
 
@@ -53,28 +53,28 @@ FXRangef::FXRangef(const FXSpheref& sphere):
 
 // Longest side
 FXfloat FXRangef::longest() const {
-  register FXfloat x=upper.x-lower.x;
-  register FXfloat y=upper.y-lower.y;
-  register FXfloat z=upper.z-lower.z;
-  return FXMAX3(x,y,z);
+  FXfloat x=upper.x-lower.x;
+  FXfloat y=upper.y-lower.y;
+  FXfloat z=upper.z-lower.z;
+  return Math::fmax(Math::fmax(x,y),z);
   }
 
 
 // Shortest side
 FXfloat FXRangef::shortest() const {
-  register FXfloat x=upper.x-lower.x;
-  register FXfloat y=upper.y-lower.y;
-  register FXfloat z=upper.z-lower.z;
-  return FXMIN3(x,y,z);
+  FXfloat x=upper.x-lower.x;
+  FXfloat y=upper.y-lower.y;
+  FXfloat z=upper.z-lower.z;
+  return Math::fmin(Math::fmin(x,y),z);
   }
 
 
 // Length of diagonal
 FXfloat FXRangef::diameter() const {
-  register FXfloat x=upper.x-lower.x;
-  register FXfloat y=upper.y-lower.y;
-  register FXfloat z=upper.z-lower.z;
-  return sqrtf(x*x+y*y+z*z);
+  FXfloat x=upper.x-lower.x;
+  FXfloat y=upper.y-lower.y;
+  FXfloat z=upper.z-lower.z;
+  return Math::sqrt(x*x+y*y+z*z);
   }
 
 
@@ -97,40 +97,43 @@ FXVec3f FXRangef::center() const {
 
 
 // Test if empty
-bool FXRangef::empty() const {
+FXbool FXRangef::empty() const {
   return upper.x<lower.x || upper.y<lower.y || upper.z<lower.z;
   }
 
 
 // Test if box contains point x,y,z
-bool FXRangef::contains(FXfloat x,FXfloat y,FXfloat z) const {
+FXbool FXRangef::contains(FXfloat x,FXfloat y,FXfloat z) const {
   return lower.x<=x && x<=upper.x && lower.y<=y && y<=upper.y && lower.z<=z && z<=upper.z;
   }
 
 
 // Test if box contains point p
-bool FXRangef::contains(const FXVec3f& p) const {
+FXbool FXRangef::contains(const FXVec3f& p) const {
   return lower.x<=p.x && p.x<=upper.x && lower.y<=p.y && p.y<=upper.y && lower.z<=p.z && p.z<=upper.z;
   }
 
 
 // Test if box contains another box
-bool FXRangef::contains(const FXRangef& bounds) const {
+FXbool FXRangef::contains(const FXRangef& bounds) const {
   return lower.x<=bounds.lower.x && bounds.upper.x<=upper.x && lower.y<=bounds.lower.y && bounds.upper.y<=upper.y && lower.z<=bounds.lower.z && bounds.upper.z<=upper.z;
   }
 
 
 // Test if box contains sphere
-bool FXRangef::contains(const FXSpheref& sphere) const {
+FXbool FXRangef::contains(const FXSpheref& sphere) const {
   return lower.x<=sphere.center.x-sphere.radius && sphere.center.x+sphere.radius<=upper.x && lower.y<=sphere.center.y-sphere.radius && sphere.center.y+sphere.radius<=upper.y && lower.z<=sphere.center.z-sphere.radius && sphere.center.z+sphere.radius<=upper.z;
   }
 
 
 // Include point into range
 FXRangef& FXRangef::include(FXfloat x,FXfloat y,FXfloat z){
-  if(x<lower.x) lower.x=x; if(x>upper.x) upper.x=x;
-  if(y<lower.y) lower.y=y; if(y>upper.y) upper.y=y;
-  if(z<lower.z) lower.z=z; if(z>upper.z) upper.z=z;
+  lower.x=Math::fmin(x,lower.x);
+  lower.y=Math::fmin(y,lower.y);
+  lower.z=Math::fmin(z,lower.z);
+  upper.x=Math::fmax(x,upper.x);
+  upper.y=Math::fmax(y,upper.y);
+  upper.z=Math::fmax(z,upper.z);
   return *this;
   }
 
@@ -143,9 +146,12 @@ FXRangef& FXRangef::include(const FXVec3f& v){
 
 // Include given box into box's range
 FXRangef& FXRangef::include(const FXRangef& box){
-  if(box.lower.x<lower.x) lower.x=box.lower.x; if(box.upper.x>upper.x) upper.x=box.upper.x;
-  if(box.lower.y<lower.y) lower.y=box.lower.y; if(box.upper.y>upper.y) upper.y=box.upper.y;
-  if(box.lower.z<lower.z) lower.z=box.lower.z; if(box.upper.z>upper.z) upper.z=box.upper.z;
+  lower.x=Math::fmin(box.lower.x,lower.x);
+  lower.y=Math::fmin(box.lower.y,lower.y);
+  lower.z=Math::fmin(box.lower.z,lower.z);
+  upper.x=Math::fmax(box.upper.x,upper.x);
+  upper.y=Math::fmax(box.upper.y,upper.y);
+  upper.z=Math::fmax(box.upper.z,upper.z);
   return *this;
   }
 
@@ -154,15 +160,18 @@ FXRangef& FXRangef::include(const FXRangef& box){
 FXRangef& FXRangef::include(const FXSpheref& sphere){
   FXVec3f lo(sphere.center.x-sphere.radius,sphere.center.y-sphere.radius,sphere.center.z-sphere.radius);
   FXVec3f hi(sphere.center.x+sphere.radius,sphere.center.y+sphere.radius,sphere.center.z+sphere.radius);
-  if(lo.x<lower.x) lower.x=lo.x; if(hi.x>upper.x) upper.x=hi.x;
-  if(lo.y<lower.y) lower.y=lo.y; if(hi.y>upper.y) upper.y=hi.y;
-  if(lo.z<lower.z) lower.z=lo.z; if(hi.z>upper.z) upper.z=hi.z;
+  lower.x=Math::fmin(lo.x,lower.x);
+  lower.y=Math::fmin(lo.y,lower.y);
+  lower.z=Math::fmin(lo.z,lower.z);
+  upper.x=Math::fmax(hi.x,upper.x);
+  upper.y=Math::fmax(hi.y,upper.y);
+  upper.z=Math::fmax(hi.z,upper.z);
   return *this;
   }
 
 
 // Test if overlap
-bool overlap(const FXRangef& a,const FXRangef& b){
+FXbool overlap(const FXRangef& a,const FXRangef& b){
   return a.upper.x>=b.lower.x && a.lower.x<=b.upper.x && a.upper.y>=b.lower.y && a.lower.y<=b.upper.y && a.upper.z>=b.lower.z && a.lower.z<=b.upper.z;
   }
 
@@ -224,47 +233,81 @@ FXint FXRangef::intersect(const FXVec4f& plane) const {
 
 
 // Intersect box with ray u-v
-bool FXRangef::intersect(const FXVec3f& u,const FXVec3f& v){
-  register FXfloat d,ni,fi,t;
-  register FXfloat f= FLT_MAX;
-  register FXfloat n=-FLT_MAX;
-  d = v.x-u.x;
-  if(d==0.0f){
-    if((upper.x<u.x) || (u.x<lower.x)) return false;
+FXbool FXRangef::intersect(const FXVec3f& u,const FXVec3f& v) const {
+  FXfloat hits[2];
+  return intersect(u,v-u,hits) && 0.0f<=hits[1] && hits[0]<=1.0f;
+  }
+
+
+// Intersect box with ray pos+lambda*dir, returning true if hit
+FXbool FXRangef::intersect(const FXVec3f& pos,const FXVec3f& dir,FXfloat hit[]) const {
+  FXfloat f= FLT_MAX;
+  FXfloat n=-FLT_MAX;
+  FXfloat ni,fi;
+  if(__likely(dir.x!=0.0f)){
+    if(0.0f<dir.x){
+      ni=(lower.x-pos.x)/dir.x;
+      fi=(upper.x-pos.x)/dir.x;
+      }
+    else{
+      ni=(upper.x-pos.x)/dir.x;
+      fi=(lower.x-pos.x)/dir.x;
+      }
+    if(ni>n) n=ni;
+    if(fi<f) f=fi;
     }
   else{
-    ni = (lower.x-u.x)/d;
-    fi = (upper.x-u.x)/d;
-    if(ni>fi) FXSWAP(ni,fi,t);
+    if((pos.x<lower.x) || (pos.x>upper.x)) return false;
+    }
+  if(__likely(dir.y!=0.0f)){
+    if(0.0f<dir.y){
+      ni=(lower.y-pos.y)/dir.y;
+      fi=(upper.y-pos.y)/dir.y;
+      }
+    else{
+      ni=(upper.y-pos.y)/dir.y;
+      fi=(lower.y-pos.y)/dir.y;
+      }
     if(ni>n) n=ni;
     if(fi<f) f=fi;
     if(n>f) return false;
     }
-  d = v.y-u.y;
-  if(d==0.0f){
-    if((upper.y<u.y) || (u.y<lower.y)) return false;
-    }
   else{
-    ni = (lower.y-u.y)/d;
-    fi = (upper.y-u.y)/d;
-    if(ni>fi) FXSWAP(ni,fi,t);
+    if((pos.y<lower.y) || (pos.y>upper.y)) return false;
+    }
+  if(__likely(dir.z!=0.0f)){
+    if(0.0f<dir.z){
+      ni=(lower.z-pos.z)/dir.z;
+      fi=(upper.z-pos.z)/dir.z;
+      }
+    else{
+      ni=(upper.z-pos.z)/dir.z;
+      fi=(lower.z-pos.z)/dir.z;
+      }
     if(ni>n) n=ni;
     if(fi<f) f=fi;
     if(n>f) return false;
     }
-  d = v.z-u.z;
-  if(d==0.0f){
-    if((upper.z<u.z) || (u.z<lower.z)) return false;
-    }
   else{
-    ni = (lower.z-u.z)/d;
-    fi = (upper.z-u.z)/d;
-    if(ni>fi) FXSWAP(ni,fi,t);
-    if(ni>n) n=ni;
-    if(fi<f) f=fi;
-    if(n>f) return false;
+    if((pos.z<lower.z) || (pos.z>upper.z)) return false;
     }
+  hit[0]=n;
+  hit[1]=f;
   return true;
+  }
+
+
+// Transform range by 4x4 matrix
+FXRangef FXRangef::transform(const FXMat4f& mat) const {
+  FXRangef result(corner(0)*mat);
+  result.include(corner(1)*mat);
+  result.include(corner(2)*mat);
+  result.include(corner(3)*mat);
+  result.include(corner(4)*mat);
+  result.include(corner(5)*mat);
+  result.include(corner(6)*mat);
+  result.include(corner(7)*mat);
+  return result;
   }
 
 

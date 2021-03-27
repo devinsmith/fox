@@ -3,42 +3,45 @@
 *                         T o o l   T i p   W i d g e t                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXToolTip.cpp,v 1.24.2.4 2007/03/08 01:51:53 fox Exp $                       *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
-#include "fxpriv.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
 #include "FXCursor.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXToolTip.h"
+#include "fxpriv.h"
 
 /*
   Notes:
@@ -60,8 +63,8 @@ namespace FX {
 
 // Map
 FXDEFMAP(FXToolTip) FXToolTipMap[]={
-  FXMAPFUNC(SEL_PAINT,0,FXToolTip::onPaint),
   FXMAPFUNC(SEL_UPDATE,0,FXToolTip::onUpdate),
+  FXMAPFUNC(SEL_PAINT,0,FXToolTip::onPaint),
   FXMAPFUNC(SEL_TIMEOUT,FXToolTip::ID_TIP_SHOW,FXToolTip::onTipShow),
   FXMAPFUNC(SEL_TIMEOUT,FXToolTip::ID_TIP_HIDE,FXToolTip::onTipHide),
   FXMAPFUNC(SEL_COMMAND,FXToolTip::ID_SETSTRINGVALUE,FXToolTip::onCmdSetStringValue),
@@ -77,34 +80,33 @@ FXIMPLEMENT(FXToolTip,FXShell,FXToolTipMap,ARRAYNUMBER(FXToolTipMap))
 FXToolTip::FXToolTip(){
   font=NULL;
   textColor=0;
-  popped=FALSE;
+  popped=false;
   }
 
 
 // Create a toplevel window
-FXToolTip::FXToolTip(FXApp* a,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXShell(a,opts,x,y,w,h),label("Tooltip"){
+FXToolTip::FXToolTip(FXApp* a,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXShell(a,opts,x,y,w,h),label("Tooltip"){
   font=getApp()->getNormalFont();
   textColor=getApp()->getTipforeColor();
   backColor=getApp()->getTipbackColor();
-  popped=FALSE;
+  popped=false;
   }
 
 
 // Tooltips do override-redirect
-bool FXToolTip::doesOverrideRedirect() const {
+FXbool FXToolTip::doesOverrideRedirect() const {
   return true;
   }
 
 
 // Tooltips do save-unders
-bool FXToolTip::doesSaveUnder() const {
+FXbool FXToolTip::doesSaveUnder() const {
   return true;
   }
 
 
 #ifdef WIN32
-const char* FXToolTip::GetClass() const { return "FXPopup"; }
+const void* FXToolTip::GetClass() const { return TEXT("FXPopup"); }
 #endif
 
 
@@ -198,15 +200,10 @@ void FXToolTip::place(FXint x,FXint y){
   FXint rx,ry,rw,rh,px,py,w,h;
   w=getDefaultWidth();
   h=getDefaultHeight();
-#ifndef WIN32
-  rx=getRoot()->getX();
-  ry=getRoot()->getY();
-  rw=getRoot()->getWidth();
-  rh=getRoot()->getHeight();
-#else
+#ifdef WIN32
   RECT rect;
-  MYMONITORINFO minfo;
-  HANDLE monitor;
+  MONITORINFO minfo;
+  HMONITOR monitor;
 
   rect.left=x;
   rect.right=x+w;
@@ -214,11 +211,11 @@ void FXToolTip::place(FXint x,FXint y){
   rect.bottom=y+h;
 
   // Get monitor info if we have this API
-  monitor=fxMonitorFromRect(&rect,MONITOR_DEFAULTTOPRIMARY);
+  monitor=MonitorFromRect(&rect,MONITOR_DEFAULTTOPRIMARY);
   if(monitor){
     memset(&minfo,0,sizeof(minfo));
     minfo.cbSize=sizeof(minfo);
-    fxGetMonitorInfo(monitor,&minfo);
+    GetMonitorInfo(monitor,&minfo);
     rx=minfo.rcWork.left;
     ry=minfo.rcWork.top;
     rw=minfo.rcWork.right-minfo.rcWork.left;
@@ -233,6 +230,11 @@ void FXToolTip::place(FXint x,FXint y){
     rw=rect.right-rect.left;
     rh=rect.bottom-rect.top;
     }
+#else
+  rx=getRoot()->getX();
+  ry=getRoot()->getY();
+  rw=getRoot()->getWidth();
+  rh=getRoot()->getHeight();
 #endif
   px=x+16-w/3;
   py=y+20;
@@ -254,17 +256,17 @@ void FXToolTip::autoplace(){
 
 // Update tooltip based on widget under cursor
 long FXToolTip::onUpdate(FXObject* sender,FXSelector sel,void* ptr){
-  FXWindow *helpsource=getApp()->getCursorWindow();
 
   // Regular GUI update
   FXWindow::onUpdate(sender,sel,ptr);
 
   // Ask the help source for a new status text first
+  FXWindow *helpsource=getApp()->getCursorWindow();
   if(helpsource && helpsource->handle(this,FXSEL(SEL_QUERY_TIP,0),NULL)){
     if(!popped){
-      popped=TRUE;
+      popped=true;
       if(!shown()){
-        getApp()->addTimeout(this,ID_TIP_SHOW,getApp()->getTooltipPause());
+        getApp()->addTimeout(this,ID_TIP_SHOW,getApp()->getToolTipPause());
         return 1;
         }
       autoplace();
@@ -272,7 +274,7 @@ long FXToolTip::onUpdate(FXObject* sender,FXSelector sel,void* ptr){
     return 1;
     }
   getApp()->removeTimeout(this,ID_TIP_SHOW);
-  popped=FALSE;
+  popped=false;
   hide();
   return 1;
   }
@@ -280,15 +282,16 @@ long FXToolTip::onUpdate(FXObject* sender,FXSelector sel,void* ptr){
 
 // Pop the tool tip now
 long FXToolTip::onTipShow(FXObject*,FXSelector,void*){
+  FXTRACE((250,"%s::onTipShow %p\n",getClassName(),this));
   if(!label.empty()){
     autoplace();
     show();
     if(!(options&TOOLTIP_PERMANENT)){
-      FXint timeoutms=getApp()->getTooltipTime();
+      FXTime timeoutns=getApp()->getToolTipTime();
       if(options&TOOLTIP_VARIABLE){
-        timeoutms=timeoutms/4+(timeoutms*label.length())/64;
+        timeoutns=timeoutns/4+(timeoutns*label.length())/64;
         }
-      getApp()->addTimeout(this,ID_TIP_HIDE,timeoutms);
+      getApp()->addTimeout(this,ID_TIP_HIDE,timeoutns);
       }
     }
   return 1;
@@ -297,6 +300,7 @@ long FXToolTip::onTipShow(FXObject*,FXSelector,void*){
 
 // Tip should hide now
 long FXToolTip::onTipHide(FXObject*,FXSelector,void*){
+  FXTRACE((250,"%s::onTipHide %p\n",getClassName(),this));
   hide();
   return 1;
   }
@@ -321,7 +325,7 @@ void FXToolTip::setText(const FXString& text){
   if(label!=text){
     label=text;
     recalc();
-    popped=FALSE;       // If text changes, pop it up again
+    popped=false;       // If text changes, pop it up again
     update();
     }
   }

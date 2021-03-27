@@ -3,27 +3,26 @@
 *                       F i l e   S t r e a m   C l a s s                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXFileStream.cpp,v 1.26 2006/01/22 17:58:26 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXString.h"
 #include "FXStream.h"
@@ -45,14 +44,20 @@ using namespace FX;
 namespace FX {
 
 
-// Initialize file stream
+// Create file stream
 FXFileStream::FXFileStream(const FXObject* cont):FXStream(cont){
+  }
+
+
+// Create and open file stream
+FXFileStream::FXFileStream(const FXString& filename,FXStreamDirection save_or_load,FXuval size){
+  open(filename,save_or_load,size);
   }
 
 
 // Write at least count bytes from the buffer
 FXuval FXFileStream::writeBuffer(FXuval){
-  register FXival m,n;
+  FXival m,n;
   if(dir!=FXStreamSave){fxerror("FXFileStream::writeBuffer: wrong stream direction.\n");}
   FXASSERT(begptr<=rdptr);
   FXASSERT(rdptr<=wrptr);
@@ -71,7 +76,7 @@ FXuval FXFileStream::writeBuffer(FXuval){
 
 // Read at least count bytes into the buffer
 FXuval FXFileStream::readBuffer(FXuval){
-  register FXival m,n;
+  FXival m,n;
   if(dir!=FXStreamLoad){fxerror("FXFileStream::readBuffer: wrong stream direction.\n");}
   FXASSERT(begptr<=rdptr);
   FXASSERT(rdptr<=wrptr);
@@ -89,7 +94,7 @@ FXuval FXFileStream::readBuffer(FXuval){
 
 
 // Open file stream
-bool FXFileStream::open(const FXString& filename,FXStreamDirection save_or_load,FXuval size){
+FXbool FXFileStream::open(const FXString& filename,FXStreamDirection save_or_load,FXuval size){
   if(save_or_load!=FXStreamSave && save_or_load!=FXStreamLoad){fxerror("FXFileStream::open: illegal stream direction.\n");}
   if(!dir){
     if(save_or_load==FXStreamLoad){
@@ -104,14 +109,14 @@ bool FXFileStream::open(const FXString& filename,FXStreamDirection save_or_load,
         return false;
         }
       }
-    return FXStream::open(save_or_load,size);
+    return FXStream::open(save_or_load,NULL,size);
     }
   return false;
   }
 
 
 // Close file stream
-bool FXFileStream::close(){
+FXbool FXFileStream::close(){
   if(dir){
     if(dir==FXStreamSave) flush();
     file.close();
@@ -122,9 +127,9 @@ bool FXFileStream::close(){
 
 
 // Move to position
-bool FXFileStream::position(FXlong offset,FXWhence whence){
-  register FXlong p;
-  if(dir==FXStreamDead){ fxerror("FXMemoryStream::position: stream is not open.\n"); }
+FXbool FXFileStream::position(FXlong offset,FXWhence whence){
+  FXlong p;
+  if(dir==FXStreamDead){ fxerror("FXFileStream::position: stream is not open.\n"); }
   if(code==FXStreamOK){
     FXASSERT(FXFromStart==SEEK_SET);
     FXASSERT(FXFromCurrent==SEEK_CUR);
@@ -140,7 +145,7 @@ bool FXFileStream::position(FXlong offset,FXWhence whence){
       // Position file
       if((p=file.position(offset,whence))<0){
         code=FXStreamFull;
-        return FALSE;
+        return false;
         }
 
       // Update pointers
@@ -173,6 +178,5 @@ bool FXFileStream::position(FXlong offset,FXWhence whence){
 FXFileStream::~FXFileStream(){
   close();
   }
-
 
 }

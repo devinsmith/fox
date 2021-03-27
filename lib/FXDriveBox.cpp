@@ -3,41 +3,42 @@
 *                         D r i v e   B o x   O b j e c t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDriveBox.cpp,v 1.35 2006/01/22 17:58:25 fox Exp $                      *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
 #include "FXObjectList.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
-#include "FXId.h"
 #include "FXPath.h"
 #include "FXSystem.h"
 #include "FXDrawable.h"
@@ -46,7 +47,6 @@
 #include "FXGIFIcon.h"
 #include "FXBMPIcon.h"
 #include "FXFont.h"
-#include "FXDC.h"
 #include "FXWindow.h"
 #include "FXComposite.h"
 #include "FXShell.h"
@@ -67,7 +67,10 @@
 #include "FXList.h"
 #include "FXListBox.h"
 #include "FXDriveBox.h"
-#include "FXFileDict.h"
+#include "FXDictionary.h"
+#include "FXDictionaryOf.h"
+#include "FXIconCache.h"
+#include "FXFileAssociations.h"
 #include "icons.h"
 
 
@@ -103,10 +106,9 @@ FXIMPLEMENT(FXDriveBox,FXListBox,FXDriveBoxMap,ARRAYNUMBER(FXDriveBoxMap))
 
 
 // Directory box
-FXDriveBox::FXDriveBox(FXComposite *p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXListBox(p,tgt,sel,opts,x,y,w,h, pl,pr,pt,pb){
+FXDriveBox::FXDriveBox(FXComposite *p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXListBox(p,tgt,sel,opts,x,y,w,h, pl,pr,pt,pb){
   associations=NULL;
-  if(!(options&DRIVEBOX_NO_OWN_ASSOC)) associations=new FXFileDict(getApp());
+  if(!(options&DRIVEBOX_NO_OWN_ASSOC)) associations=new FXFileAssociations(getApp());
   foldericon=new FXGIFIcon(getApp(),minifolder);
   cdromicon=new FXGIFIcon(getApp(),minicdrom);
   harddiskicon=new FXGIFIcon(getApp(),miniharddisk);
@@ -177,36 +179,12 @@ long FXDriveBox::onCmdGetStringValue(FXObject*,FXSelector,void* ptr){
   return 1;
   }
 
-#ifndef WIN32           // UNIX flavor
+#ifdef WIN32                    // Windows flavor
 
 // Fill list with names of available drives
 void FXDriveBox::listDrives(){
-  register FXFileAssoc *fileassoc;
-  register FXIcon *icon;
-
-  // Remove old items first
-  clearItems();
-
-  // Determine associations, icons and type
-  icon=foldericon;
-  if(associations){
-    fileassoc=associations->findDirBinding("/");
-    if(fileassoc && fileassoc->miniicon) icon=fileassoc->miniicon;
-    }
-
-  // Create icon
-  if(id()) icon->create();
-
-  // Add item
-  appendItem("/",icon);
-  }
-
-#else                   // Windows flavor
-
-// Fill list with names of available drives
-void FXDriveBox::listDrives(){
-  register FXFileAssoc *fileassoc;
-  register FXIcon *icon;
+  FXFileAssoc *fileassoc;
+  FXIcon *icon;
   FXchar drivename[10];
   FXuint drivemask;
 
@@ -251,6 +229,30 @@ void FXDriveBox::listDrives(){
     }
   }
 
+#else                           // UNIX flavor
+
+// Fill list with names of available drives
+void FXDriveBox::listDrives(){
+  FXFileAssoc *fileassoc;
+  FXIcon *icon;
+
+  // Remove old items first
+  clearItems();
+
+  // Determine associations, icons and type
+  icon=foldericon;
+  if(associations){
+    fileassoc=associations->findDirBinding("/");
+    if(fileassoc && fileassoc->miniicon) icon=fileassoc->miniicon;
+    }
+
+  // Create icon
+  if(id()) icon->create();
+
+  // Add item
+  appendItem("/",icon);
+  }
+
 #endif
 
 
@@ -276,7 +278,7 @@ long FXDriveBox::onListChanged(FXObject*,FXSelector,void* ptr){
 FXbool FXDriveBox::setDrive(const FXString& drive){
   listDrives();
   setCurrentItem(findItem(FXPath::drive(FXPath::absolute(drive))));
-  return TRUE;
+  return true;
   }
 
 
@@ -288,7 +290,7 @@ FXString FXDriveBox::getDrive() const {
 
 // Change associations table; force regeneration of the items
 // in the tree list so all the new bindings take effect
-void FXDriveBox::setAssociations(FXFileDict* assocs){
+void FXDriveBox::setAssociations(FXFileAssociations* assocs){
   if(associations!=assocs){
     associations=assocs;
     listDrives();
@@ -335,7 +337,7 @@ FXDriveBox::~FXDriveBox(){
   delete floppyicon;
   delete nethoodicon;
   delete zipdiskicon;
-  associations=(FXFileDict*)-1L;
+  associations=(FXFileAssociations*)-1L;
   foldericon=(FXIcon*)-1L;
   cdromicon=(FXIcon*)-1L;
   harddiskicon=(FXIcon*)-1L;

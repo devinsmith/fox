@@ -3,38 +3,41 @@
 *                       R e a l S l i d e r   W i d g e t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXRealSlider.cpp,v 1.20.2.2 2007/08/09 00:37:06 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXRealSlider.h"
 
 
@@ -43,10 +46,6 @@
 /*
   Notes:
   - Maybe add bindings for arrow keys for value changes.
-  - Bug: slider head can only assume discrete pixel positions,
-    and thus odd-ball floating point numbers result.  Would be
-    nice if the head movements would result in "nice" numbers,
-    with a subdivision smaller than a whole pixel.
   - Yes, this *does* have a lot in common with FXSlider and its
     probably a good idea to give FXRealSlider and FXSlider a common
     base class at some point.
@@ -83,8 +82,10 @@ FXDEFMAP(FXRealSlider) FXRealSliderMap[]={
   FXMAPFUNC(SEL_TIMEOUT,FXRealSlider::ID_AUTOSLIDE,FXRealSlider::onAutoSlide),
   FXMAPFUNC(SEL_COMMAND,FXRealSlider::ID_SETVALUE,FXRealSlider::onCmdSetValue),
   FXMAPFUNC(SEL_COMMAND,FXRealSlider::ID_SETINTVALUE,FXRealSlider::onCmdSetIntValue),
-  FXMAPFUNC(SEL_COMMAND,FXRealSlider::ID_SETREALVALUE,FXRealSlider::onCmdSetRealValue),
   FXMAPFUNC(SEL_COMMAND,FXRealSlider::ID_GETINTVALUE,FXRealSlider::onCmdGetIntValue),
+  FXMAPFUNC(SEL_COMMAND,FXRealSlider::ID_SETLONGVALUE,FXRealSlider::onCmdSetLongValue),
+  FXMAPFUNC(SEL_COMMAND,FXRealSlider::ID_GETLONGVALUE,FXRealSlider::onCmdGetLongValue),
+  FXMAPFUNC(SEL_COMMAND,FXRealSlider::ID_SETREALVALUE,FXRealSlider::onCmdSetRealValue),
   FXMAPFUNC(SEL_COMMAND,FXRealSlider::ID_GETREALVALUE,FXRealSlider::onCmdGetRealValue),
   FXMAPFUNC(SEL_COMMAND,FXRealSlider::ID_SETINTRANGE,FXRealSlider::onCmdSetIntRange),
   FXMAPFUNC(SEL_COMMAND,FXRealSlider::ID_GETINTRANGE,FXRealSlider::onCmdGetIntRange),
@@ -104,16 +105,17 @@ FXIMPLEMENT(FXRealSlider,FXFrame,FXRealSliderMap,ARRAYNUMBER(FXRealSliderMap))
 // Make a slider
 FXRealSlider::FXRealSlider(){
   flags|=FLAG_ENABLED;
+  headPos=0;
+  headSize=0;
+  slotSize=0;
+  slotColor=0;
+  dragPoint=0;
   range[0]=0.0;
   range[1]=0.0;
-  pos=0.0;
-  incr=0.01;
   delta=0.0;
-  headpos=0;
-  headsize=0;
-  slotsize=0;
-  slotColor=0;
-  dragpoint=0;
+  incr=0.01;
+  gran=0.0;
+  pos=0.0;
   }
 
 
@@ -124,18 +126,19 @@ FXRealSlider::FXRealSlider(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint op
   hiliteColor=getApp()->getHiliteColor();
   shadowColor=getApp()->getShadowColor();
   borderColor=getApp()->getBorderColor();
-  slotColor=getApp()->getBackColor();
   target=tgt;
   message=sel;
+  headPos=0;
+  headSize=(options&REALSLIDER_INSIDE_BAR)?HEADINSIDEBAR:HEADOVERHANGING;
+  slotSize=5;
+  slotColor=getApp()->getBackColor();
+  dragPoint=0;
   range[0]=0.0;
   range[1]=1.0;
-  pos=0.5;
-  incr=0.01;
   delta=0.0;
-  headpos=0;
-  headsize=(options&REALSLIDER_INSIDE_BAR)?HEADINSIDEBAR:HEADOVERHANGING;
-  slotsize=5;
-  dragpoint=0;
+  incr=0.01;
+  gran=0.0;
+  pos=0.5;
   }
 
 
@@ -157,32 +160,33 @@ void FXRealSlider::disable(){
   }
 
 
-// Get default size
+// Get default width
 FXint FXRealSlider::getDefaultWidth(){
   FXint w;
   if(options&REALSLIDER_VERTICAL){
-    if(options&REALSLIDER_INSIDE_BAR) w=4+headsize/2;
-    else if(options&(REALSLIDER_ARROW_LEFT|REALSLIDER_ARROW_RIGHT)) w=slotsize+MINOVERHANG*2+headsize/2;
-    else w=slotsize+MINOVERHANG*2;
+    if(options&REALSLIDER_INSIDE_BAR) w=4+headSize/2;
+    else if(options&(REALSLIDER_ARROW_LEFT|REALSLIDER_ARROW_RIGHT)) w=slotSize+MINOVERHANG*2+headSize/2;
+    else w=slotSize+MINOVERHANG*2;
     if(options&REALSLIDER_TICKS_LEFT) w+=TICKSIZE;
     if(options&REALSLIDER_TICKS_RIGHT) w+=TICKSIZE;
     }
   else{
-    w=headsize+4;
+    w=headSize+4;
     }
   return w+padleft+padright+(border<<1);
   }
 
 
+// Get default height
 FXint FXRealSlider::getDefaultHeight(){
   FXint h;
   if(options&REALSLIDER_VERTICAL){
-    h=headsize+4;
+    h=headSize+4;
     }
   else{
-    if(options&REALSLIDER_INSIDE_BAR) h=4+headsize/2;
-    else if(options&(REALSLIDER_ARROW_UP|REALSLIDER_ARROW_DOWN)) h=slotsize+2*MINOVERHANG+headsize/2;
-    else h=slotsize+MINOVERHANG*2;
+    if(options&REALSLIDER_INSIDE_BAR) h=4+headSize/2;
+    else if(options&(REALSLIDER_ARROW_UP|REALSLIDER_ARROW_DOWN)) h=slotSize+2*MINOVERHANG+headSize/2;
+    else h=slotSize+MINOVERHANG*2;
     if(options&REALSLIDER_TICKS_TOP) h+=TICKSIZE;
     if(options&REALSLIDER_TICKS_BOTTOM) h+=TICKSIZE;
     }
@@ -191,7 +195,7 @@ FXint FXRealSlider::getDefaultHeight(){
 
 
 // Returns true because a slider can receive focus
-bool FXRealSlider::canFocus() const { return true; }
+FXbool FXRealSlider::canFocus() const { return true; }
 
 
 // Layout changed; even though the position is still
@@ -232,7 +236,7 @@ long FXRealSlider::onCmdGetTip(FXObject*,FXSelector,void* ptr){
 
 // We were asked about tip text
 long FXRealSlider::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryTip(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryTip(sender,sel,ptr)) return 1;
   if((flags&FLAG_TIP) && !tip.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&tip);
     return 1;
@@ -243,7 +247,7 @@ long FXRealSlider::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
 
 // We were asked about status text
 long FXRealSlider::onQueryHelp(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryHelp(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryHelp(sender,sel,ptr)) return 1;
   if((flags&FLAG_HELP) && !help.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&help);
     return 1;
@@ -266,16 +270,30 @@ long FXRealSlider::onCmdSetIntValue(FXObject*,FXSelector,void* ptr){
   }
 
 
-// Update value from a message
-long FXRealSlider::onCmdSetRealValue(FXObject*,FXSelector,void* ptr){
-  setValue(*((FXdouble*)ptr));
+// Obtain value from text field
+long FXRealSlider::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
+  *((FXint*)ptr)=(FXint)getValue();
   return 1;
   }
 
 
-// Obtain value from text field
-long FXRealSlider::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
-  *((FXint*)ptr)=(FXint)getValue();
+// Update value from a message
+long FXRealSlider::onCmdSetLongValue(FXObject*,FXSelector,void* ptr){
+  setValue((FXdouble)*((FXlong*)ptr));
+  return 1;
+  }
+
+
+// Obtain value with a message
+long FXRealSlider::onCmdGetLongValue(FXObject*,FXSelector,void* ptr){
+  *((FXlong*)ptr)=(FXlong)getValue();
+  return 1;
+  }
+
+
+// Update value from a message
+long FXRealSlider::onCmdSetRealValue(FXObject*,FXSelector,void* ptr){
+  setValue(*((FXdouble*)ptr));
   return 1;
   }
 
@@ -319,8 +337,8 @@ long FXRealSlider::onCmdGetRealRange(FXObject*,FXSelector,void* ptr){
 
 // Pressed LEFT button
 long FXRealSlider::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
-  register FXEvent *event=(FXEvent*)ptr;
-  register FXdouble p=pos;
+  FXEvent *event=(FXEvent*)ptr;
+  FXdouble p=pos;
   flags&=~FLAG_TIP;
   handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
   if(isEnabled()){
@@ -329,33 +347,34 @@ long FXRealSlider::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
     if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONPRESS,message),ptr)) return 1;
     flags&=~FLAG_UPDATE;
     if(options&REALSLIDER_VERTICAL){
-      if(event->win_y<headpos){
+      if(event->win_y<headPos){
         getApp()->addTimeout(this,ID_AUTOSLIDE,getApp()->getScrollDelay(),(void*)(FXival)1);
-        p=pos+incr;
+        p+=incr;
         }
-      else if(event->win_y>(headpos+headsize)){
+      else if(event->win_y>(headPos+headSize)){
         getApp()->addTimeout(this,ID_AUTOSLIDE,getApp()->getScrollDelay(),(void*)(FXival)-1);
-        p=pos-incr;
+        p-=incr;
         }
       else{
-        dragpoint=event->win_y-headpos;
+        dragPoint=event->win_y-headPos;
         flags|=FLAG_PRESSED;
         }
       }
     else{
-      if(event->win_x<headpos){
+      if(event->win_x<headPos){
         getApp()->addTimeout(this,ID_AUTOSLIDE,getApp()->getScrollDelay(),(void*)(FXival)-1);
-        p=pos-incr;
+        p-=incr;
         }
-      else if(event->win_x>(headpos+headsize)){
+      else if(event->win_x>(headPos+headSize)){
         getApp()->addTimeout(this,ID_AUTOSLIDE,getApp()->getScrollDelay(),(void*)(FXival)1);
-        p=pos+incr;
+        p+=incr;
         }
       else{
-        dragpoint=event->win_x-headpos;
+        dragPoint=event->win_x-headPos;
         flags|=FLAG_PRESSED;
         }
       }
+    if(0.0<gran) p=gran*Math::round(p/gran);
     if(p<range[0]) p=range[0];
     if(p>range[1]) p=range[1];
     if(p!=pos){
@@ -371,7 +390,7 @@ long FXRealSlider::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
 
 // Released Left button
 long FXRealSlider::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
-  register FXuint flgs=flags;
+  FXuint flgs=flags;
   if(isEnabled()){
     ungrab();
     getApp()->removeTimeout(this,ID_AUTOSLIDE);
@@ -391,9 +410,9 @@ long FXRealSlider::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
 
 // Moving
 long FXRealSlider::onMotion(FXObject*,FXSelector,void* ptr){
-  register FXEvent *event=(FXEvent*)ptr;
-  register FXint xx,yy,ww,hh,lo,hi,h,travel;
-  register FXdouble p;
+  FXEvent *event=(FXEvent*)ptr;
+  FXint xx,yy,ww,hh,lo,hi,h,travel;
+  FXdouble p;
   if(!isEnabled()) return 0;
   if(flags&FLAG_PRESSED){
     yy=border+padtop+2;
@@ -401,14 +420,14 @@ long FXRealSlider::onMotion(FXObject*,FXSelector,void* ptr){
     hh=height-(border<<1)-padtop-padbottom-4;
     ww=width-(border<<1)-padleft-padright-4;
     if(options&REALSLIDER_VERTICAL){
-      h=event->win_y-dragpoint;
-      travel=hh-headsize;
+      h=event->win_y-dragPoint;
+      travel=hh-headSize;
       if(h<yy) h=yy;
       if(h>yy+travel) h=yy+travel;
-      if(h!=headpos){
-        FXMINMAX(lo,hi,headpos,h);
-        headpos=h;
-        update(border,lo-1,width-(border<<1),hi+headsize+2-lo);
+      if(h!=headPos){
+        FXMINMAX(lo,hi,headPos,h);
+        headPos=h;
+        update(border,lo-1,width-(border<<1),hi+headSize+2-lo);
         }
       if(travel>0)
         p=range[0]+((range[1]-range[0])*(yy+travel-h))/travel;
@@ -416,20 +435,21 @@ long FXRealSlider::onMotion(FXObject*,FXSelector,void* ptr){
         p=range[0];
       }
     else{
-      h=event->win_x-dragpoint;
-      travel=ww-headsize;
+      h=event->win_x-dragPoint;
+      travel=ww-headSize;
       if(h<xx) h=xx;
       if(h>xx+travel) h=xx+travel;
-      if(h!=headpos){
-        FXMINMAX(lo,hi,headpos,h);
-        headpos=h;
-        update(lo-1,border,hi+headsize+2-lo,height-(border<<1));
+      if(h!=headPos){
+        FXMINMAX(lo,hi,headPos,h);
+        headPos=h;
+        update(lo-1,border,hi+headSize+2-lo,height-(border<<1));
         }
       if(travel>0)
         p=range[0]+((range[1]-range[0])*(h-xx))/travel;
       else
         p=range[0];
       }
+    if(0.0<gran) p=gran*Math::round(p/gran);
     if(p<range[0]) p=range[0];
     if(p>range[1]) p=range[1];
     if(pos!=p){
@@ -445,15 +465,15 @@ long FXRealSlider::onMotion(FXObject*,FXSelector,void* ptr){
 
 // Pressed middle or right
 long FXRealSlider::onMiddleBtnPress(FXObject*,FXSelector,void* ptr){
-  register FXEvent *event=(FXEvent*)ptr;
-  register FXint xx,yy,ww,hh,lo,hi,h,travel;
-  register FXdouble p;
+  FXEvent *event=(FXEvent*)ptr;
+  FXint xx,yy,ww,hh,lo,hi,h,travel;
+  FXdouble p;
   flags&=~FLAG_TIP;
   handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
   if(isEnabled()){
     grab();
     if(target && target->tryHandle(this,FXSEL(SEL_MIDDLEBUTTONPRESS,message),ptr)) return 1;
-    dragpoint=headsize/2;
+    dragPoint=headSize/2;
     yy=border+padtop+2;
     xx=border+padleft+2;
     hh=height-(border<<1)-padtop-padbottom-4;
@@ -461,14 +481,14 @@ long FXRealSlider::onMiddleBtnPress(FXObject*,FXSelector,void* ptr){
     flags&=~FLAG_UPDATE;
     flags|=FLAG_PRESSED;
     if(options&REALSLIDER_VERTICAL){
-      h=event->win_y-dragpoint;
-      travel=hh-headsize;
+      h=event->win_y-dragPoint;
+      travel=hh-headSize;
       if(h<yy) h=yy;
       if(h>yy+travel) h=yy+travel;
-      if(h!=headpos){
-        FXMINMAX(lo,hi,headpos,h);
-        headpos=h;
-        update(border,lo-1,width-(border<<1),hi+headsize+2-lo);
+      if(h!=headPos){
+        FXMINMAX(lo,hi,headPos,h);
+        headPos=h;
+        update(border,lo-1,width-(border<<1),hi+headSize+2-lo);
         }
       if(travel>0)
         p=range[0]+((range[1]-range[0])*(yy+travel-h))/travel;
@@ -476,20 +496,21 @@ long FXRealSlider::onMiddleBtnPress(FXObject*,FXSelector,void* ptr){
         p=range[0];
       }
     else{
-      h=event->win_x-dragpoint;
-      travel=ww-headsize;
+      h=event->win_x-dragPoint;
+      travel=ww-headSize;
       if(h<xx) h=xx;
       if(h>xx+travel) h=xx+travel;
-      if(h!=headpos){
-        FXMINMAX(lo,hi,headpos,h);
-        headpos=h;
-        update(lo-1,border,hi+headsize+2-lo,height-(border<<1));
+      if(h!=headPos){
+        FXMINMAX(lo,hi,headPos,h);
+        headPos=h;
+        update(lo-1,border,hi+headSize+2-lo,height-(border<<1));
         }
       if(travel>0)
         p=range[0]+((range[1]-range[0])*(h-xx))/travel;
       else
         p=range[0];
       }
+    if(0.0<gran) p=gran*Math::round(p/gran);
     if(p<range[0]) p=range[0];
     if(p>range[1]) p=range[1];
     if(p!=pos){
@@ -505,7 +526,7 @@ long FXRealSlider::onMiddleBtnPress(FXObject*,FXSelector,void* ptr){
 
 // Released middle button
 long FXRealSlider::onMiddleBtnRelease(FXObject*,FXSelector,void* ptr){
-  register FXuint flgs=flags;
+  FXuint flgs=flags;
   if(isEnabled()){
     ungrab();
     getApp()->removeTimeout(this,ID_AUTOSLIDE);
@@ -525,8 +546,8 @@ long FXRealSlider::onMiddleBtnRelease(FXObject*,FXSelector,void* ptr){
 
 // Mouse wheel
 long FXRealSlider::onMouseWheel(FXObject*,FXSelector,void* ptr){
-  register FXEvent *event=(FXEvent*)ptr;
-  register FXdouble p=pos+incr*(event->code/120);
+  FXEvent *event=(FXEvent*)ptr;
+  FXdouble p=pos+incr*(event->code/120);
   if(p<range[0]) p=range[0];
   if(p>range[1]) p=range[1];
   if(pos!=p){
@@ -615,8 +636,8 @@ long FXRealSlider::onUngrabbed(FXObject* sender,FXSelector sel,void* ptr){
 
 // Automatically move slider while holding down mouse
 long FXRealSlider::onAutoSlide(FXObject*,FXSelector,void* ptr){
-  register FXint dir=(FXint)(FXival)ptr;
-  register FXdouble p=pos+incr*dir;
+  FXint dir=(FXint)(FXival)ptr;
+  FXdouble p=pos+incr*dir;
   if(p<=range[0]){
     p=range[0];
     }
@@ -638,15 +659,15 @@ long FXRealSlider::onAutoSlide(FXObject*,FXSelector,void* ptr){
 
 // Draw horizontal ticks
 void FXRealSlider::drawHorzTicks(FXDCWindow& dc,FXint,FXint y,FXint,FXint){
-  register FXdouble interval=range[1]-range[0];
-  register FXint travel,offset,p;
-  register FXdouble v,d;
+  FXdouble interval=range[1]-range[0];
+  FXint travel,offset,p;
+  FXdouble v,d;
   if(0.0<interval){
     d=delta;
     if(d<=0.0) d=incr;
     dc.setForeground(FXRGB(0,0,0));
-    travel=width-(border<<1)-padleft-padright-headsize-4;
-    offset=border+padleft+2+headsize/2;
+    travel=width-(border<<1)-padleft-padright-headSize-4;
+    offset=border+padleft+2+headSize/2;
     for(v=range[0]; v<=range[1]; v+=d){
       p=offset+(FXint)(0.5+((travel*(v-range[0]))/interval));
       dc.fillRectangle(p,y,1,TICKSIZE);
@@ -657,15 +678,15 @@ void FXRealSlider::drawHorzTicks(FXDCWindow& dc,FXint,FXint y,FXint,FXint){
 
 // Draw vertical ticks
 void FXRealSlider::drawVertTicks(FXDCWindow& dc,FXint x,FXint,FXint,FXint){
-  register FXdouble interval=range[1]-range[0];
-  register FXint travel,offset,p;
-  register FXdouble v,d;
+  FXdouble interval=range[1]-range[0];
+  FXint travel,offset,p;
+  FXdouble v,d;
   if(0.0<interval){
     d=delta;
     if(d<=0.0) d=incr;
     dc.setForeground(FXRGB(0,0,0));
-    travel=height-(border<<1)-padtop-padbottom-headsize-4;
-    offset=height-border-padbottom-2-headsize/2;
+    travel=height-(border<<1)-padtop-padbottom-headSize-4;
+    offset=height-border-padbottom-2-headSize/2;
     for(v=range[0]; v<=range[1]; v+=d){
       p=offset-(FXint)(0.5+((travel*(v-range[0]))/interval));
       dc.fillRectangle(x,p,TICKSIZE,1);
@@ -699,19 +720,19 @@ void FXRealSlider::drawSliderHead(FXDCWindow& dc,FXint x,FXint y,FXint w,FXint h
       dc.drawLine(x,y,x+w-m-1,y);
       dc.drawLine(x,y+1,x,y+h-1);
       dc.drawLine(x+w-1,y+m,x+w-m-1,y);
-#ifndef WIN32
-      dc.setForeground(shadowColor);
-      dc.drawLine(x+w-2,y+h-m-1,x+w-m-2,y+h-1);
-      dc.drawLine(x+1,y+h-2,x+w-m-1,y+h-2);
-      dc.setForeground(borderColor);
-      dc.drawLine(x+w-1,y+h-m-1,x+w-m-1,y+h-1);
-      dc.drawLine(x,y+h-1,x+w-m-1,y+h-1);
-#else
+#ifdef WIN32
       dc.setForeground(shadowColor);
       dc.drawLine(x+w-1,y+h-m-2,x+w-m-2,y+h-1);
       dc.drawLine(x+1,y+h-2,x+w-m-1,y+h-2);
       dc.setForeground(borderColor);
       dc.drawLine(x+w,y+h-m-2,x+w-m-1,y+h-1);
+      dc.drawLine(x,y+h-1,x+w-m-1,y+h-1);
+#else
+      dc.setForeground(shadowColor);
+      dc.drawLine(x+w-2,y+h-m-1,x+w-m-2,y+h-1);
+      dc.drawLine(x+1,y+h-2,x+w-m-1,y+h-2);
+      dc.setForeground(borderColor);
+      dc.drawLine(x+w-1,y+h-m-1,x+w-m-1,y+h-1);
       dc.drawLine(x,y+h-1,x+w-m-1,y+h-1);
 #endif
       }
@@ -769,10 +790,9 @@ void FXRealSlider::drawSliderHead(FXDCWindow& dc,FXint x,FXint y,FXint w,FXint h
 
 // Handle repaint
 long FXRealSlider::onPaint(FXObject*,FXSelector,void* ptr){
-  FXEvent *event=(FXEvent*)ptr;
-  FXint tx,ty,hhs=headsize/2;
+  FXDCWindow dc(this,(FXEvent*)ptr);
+  FXint tx,ty,hhs=headSize/2;
   FXint xx,yy,ww,hh;
-  FXDCWindow dc(this,event);
 
   // Repaint background
   dc.setForeground(backColor);
@@ -786,7 +806,6 @@ long FXRealSlider::onPaint(FXObject*,FXSelector,void* ptr){
   yy=border+padtop;
   ww=width-(border<<1)-padleft-padright;
   hh=height-(border<<1)-padtop-padbottom;
-  FXASSERT(range[0]<=pos && pos<=range[1]);
 
   // Draw the slot
   if(options&REALSLIDER_VERTICAL){
@@ -806,18 +825,18 @@ long FXRealSlider::onPaint(FXObject*,FXSelector,void* ptr){
       dc.setFillStyle(FILL_SOLID);
       if(options&REALSLIDER_TICKS_LEFT) drawVertTicks(dc,border+padleft,yy,ww,hh);
       if(options&REALSLIDER_TICKS_RIGHT) drawVertTicks(dc,width-padright-border-TICKSIZE,yy,ww,hh);
-      if(isEnabled()) drawSliderHead(dc,xx+2,headpos,ww-4,headsize);
+      if(isEnabled()) drawSliderHead(dc,xx+2,headPos,ww-4,headSize);
       }
     else{
-      if(options&REALSLIDER_ARROW_LEFT) tx=xx+hhs+(ww-slotsize-hhs)/2;
-      else if(options&REALSLIDER_ARROW_RIGHT) tx=xx+(ww-slotsize-hhs)/2;
-      else tx=xx+(ww-slotsize)/2;
-      drawDoubleSunkenRectangle(dc,tx,yy,slotsize,hh);
+      if(options&REALSLIDER_ARROW_LEFT) tx=xx+hhs+(ww-slotSize-hhs)/2;
+      else if(options&REALSLIDER_ARROW_RIGHT) tx=xx+(ww-slotSize-hhs)/2;
+      else tx=xx+(ww-slotSize)/2;
+      drawDoubleSunkenRectangle(dc,tx,yy,slotSize,hh);
       dc.setForeground(slotColor);
-      dc.fillRectangle(tx+2,yy+2,slotsize-4,hh-4);
+      dc.fillRectangle(tx+2,yy+2,slotSize-4,hh-4);
       if(options&REALSLIDER_TICKS_LEFT) drawVertTicks(dc,border+padleft,yy,ww,hh);
       if(options&REALSLIDER_TICKS_RIGHT) drawVertTicks(dc,width-padright-border-TICKSIZE,yy,ww,hh);
-      if(isEnabled()) drawSliderHead(dc,xx,headpos,ww,headsize);
+      if(isEnabled()) drawSliderHead(dc,xx,headPos,ww,headSize);
       }
     }
   else{
@@ -838,18 +857,18 @@ long FXRealSlider::onPaint(FXObject*,FXSelector,void* ptr){
       dc.setFillStyle(FILL_SOLID);
       if(options&REALSLIDER_TICKS_TOP) drawHorzTicks(dc,xx,border+padtop,ww,hh);
       if(options&REALSLIDER_TICKS_BOTTOM) drawHorzTicks(dc,xx,height-border-padbottom-TICKSIZE,ww,hh);
-      if(isEnabled()) drawSliderHead(dc,headpos,yy+2,headsize,hh-4);
+      if(isEnabled()) drawSliderHead(dc,headPos,yy+2,headSize,hh-4);
       }
     else{
-      if(options&REALSLIDER_ARROW_UP) ty=yy+hhs+(hh-slotsize-hhs)/2;
-      else if(options&REALSLIDER_ARROW_DOWN) ty=yy+(hh-slotsize-hhs)/2;
-      else ty=yy+(hh-slotsize)/2;
-      drawDoubleSunkenRectangle(dc,xx,ty,ww,slotsize);
+      if(options&REALSLIDER_ARROW_UP) ty=yy+hhs+(hh-slotSize-hhs)/2;
+      else if(options&REALSLIDER_ARROW_DOWN) ty=yy+(hh-slotSize-hhs)/2;
+      else ty=yy+(hh-slotSize)/2;
+      drawDoubleSunkenRectangle(dc,xx,ty,ww,slotSize);
       dc.setForeground(slotColor);
-      dc.fillRectangle(xx+2,ty+2,ww-4,slotsize-4);
+      dc.fillRectangle(xx+2,ty+2,ww-4,slotSize-4);
       if(options&REALSLIDER_TICKS_TOP) drawHorzTicks(dc,xx,border+padtop,ww,hh);
       if(options&REALSLIDER_TICKS_BOTTOM) drawHorzTicks(dc,xx,height-border-padbottom-TICKSIZE,ww,hh);
-      if(isEnabled()) drawSliderHead(dc,headpos,yy,headsize,hh);
+      if(isEnabled()) drawSliderHead(dc,headPos,yy,headSize,hh);
       }
     }
   return 1;
@@ -862,6 +881,7 @@ long FXRealSlider::onPaint(FXObject*,FXSelector,void* ptr){
 void FXRealSlider::setRange(FXdouble lo,FXdouble hi,FXbool notify){
   if(lo>hi){ fxerror("%s::setRange: trying to set negative range.\n",getClassName()); }
   if(range[0]!=lo || range[1]!=hi){
+    if(options&(REALSLIDER_TICKS_TOP|REALSLIDER_TICKS_BOTTOM)) update();
     range[0]=lo;
     range[1]=hi;
     setValue(pos,notify);
@@ -875,28 +895,28 @@ void FXRealSlider::setRange(FXdouble lo,FXdouble hi,FXbool notify){
 // Also, the minimal amount is repainted, as one sometimes as very
 // large/wide sliders.
 void FXRealSlider::setValue(FXdouble p,FXbool notify){
-  register FXdouble interval=range[1]-range[0];
-  register FXint travel,lo,hi,h;
+  FXdouble interval=range[1]-range[0];
+  FXint travel,lo,hi,h;
   if(p<range[0]) p=range[0];
   if(p>range[1]) p=range[1];
   if(options&REALSLIDER_VERTICAL){
-    travel=height-(border<<1)-padtop-padbottom-headsize-4;
-    h=height-border-padbottom-2-headsize;
+    travel=height-(border<<1)-padtop-padbottom-headSize-4;
+    h=height-border-padbottom-2-headSize;
     if(0<interval) h-=(FXint)(0.5+((travel*(p-range[0]))/interval));
-    if(h!=headpos){
-      FXMINMAX(lo,hi,headpos,h);
-      headpos=h;
-      update(border,lo-1,width-(border<<1),hi+headsize+2-lo);
+    if(h!=headPos){
+      FXMINMAX(lo,hi,headPos,h);
+      headPos=h;
+      update(border,lo-1,width-(border<<1),hi+headSize+2-lo);
       }
     }
   else{
-    travel=width-(border<<1)-padleft-padright-headsize-4;
+    travel=width-(border<<1)-padleft-padright-headSize-4;
     h=border+padleft+2;
     if(0<interval) h+=(FXint)(0.5+((travel*(p-range[0]))/interval));
-    if(h!=headpos){
-      FXMINMAX(lo,hi,headpos,h);
-      headpos=h;
-      update(lo-1,border,hi+headsize+2-lo,height-(border<<1));
+    if(h!=headPos){
+      FXMINMAX(lo,hi,headPos,h);
+      headPos=h;
+      update(lo-1,border,hi+headSize+2-lo,height-(border<<1));
       }
     }
   if(pos!=p){
@@ -916,7 +936,7 @@ FXuint FXRealSlider::getSliderStyle() const {
 void FXRealSlider::setSliderStyle(FXuint style){
   FXuint opts=(options&~REALSLIDER_MASK) | (style&REALSLIDER_MASK);
   if(options!=opts){
-    headsize=(opts&REALSLIDER_INSIDE_BAR)?HEADINSIDEBAR:HEADOVERHANGING;
+    headSize=(opts&REALSLIDER_INSIDE_BAR)?HEADINSIDEBAR:HEADOVERHANGING;
     options=opts;
     recalc();
     update();
@@ -926,8 +946,8 @@ void FXRealSlider::setSliderStyle(FXuint style){
 
 // Set head size
 void FXRealSlider::setHeadSize(FXint hs){
-  if(headsize!=hs){
-    headsize=hs;
+  if(headSize!=hs){
+    headSize=hs;
     recalc();
     update();
     }
@@ -936,17 +956,25 @@ void FXRealSlider::setHeadSize(FXint hs){
 
 // Set slot size
 void FXRealSlider::setSlotSize(FXint bs){
-  if(slotsize!=bs){
-    slotsize=bs;
+  if(slotSize!=bs){
+    slotSize=bs;
     recalc();
     update();
     }
   }
 
 
-// Set increment
+// Set slider increment
 void FXRealSlider::setIncrement(FXdouble inc){
+  if(inc<=0.0){ fxerror("%s::setIncrement: negative or zero increment specified.\n",getClassName()); }
   incr=inc;
+  }
+
+
+// Change slider granularity
+void FXRealSlider::setGranularity(FXdouble gr){
+  if(gr<0.0){ fxerror("%s::setGranularity: negative granularity specified.\n",getClassName()); }
+  gran=gr;
   }
 
 
@@ -963,10 +991,8 @@ void FXRealSlider::setSlotColor(FXColor clr){
 void FXRealSlider::setTickDelta(FXdouble dist){
   if(dist<0.0) dist=0.0;
   if(delta!=dist){
+    if(options&(REALSLIDER_TICKS_TOP|REALSLIDER_TICKS_BOTTOM)) update();
     delta=dist;
-    if(options&(REALSLIDER_TICKS_TOP|REALSLIDER_TICKS_BOTTOM)){
-      recalc();
-      }
     }
   }
 
@@ -974,13 +1000,15 @@ void FXRealSlider::setTickDelta(FXdouble dist){
 // Save object to stream
 void FXRealSlider::save(FXStream& store) const {
   FXFrame::save(store);
-  store << range[0] << range[1];
-  store << pos;
-  store << incr;
-  store << delta;
+  store << headSize;
+  store << slotSize;
   store << slotColor;
-  store << headsize;
-  store << slotsize;
+  store << range[0];
+  store << range[1];
+  store << delta;
+  store << incr;
+  store << gran;
+  store << pos;
   store << help;
   store << tip;
   }
@@ -989,13 +1017,15 @@ void FXRealSlider::save(FXStream& store) const {
 // Load object from stream
 void FXRealSlider::load(FXStream& store){
   FXFrame::load(store);
-  store >> range[0] >> range[1];
-  store >> pos;
-  store >> incr;
-  store >> delta;
+  store >> headSize;
+  store >> slotSize;
   store >> slotColor;
-  store >> headsize;
-  store >> slotsize;
+  store >> range[0];
+  store >> range[1];
+  store >> delta;
+  store >> incr;
+  store >> gran;
+  store >> pos;
   store >> help;
   store >> tip;
   }

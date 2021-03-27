@@ -3,28 +3,25 @@
 *                     W U   C o l o r   Q u a n t i z a t i o n                 *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2004,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2004,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxwuquantize.cpp,v 1.9.2.2 2006/08/02 01:31:11 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
-#include "fxpriv.h"
+#include "fxmath.h"
 
 /*
   Notes:
@@ -55,6 +52,9 @@ using namespace FX;
 /*******************************************************************************/
 
 namespace FX {
+
+
+extern FXbool fxwuquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& actualcolors,FXint w,FXint h,FXint maxcolors);
 
 
 // Sub bpx
@@ -89,16 +89,16 @@ struct WU {
 
 // Build 3-D color histogram of counts, r/g/b, c^2
 static void histogram(WU& wu,const FXColor *data,FXint size){
-  register FXint r,g,b,inr,ing,inb,i;
+  FXint r,g,b,inr,ing,inb,i;
 
   // Clear counters
   memset(&wu,0,sizeof(wu));
 
   // Build histogram
   for(i=0; i<size; ++i){
-    r=((const FXuchar*)(data+i))[0];
+    r=((const FXuchar*)(data+i))[2];
     g=((const FXuchar*)(data+i))[1];
-    b=((const FXuchar*)(data+i))[2];
+    b=((const FXuchar*)(data+i))[0];
     inr=(r>>3)+1;
     ing=(g>>3)+1;
     inb=(b>>3)+1;
@@ -113,7 +113,7 @@ static void histogram(WU& wu,const FXColor *data,FXint size){
 
 // Compute cumulative moments
 static void moments(WU& wu){
-  register FXint linet,liner,lineg,lineb,i,r,g,b;
+  FXint linet,liner,lineg,lineb,i,r,g,b;
   FXint areat[33],arear[33],areag[33],areab[33];
   FXfloat line2,area2[33];
   for(r=1; r<=32; ++r){
@@ -173,7 +173,7 @@ static int volume(box& cube,FXint mmt[33][33][33]){
 // Compute part of Vol(cube, mmt) that doesn't depend
 // on r1, g1, or b1 (depending on dir)
 static FXint bottom(box& cube,FXuchar dir,FXint mmt[33][33][33]){
-  register FXint result=0;
+  FXint result=0;
   switch(dir){
     case RED:
       result= -mmt[cube.r0][cube.g1][cube.b1]
@@ -201,7 +201,7 @@ static FXint bottom(box& cube,FXuchar dir,FXint mmt[33][33][33]){
 // Compute remainder of Vol(cube, mmt), substituting pos
 // for r1, g1, or b1 (depending on dir)
 static FXint top(box& cube,FXuchar dir,FXint pos,FXint mmt[33][33][33]){
-  register FXint result=0;
+  FXint result=0;
   switch(dir){
     case RED:
       result= mmt[pos][cube.g1][cube.b1]
@@ -229,7 +229,7 @@ static FXint top(box& cube,FXuchar dir,FXint pos,FXint mmt[33][33][33]){
 // Compute the weighted variance of a box
 // NB: as with the raw statistics, this is really the variance * size
 static FXfloat variance(WU& wu,box& cube){
-  register FXfloat dr,dg,db,xx;
+  FXfloat dr,dg,db,xx;
 
   dr = (FXfloat)volume(cube,wu.mr);
   dg = (FXfloat)volume(cube,wu.mg);
@@ -254,8 +254,8 @@ static FXfloat variance(WU& wu,box& cube){
 // The remaining terms have a minus sign in the variance formula,
 // so we drop the minus sign and MAXIMIZE the sum of the two terms.
 static FXfloat maximize(WU& wu,box& cube,FXuchar dir,FXint first,FXint last,FXint *cut,FXint whole_r,FXint whole_g,FXint whole_b,FXint whole_w){
-  register FXint half_r,half_g,half_b,half_w,base_r,base_g,base_b,base_w,i;
-  register FXfloat temp,max;
+  FXint half_r,half_g,half_b,half_w,base_r,base_g,base_b,base_w,i;
+  FXfloat temp,max;
 
   base_r=bottom(cube,dir,wu.mr);
   base_g=bottom(cube,dir,wu.mg);
@@ -354,7 +354,7 @@ static FXint cut(WU& wu,box& set1,box& set2){
 
 // Each entry in box maps to label
 static void mark(box& cube,FXint label,FXuchar map[33][33][33]){
-  register FXint r,g,b;
+  FXint r,g,b;
   for(r=cube.r0+1; r<=cube.r1; ++r){
     for(g=cube.g0+1; g<=cube.g1; ++g){
       for(b=cube.b0+1; b<=cube.b1; ++b){
@@ -367,8 +367,8 @@ static void mark(box& cube,FXint label,FXuchar map[33][33][33]){
 
 // Wu's quantization method based on recursive partitioning
 FXbool fxwuquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& actualcolors,FXint w,FXint h,FXint maxcolors){
-  register FXint i,k,weight,next,size,r,g,b;
-  register FXfloat temp;
+  FXint    i,k,weight,next,size,r,g,b;
+  FXfloat  temp;
   FXuchar  map[33][33][33];
   FXfloat  vv[MAXCOLOR];
   box      cube[MAXCOLOR];
@@ -379,7 +379,6 @@ FXbool fxwuquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& act
 
   // Compute histogram
   histogram(wu,src,size);
-  //FXTRACE((100,"done hist\n"));
 
   // Compute moments
   moments(wu);
@@ -407,25 +406,21 @@ FXbool fxwuquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& act
       }
     if(temp<=0.0f){
       maxcolors=i+1;
-      //FXTRACE((100,"Only got %d boxes\n",maxcolors));
       break;
       }
     }
-
-  //FXTRACE((100,"done partition\n"));
 
   // Construct colormap
   for(k=0; k<maxcolors; ++k){
     mark(cube[k],k,map);
     weight=volume(cube[k],wu.wt);
     if(weight){
-      ((FXuchar*)(colormap+k))[0]=volume(cube[k],wu.mr)/weight;
-      ((FXuchar*)(colormap+k))[1]=volume(cube[k],wu.mg)/weight;
-      ((FXuchar*)(colormap+k))[2]=volume(cube[k],wu.mb)/weight;
       ((FXuchar*)(colormap+k))[3]=255;
+      ((FXuchar*)(colormap+k))[2]=volume(cube[k],wu.mr)/weight;
+      ((FXuchar*)(colormap+k))[1]=volume(cube[k],wu.mg)/weight;
+      ((FXuchar*)(colormap+k))[0]=volume(cube[k],wu.mb)/weight;
       }
     else{
-      //FXTRACE((1,"bogus box %d\n",k));
       ((FXuchar*)(colormap+k))[0]=0;
       ((FXuchar*)(colormap+k))[1]=0;
       ((FXuchar*)(colormap+k))[2]=0;
@@ -433,22 +428,18 @@ FXbool fxwuquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& act
       }
     }
 
-  //FXTRACE((100,"done mapping\n"));
-
-  // Build histogram
+  // Quantize image
   for(i=0; i<size; ++i){
-    r=((const FXuchar*)(src+i))[0];
+    r=((const FXuchar*)(src+i))[2];
     g=((const FXuchar*)(src+i))[1];
-    b=((const FXuchar*)(src+i))[2];
+    b=((const FXuchar*)(src+i))[0];
     dst[i]=map[(r>>3)+1][(g>>3)+1][(b>>3)+1];
     }
-
-  //FXTRACE((100,"done transform\n"));
 
   // Return actual number of colors
   actualcolors=maxcolors;
 
-  return TRUE;
+  return true;
   }
 
 }

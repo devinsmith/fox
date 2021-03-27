@@ -3,40 +3,41 @@
 *                       C o l o r   B a r   W i d g e t                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2001,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2001,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXColorBar.cpp,v 1.31 2006/01/22 17:58:20 fox Exp $                      *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
-#include "FXDrawable.h"
+#include "FXApp.h"
 #include "FXImage.h"
 #include "FXColorBar.h"
 
@@ -82,8 +83,7 @@ FXColorBar::FXColorBar(){
 
 
 // Make a color bar
-FXColorBar::FXColorBar(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
+FXColorBar::FXColorBar(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
   flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
@@ -111,7 +111,7 @@ void FXColorBar::detach(){
 
 // Resize the bar
 void FXColorBar::layout(){
-  register FXint ww,hh;
+  FXint ww,hh;
   ww=width-padleft-padright-(border<<1)-4;
   hh=height-padtop-padbottom-(border<<1)-4;
   if(ww<1) ww=1;
@@ -127,8 +127,8 @@ void FXColorBar::layout(){
 
 // Recompute the bar image
 void FXColorBar::updatebar(){
-  register FXint x,y,w,h;
-  register FXColor clr;
+  FXint x,y,w,h;
+  FXColor clr;
   FXfloat r,g,b,d;
   w=bar->getWidth();
   h=bar->getHeight();
@@ -199,7 +199,7 @@ long FXColorBar::onCmdGetTip(FXObject*,FXSelector,void* ptr){
 
 // We were asked about tip text
 long FXColorBar::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryTip(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryTip(sender,sel,ptr)) return 1;
   if((flags&FLAG_TIP) && !tip.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&tip);
     return 1;
@@ -210,7 +210,7 @@ long FXColorBar::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
 
 // We were asked about status text
 long FXColorBar::onQueryHelp(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryHelp(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryHelp(sender,sel,ptr)) return 1;
   if((flags&FLAG_HELP) && !help.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&help);
     return 1;
@@ -232,7 +232,7 @@ long FXColorBar::onPaint(FXObject*,FXSelector,void* ptr){
   drawDoubleSunkenRectangle(dc,padleft+border,padtop+border,width-padright-padleft-(border<<1),height-padbottom-padtop-(border<<1));
   drawFrame(dc,0,0,width,height);
   if(options&COLORBAR_VERTICAL)
-    drawDoubleRaisedRectangle(dc,border+padleft+2,border+padtop+2+(FXint)((1.0-hsv[2])*(bar->getHeight()-4)),bar->getWidth(),4);
+    drawDoubleRaisedRectangle(dc,border+padleft+2,border+padtop+2+(FXint)((1.0f-hsv[2])*(bar->getHeight()-4)),bar->getWidth(),4);
   else
     drawDoubleRaisedRectangle(dc,border+padleft+2+(FXint)(hsv[2]*(bar->getWidth()-4)),border+padtop+2,4,bar->getHeight());
   return 1;
@@ -328,7 +328,7 @@ long FXColorBar::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
 
 // Change hue
 void FXColorBar::setHue(FXfloat h){
-  h=FXCLAMP(0.0f,h,360.0f);
+  h=Math::fclamp(0.0f,h,360.0f);
   if(h!=hsv[0]){
     hsv[0]=h;
     updatebar();
@@ -340,7 +340,7 @@ void FXColorBar::setHue(FXfloat h){
 
 // Change saturation
 void FXColorBar::setSat(FXfloat s){
-  s=FXCLAMP(0.0f,s,1.0f);
+  s=Math::fclamp(0.0f,s,1.0f);
   if(s!=hsv[1]){
     hsv[1]=s;
     updatebar();
@@ -352,7 +352,7 @@ void FXColorBar::setSat(FXfloat s){
 
 // Change saturation
 void FXColorBar::setVal(FXfloat v){
-  v=FXCLAMP(0.0f,v,1.0f);
+  v=Math::fclamp(0.0f,v,1.0f);
   if(v!=hsv[2]){
     hsv[2]=v;
     update(padleft+border+2,padtop+border+2,width-padleft-padright-(border<<1)-4,height-padtop-padbottom-(border<<1)-4);

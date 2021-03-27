@@ -3,42 +3,42 @@
 *                           W i z a r d   W i d g e t                           *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2002,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXWizard.cpp,v 1.19 2006/01/22 17:58:52 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
 #include "fxkeys.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXImage.h"
-#include "FXIcon.h"
 #include "FXGIFIcon.h"
-#include "FXWindow.h"
 #include "FXFrame.h"
 #include "FXImageFrame.h"
 #include "FXSeparator.h"
@@ -87,16 +87,14 @@ FXIMPLEMENT(FXWizard,FXDialogBox,FXWizardMap,ARRAYNUMBER(FXWizardMap))
 
 
 // Construct free-floating Wizard
-FXWizard::FXWizard(FXApp* a,const FXString& name,FXImage *image,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXDialogBox(a,name,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
+FXWizard::FXWizard(FXApp* a,const FXString& name,FXImage *image,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXDialogBox(a,name,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
   construct();
   setImage(image);
   }
 
 
 // Construct Wizard which will always float over the owner window
-FXWizard::FXWizard(FXWindow* owner,const FXString& name,FXImage *image,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXDialogBox(owner,name,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
+FXWizard::FXWizard(FXWindow* own,const FXString& name,FXImage *image,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXDialogBox(own,name,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
   construct();
   setImage(image);
   }

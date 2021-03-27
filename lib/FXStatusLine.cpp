@@ -3,43 +3,45 @@
 *                       S t a t u s   L i n e   W i d g e t                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXStatusLine.cpp,v 1.28 2006/01/22 17:58:42 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXHorizontalFrame.h"
 #include "FXDragCorner.h"
 #include "FXStatusLine.h"
-
 
 
 /*
@@ -58,8 +60,8 @@ namespace FX {
 
 // Map
 FXDEFMAP(FXStatusLine) FXStatusLineMap[]={
-  FXMAPFUNC(SEL_PAINT,0,FXStatusLine::onPaint),
   FXMAPFUNC(SEL_UPDATE,0,FXStatusLine::onUpdate),
+  FXMAPFUNC(SEL_PAINT,0,FXStatusLine::onPaint),
   FXMAPFUNC(SEL_COMMAND,FXStatusLine::ID_SETSTRINGVALUE,FXStatusLine::onCmdSetStringValue),
   FXMAPFUNC(SEL_COMMAND,FXStatusLine::ID_GETSTRINGVALUE,FXStatusLine::onCmdGetStringValue),
   };
@@ -76,8 +78,7 @@ FXStatusLine::FXStatusLine(){
 
 
 // Construct and init
-FXStatusLine::FXStatusLine(FXComposite* p,FXObject* tgt,FXSelector sel):
-  FXFrame(p,FRAME_SUNKEN|LAYOUT_LEFT|LAYOUT_FILL_Y|LAYOUT_FILL_X,0,0,0,0, 4,4,2,2){
+FXStatusLine::FXStatusLine(FXComposite* p,FXObject* tgt,FXSelector sel):FXFrame(p,FRAME_SUNKEN|LAYOUT_LEFT|LAYOUT_FILL_Y|LAYOUT_FILL_X,0,0,0,0, 4,4,2,2){
   flags|=FLAG_SHOWN;
   status=normal=tr("Ready.");
   font=getApp()->getNormalFont();
@@ -116,16 +117,14 @@ FXint FXStatusLine::getDefaultHeight(){
 
 // Slightly different from Frame border
 long FXStatusLine::onPaint(FXObject*,FXSelector,void* ptr){
-  FXEvent *ev=(FXEvent*)ptr;
-  FXDCWindow dc(this,ev);
-  FXint ty=padtop+(height-padtop-padbottom-font->getFontHeight())/2;
-  FXint pos,len;
+  FXDCWindow dc(this,(FXEvent*)ptr);
   dc.setForeground(backColor);
-  dc.fillRectangle(ev->rect.x,ev->rect.y,ev->rect.w,ev->rect.h);
+  dc.setFont(font);
+  dc.fillRectangle(border,border,width-(border<<1),height-(border<<1));
   if(!status.empty()){
-    dc.setFont(font);
-    pos=status.find('\n');
-    len=status.length();
+    FXint ty=padtop+(height-padtop-padbottom-font->getFontHeight())/2;
+    FXint len=status.length();
+    FXint pos=status.find('\n');
     if(pos>=0){
       dc.setForeground(textHighlightColor);
       dc.drawText(padleft,ty+font->getFontAscent(),status.text(),pos);
@@ -147,17 +146,17 @@ long FXStatusLine::onPaint(FXObject*,FXSelector,void* ptr){
 long FXStatusLine::onUpdate(FXObject* sender,FXSelector sel,void* ptr){
   FXWindow *helpsource=getApp()->getCursorWindow();
 
-  // Regular GUI update
+  // Set background text
+  setText(normal);
+
+  // GUI update callback may set application mode text
   FXFrame::onUpdate(sender,sel,ptr);
 
   // Ask the help source for a new status text first, but only if the
   // statusline's shell is a direct or indirect owner of the help source
-  if(helpsource && getShell()->isOwnerOf(helpsource) && helpsource->handle(this,FXSEL(SEL_QUERY_HELP,0),NULL)){
-    return 1;
+  if(helpsource && getShell()->isOwnerOf(helpsource)){
+    helpsource->handle(this,FXSEL(SEL_QUERY_HELP,0),NULL);
     }
-
-  // Otherwise, supply normal message
-  setText(normal);
   return 1;
   }
 
@@ -181,8 +180,6 @@ void FXStatusLine::setText(const FXString& text){
   if(status!=text){
     status=text;
     update(border,border,width-(border<<1),height-(border<<1));
-    repaint(border,border,width-(border<<1),height-(border<<1));
-    getApp()->flush();
     }
   }
 
@@ -192,8 +189,6 @@ void FXStatusLine::setNormalText(const FXString& text){
   if(normal!=text){
     normal=text;
     update(border,border,width-(border<<1),height-(border<<1));
-    repaint(border,border,width-(border<<1),height-(border<<1));
-    getApp()->flush();
     }
   }
 

@@ -3,39 +3,40 @@
 *                         C o m p o s e - C o n t e x t                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXComposeContext.cpp,v 1.12 2006/01/22 17:58:21 fox Exp $                *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
-#include "FXId.h"
+#include "FXEvent.h"
 #include "FXWindow.h"
+#include "FXApp.h"
+#include "FXFont.h"
 #include "FXComposeContext.h"
 #include "FXException.h"
 
@@ -72,13 +73,13 @@ FXIMPLEMENT(FXComposeContext,FXId,NULL,0)
 
 // Deserialization
 FXComposeContext::FXComposeContext():window(NULL),message(0){
-  FXTRACE((1,"FXComposeContext::FXComposeContext %p\n",this));
+  FXTRACE((100,"FXComposeContext::FXComposeContext %p\n",this));
   }
 
 
 // Create input context
 FXComposeContext::FXComposeContext(FXApp* a,FXWindow* win,FXSelector sel):FXId(a),window(win),message(sel){
-  FXTRACE((1,"FXComposeContext::FXComposeContext %p\n",this));
+  FXTRACE((100,"FXComposeContext::FXComposeContext %p\n",this));
   }
 
 
@@ -87,7 +88,7 @@ void FXComposeContext::create(){
   if(!xid){
     if(getApp()->isInitialized()){
       FXTRACE((100,"%s::create %p\n",getClassName(),this));
-      ///////
+      xid=window->id();
       }
     }
   }
@@ -120,10 +121,30 @@ void FXComposeContext::focusOut(){
   }
 
 
+// Set the font
+void FXComposeContext::setFont(FXFont* font){
+  if(xid && font && font->id()){
+    HIMC himc=ImmGetContext((HWND)xid);
+    LOGFONT lf;
+    GetObject((HFONT)font->id(),sizeof(LOGFONT),&lf);
+    ImmSetCompositionFont(himc,&lf);
+    ImmReleaseContext((HWND)xid,himc);
+    }
+  }
+
+
 // Set the spot
 void FXComposeContext::setSpot(FXint x,FXint y){
   if(xid){
-    ///////
+    HIMC himc=ImmGetContext((HWND)xid);
+    COMPOSITIONFORM cf;
+    cf.dwStyle=CFS_POINT;
+    FXint tox,toy;
+    window->translateCoordinatesTo(tox,toy,window->getShell(),x,y);
+    cf.ptCurrentPos.x=tox;
+    cf.ptCurrentPos.y=toy;
+    ImmSetCompositionWindow(himc,&cf);
+    ImmReleaseContext((HWND)xid,himc);
     }
   }
 
@@ -140,7 +161,28 @@ void FXComposeContext::setArea(FXint x,FXint y,FXint w,FXint h){
 FXString FXComposeContext::translateEvent(FXRawEvent& event){
   FXString result;
   if(xid){
-    ///////
+    HIMC himc=ImmGetContext(event.hwnd);
+    LONG mlen=0;
+    FXnchar* mstr;
+    if(event.lParam&GCS_RESULTSTR){
+      mlen=ImmGetCompositionString(himc,GCS_RESULTSTR,NULL,0);
+      mstr=new FXnchar [mlen];
+      ImmGetCompositionString(himc,GCS_RESULTSTR,mstr,mlen);
+      }
+    else{
+      mlen=ImmGetCompositionString(himc,GCS_COMPSTR,NULL,0);
+      mstr=new FXnchar [mlen+1];
+      ImmGetCompositionString(himc,GCS_COMPSTR,mstr,mlen);
+      }
+    mstr[mlen/sizeof(FXnchar)]=0;
+    ImmReleaseContext(event.hwnd,himc);
+    int utf8len=WideCharToMultiByte(CP_UTF8,0,mstr,-1,NULL,0,NULL,NULL);
+    FXchar* utf8str=new FXchar [utf8len];
+    WideCharToMultiByte(CP_UTF8,0,mstr,-1,utf8str,utf8len,NULL,NULL);
+    result.assign(utf8str,utf8len);
+
+    delete [] mstr;
+    delete [] utf8str;
     }
   return result;
   }
@@ -148,7 +190,7 @@ FXString FXComposeContext::translateEvent(FXRawEvent& event){
 
 // Delete input context
 FXComposeContext::~FXComposeContext(){
-  FXTRACE((1,"FXComposeContext::~FXComposeContext %p\n",this));
+  FXTRACE((100,"FXComposeContext::~FXComposeContext %p\n",this));
   }
 
 
@@ -156,14 +198,14 @@ FXComposeContext::~FXComposeContext(){
 
 
 // Deserialization
-FXComposeContext::FXComposeContext():window(NULL),message(0){
-  FXTRACE((1,"FXComposeContext::FXComposeContext %p\n",this));
+FXComposeContext::FXComposeContext():window(NULL),message(0),fontset(0){
+  FXTRACE((100,"FXComposeContext::FXComposeContext %p\n",this));
   }
 
 
 // Create input context
-FXComposeContext::FXComposeContext(FXApp* a,FXWindow* win,FXSelector sel):FXId(a),window(win),message(sel){
-  FXTRACE((1,"FXComposeContext::FXComposeContext %p\n",this));
+FXComposeContext::FXComposeContext(FXApp* a,FXWindow* win,FXSelector sel):FXId(a),window(win),message(sel),fontset(0){
+  FXTRACE((100,"FXComposeContext::FXComposeContext %p\n",this));
   }
 
 
@@ -201,10 +243,10 @@ match:XFree(ximstyles);
 
 
 /*
-bool isIMRunning(Display *display){
+FXbool isIMRunning(Display *display){
   const FXchar *p=XSetLocaleModifiers(NULL);
   if(p){
-    FXTRACE((1,"XSetLocaleModifiers=%s\n",p));
+    FXTRACE((100,"XSetLocaleModifiers=%s\n",p));
     FXString server("@server=");
     server.append(p+4);         // skip "@im="
     FXint pos=server.find('@',1);
@@ -300,7 +342,7 @@ m:      XFree(ximstyles);
 
         // Have status callbacks
         if(style&XIMStatusCallbacks){
-          FXTRACE((1,"On the Spot/Status\n"));
+          FXTRACE((100,"On the Spot/Status\n"));
           statusStartStruct.client_data=(XPointer)this;
           statusStartStruct.callback=(XIMProc)statusStartCallback;
           statusDoneStruct.client_data=(XPointer)this;
@@ -314,7 +356,7 @@ m:      XFree(ximstyles);
 
         // No status callbacks
         else{
-          FXTRACE((1,"On the Spot\n"));
+          FXTRACE((100,"On the Spot\n"));
           xid=(FXID)XCreateIC((XIM)getApp()->xim,XNInputStyle,XIMPreeditCallbacks|XIMStatusNothing,XNClientWindow,window->id(),XNPreeditAttributes,editAttr,NULL);
           }
         XFree(editAttr);
@@ -322,7 +364,7 @@ m:      XFree(ximstyles);
 
       // Off the spot method
       else if(style&XIMPreeditArea){
-        FXTRACE((1,"Off the Spot\n"));
+        FXTRACE((100,"Off the Spot\n"));
         rect.x=0;
         rect.y=0;
         rect.width=window->getWidth();
@@ -334,17 +376,22 @@ m:      XFree(ximstyles);
 
       // Over the spot method
       else if(style&XIMPreeditPosition){
-        FXTRACE((1,"Over the Spot\n"));
+        FXTRACE((100,"Over the Spot\n"));
         spot.x=1;
         spot.y=1;
-        editAttr=XVaCreateNestedList(0,XNSpotLocation,&spot,NULL);
+        int missing_charcount;
+        char** missing_charsetlist;
+        char* def_string;
+        fontset=XCreateFontSet(DISPLAY(getApp()),"10x20,10x20",&missing_charsetlist,&missing_charcount,&def_string);
+        editAttr=XVaCreateNestedList(0,XNSpotLocation,&spot,XNFontSet,fontset,NULL);
         xid=(FXID)XCreateIC((XIM)getApp()->xim,XNInputStyle,XIMPreeditPosition|XIMStatusNothing,XNClientWindow,window->id(),XNPreeditAttributes,editAttr,NULL);
+        XFreeStringList(missing_charsetlist);
         XFree(editAttr);
         }
 
       // Root method
       else{
-        FXTRACE((1,"Root\n"));
+        FXTRACE((100,"Root\n"));
         xid=(FXID)XCreateIC((XIM)getApp()->xim,XNInputStyle,XIMPreeditNothing|XIMStatusNothing,XNClientWindow,window->id(),NULL);
         }
 
@@ -394,6 +441,16 @@ void FXComposeContext::focusOut(){
   }
 
 
+// Set the font
+void FXComposeContext::setFont(FXFont* font){
+  if(xid && font && font->id()){
+#ifndef NO_XIM
+      ///
+#endif
+    }
+  }
+
+
 // Set the spot
 void FXComposeContext::setSpot(FXint x,FXint y){
 #ifndef NO_XIM
@@ -433,13 +490,20 @@ FXString FXComposeContext::translateEvent(FXRawEvent& event){
   FXString result;
 #ifndef NO_XIM
   if(xid){
-    char buffer[40]; KeySym sym; Status s; int n;
-    n=XmbLookupString((XIC)xid,&event.xkey,buffer,sizeof(buffer),&sym,&s);
+    char* buffer=new char [513];
+    KeySym sym; Status s; int n;
+    n=XmbLookupString((XIC)xid,&event.xkey,buffer,512,&sym,&s);
+    if(s==XBufferOverflow){
+      delete [] buffer;
+      buffer=new char [n+1];
+      n=XmbLookupString((XIC)xid,&event.xkey,buffer,n,&sym,&s);
+      }
     if(s!=XLookupChars && s!=XLookupBoth) n=0;
     // FIXME decode buffer based on XLocaleOfIM(XIMOfIC((XIC)xid))
     buffer[n]=0;
     FXTRACE((100,"XLocaleOfIM=%s\n",XLocaleOfIM(XIMOfIC((XIC)xid))));
     result.assign(buffer,n);
+    delete [] buffer;
     }
 #endif
   return result;
@@ -447,13 +511,13 @@ FXString FXComposeContext::translateEvent(FXRawEvent& event){
 
 
 int FXComposeContext::editStartCallback(void*,FXComposeContext* cc,void*){
-  FXTRACE((1,"editStartCallback\n"));
+  FXTRACE((100,"editStartCallback\n"));
   return -1;			// No length limit
   }
 
 
 void FXComposeContext::editDoneCallback(void*,FXComposeContext* cc,void*){
-  FXTRACE((1,"editDoneCallback\n"));
+  FXTRACE((100,"editDoneCallback\n"));
   }
 
 
@@ -461,7 +525,7 @@ void FXComposeContext::editDrawCallback(void*,FXComposeContext* cc,void* ptr){
 #ifndef NO_XIM
   XIMPreeditDrawCallbackStruct *drawstruct=(XIMPreeditDrawCallbackStruct*)ptr;
   XIMText *ximtext=drawstruct->text;
-  FXTRACE((1,"editDrawCallback caret=%d first=%d len=%d\n",drawstruct->caret,drawstruct->chg_first,drawstruct->chg_length));
+  FXTRACE((100,"editDrawCallback caret=%d first=%d len=%d\n",drawstruct->caret,drawstruct->chg_first,drawstruct->chg_length));
 #endif
   }
 
@@ -469,34 +533,36 @@ void FXComposeContext::editDrawCallback(void*,FXComposeContext* cc,void* ptr){
 void FXComposeContext::editCaretCallback(void*,FXComposeContext* cc,void* ptr){
 #ifndef NO_XIM
   XIMPreeditCaretCallbackStruct *caretstruct=(XIMPreeditCaretCallbackStruct*)ptr;
-  FXTRACE((1,"editCaretCallback position=%d direction=%d style=%d\n",caretstruct->position,caretstruct->direction,caretstruct->style));
+  FXTRACE((100,"editCaretCallback position=%d direction=%d style=%d\n",caretstruct->position,caretstruct->direction,caretstruct->style));
 #endif
   }
 
 
 void FXComposeContext::statusStartCallback(void*,FXComposeContext* cc,void*){
-  FXTRACE((1,"statusStartCallback\n"));
+  FXTRACE((100,"statusStartCallback\n"));
   }
 
 
 void FXComposeContext::statusDoneCallback(void*,FXComposeContext* cc,void*){
-  FXTRACE((1,"statusDoneCallback\n"));
+  FXTRACE((100,"statusDoneCallback\n"));
   }
 
 
 void FXComposeContext::statusDrawCallback(void*,FXComposeContext* cc,void* ptr){
 #ifndef NO_XIM
   XIMStatusDrawCallbackStruct* drawstruct=(XIMStatusDrawCallbackStruct*)ptr;
-  FXTRACE((1,"statusDrawCallback\n"));
+  FXTRACE((100,"statusDrawCallback\n"));
 #endif
   }
 
 
 // Delete input context
 FXComposeContext::~FXComposeContext(){
-  FXTRACE((1,"FXComposeContext::~FXComposeContext %p\n",this));
+  FXTRACE((100,"FXComposeContext::~FXComposeContext %p\n",this));
   destroy();
   window=(FXWindow*)-1L;
+  if(fontset) XFreeFontSet(DISPLAY(getApp()),(XFontSet)fontset);
+  fontset=(XFontSet)-1L;
   }
 
 #endif  /////////////////////////////////////////////////////////////////////////

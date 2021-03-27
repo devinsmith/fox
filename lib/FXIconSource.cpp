@@ -3,41 +3,33 @@
 *                            I c o n   S o u r c e                              *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXIconSource.cpp,v 1.20.2.2 2008/01/25 14:00:32 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
 #include "FXStream.h"
 #include "FXFile.h"
 #include "FXFileStream.h"
 #include "FXMemoryStream.h"
 #include "FXString.h"
-#include "FXSize.h"
-#include "FXPoint.h"
-#include "FXRectangle.h"
 #include "FXPath.h"
-#include "FXSettings.h"
-#include "FXRegistry.h"
-#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXImage.h"
 #include "FXIconSource.h"
@@ -54,6 +46,8 @@
 #include "FXTGAIcon.h"
 #include "FXXBMIcon.h"
 #include "FXXPMIcon.h"
+#include "FXDDSIcon.h"
+#include "FXEXEIcon.h"
 
 // Built-in image formats
 #include "FXBMPImage.h"
@@ -67,6 +61,8 @@
 #include "FXTGAImage.h"
 #include "FXXBMImage.h"
 #include "FXXPMImage.h"
+#include "FXDDSImage.h"
+#include "FXEXEImage.h"
 
 // Formats requiring external libraries
 #ifndef CORE_IMAGE_FORMATS
@@ -83,15 +79,20 @@
 #include "FXTIFImage.h"
 #endif
 #endif
-
+#ifdef HAVE_JP2_H
+#include "FXJP2Icon.h"
+#include "FXJP2Image.h"
+#endif
+#ifdef HAVE_WEBP_H
+#include "FXWEBPIcon.h"
+#include "FXWEBPImage.h"
+#endif
 
 /*
   Notes:
   - Either load an icon from a file, or load from already open stream.
-  - Future versions will take advantage of the new fxcheckXXX() functions
-    to predicates to determine from the data itself what the type is;
-    currently this is quite unreliable due to more extensive analysis
-    needed of the image file format recognition.
+  - Recognition of some image/icon types based on contents may be less
+    certain due to poorly defined signature information in the file.
 */
 
 
@@ -102,13 +103,12 @@ using namespace FX;
 namespace FX {
 
 
+// Default icon source used when none provided
+FXIconSource FXIconSource::defaultIconSource;
+
+
+// Object implementation
 FXIMPLEMENT(FXIconSource,FXObject,NULL,0)
-
-
-// Initialize icon source
-FXIconSource::FXIconSource(FXApp* a):app(a){
-  FXTRACE((100,"FXIconSource::FXIconSource\n"));
-  }
 
 
 // Scale image or icon to size
@@ -127,18 +127,306 @@ FXImage* FXIconSource::scaleToSize(FXImage *image,FXint size,FXint qual) const {
   }
 
 
+// Create icon from file type
+FXIcon *FXIconSource::iconFromType(FXApp* app,const FXString& type) const {
+  if(comparecase(FXBMPIcon::fileExt,type)==0){
+    return new FXBMPIcon(app,NULL,0,IMAGE_ALPHAGUESS);
+    }
+  if(comparecase(FXGIFIcon::fileExt,type)==0){
+    return new FXGIFIcon(app);
+    }
+  if(comparecase(FXICOIcon::fileExt,type)==0 || comparecase("cur",type)==0){
+    return new FXICOIcon(app);
+    }
+  if(comparecase(FXIFFIcon::fileExt,type)==0 || comparecase("lbm",type)==0){
+    return new FXIFFIcon(app);
+    }
+  if(comparecase(FXPCXIcon::fileExt,type)==0){
+    return new FXPCXIcon(app);
+    }
+  if(comparecase(FXPPMIcon::fileExt,type)==0 || comparecase("pbm",type)==0 || comparecase("pgm",type)==0 || comparecase("pnm",type)==0){
+    return new FXPPMIcon(app);
+    }
+  if(comparecase(FXRASIcon::fileExt,type)==0){
+    return new FXRASIcon(app);
+    }
+  if(comparecase(FXRGBIcon::fileExt,type)==0){
+    return new FXRGBIcon(app);
+    }
+  if(comparecase(FXTGAIcon::fileExt,type)==0){
+    return new FXTGAIcon(app);
+    }
+  if(comparecase(FXXBMIcon::fileExt,type)==0){
+    return new FXXBMIcon(app);
+    }
+  if(comparecase(FXXPMIcon::fileExt,type)==0){
+    return new FXXPMIcon(app);
+    }
+  if(comparecase(FXDDSIcon::fileExt,type)==0){
+    return new FXDDSIcon(app);
+    }
+  if(comparecase(FXEXEIcon::fileExt,type)==0){
+    return new FXEXEIcon(app);
+    }
+#ifndef CORE_IMAGE_FORMATS
+#ifdef HAVE_JPEG_H
+  if(comparecase(FXJPGIcon::fileExt,type)==0 || comparecase("jpeg",type)==0){
+    return new FXJPGIcon(app);
+    }
+#endif
+#ifdef HAVE_PNG_H
+  if(comparecase(FXPNGIcon::fileExt,type)==0){
+    return new FXPNGIcon(app);
+    }
+#endif
+#ifdef HAVE_TIFF_H
+  if(comparecase(FXTIFIcon::fileExt,type)==0 || comparecase("tiff",type)==0){
+    return new FXTIFIcon(app);
+    }
+#endif
+#ifdef HAVE_JP2_H
+  if(comparecase(FXJP2Icon::fileExt,type)==0){
+    return new FXJP2Icon(app);
+    }
+#endif
+#ifdef HAVE_WEBP_H
+  if(comparecase(FXWEBPIcon::fileExt,type)==0){
+    return new FXWEBPIcon(app);
+    }
+#endif
+#endif
+  return NULL;
+  }
+
+
+// Create image from file type
+FXImage *FXIconSource::imageFromType(FXApp* app,const FXString& type) const {
+  if(comparecase(FXBMPImage::fileExt,type)==0){
+    return new FXBMPImage(app);
+    }
+  if(comparecase(FXGIFImage::fileExt,type)==0){
+    return new FXGIFImage(app);
+    }
+  if(comparecase(FXICOImage::fileExt,type)==0 || comparecase("cur",type)==0){
+    return new FXICOImage(app);
+    }
+  if(comparecase(FXIFFImage::fileExt,type)==0 || comparecase("lbm",type)==0){
+    return new FXIFFImage(app);
+    }
+  if(comparecase(FXPCXImage::fileExt,type)==0){
+    return new FXPCXImage(app);
+    }
+  if(comparecase(FXPPMImage::fileExt,type)==0 || comparecase("pbm",type)==0 || comparecase("pgm",type)==0 || comparecase("pnm",type)==0){
+    return new FXPPMImage(app);
+    }
+  if(comparecase(FXRASImage::fileExt,type)==0){
+    return new FXRASImage(app);
+    }
+  if(comparecase(FXRGBImage::fileExt,type)==0){
+    return new FXRGBImage(app);
+    }
+  if(comparecase(FXTGAImage::fileExt,type)==0){
+    return new FXTGAImage(app);
+    }
+  if(comparecase(FXXBMImage::fileExt,type)==0){
+    return new FXXBMImage(app);
+    }
+  if(comparecase(FXXPMImage::fileExt,type)==0){
+    return new FXXPMImage(app);
+    }
+  if(comparecase(FXDDSImage::fileExt,type)==0){
+    return new FXDDSImage(app);
+    }
+  if(comparecase(FXEXEImage::fileExt,type)==0){
+    return new FXEXEImage(app);
+    }
+#ifndef CORE_IMAGE_FORMATS
+#ifdef HAVE_JPEG_H
+  if(comparecase(FXJPGImage::fileExt,type)==0 || comparecase("jpeg",type)==0){
+    return new FXJPGImage(app);
+    }
+#endif
+#ifdef HAVE_PNG_H
+  if(comparecase(FXPNGImage::fileExt,type)==0){
+    return new FXPNGImage(app);
+    }
+#endif
+#ifdef HAVE_TIFF_H
+  if(comparecase(FXTIFImage::fileExt,type)==0 || comparecase("tiff",type)==0){
+    return new FXTIFImage(app);
+    }
+#endif
+#ifdef HAVE_JP2_H
+  if(comparecase(FXJP2Image::fileExt,type)==0){
+    return new FXJP2Image(app);
+    }
+#endif
+#ifdef HAVE_WEBP_H
+  if(comparecase(FXWEBPImage::fileExt,type)==0){
+    return new FXWEBPImage(app);
+    }
+#endif
+#endif
+  return NULL;
+  }
+
+
+// Determine icon type from first header bytes in stream
+FXIcon *FXIconSource::iconFromStream(FXApp* app,FXStream& store) const {
+  if(fxcheckBMP(store)){
+    return new FXBMPIcon(app,NULL,0,IMAGE_ALPHAGUESS);
+    }
+  if(fxcheckGIF(store)){
+    return new FXGIFIcon(app);
+    }
+  if(fxcheckIFF(store)){
+    return new FXIFFIcon(app);
+    }
+  if(fxcheckPPM(store)){
+    return new FXPPMIcon(app);
+    }
+  if(fxcheckRAS(store)){
+    return new FXRASIcon(app);
+    }
+  if(fxcheckXBM(store)){
+    return new FXXBMIcon(app);
+    }
+  if(fxcheckXPM(store)){
+    return new FXXPMIcon(app);
+    }
+  if(fxcheckDDS(store)){
+    return new FXDDSIcon(app);
+    }
+  if(fxcheckEXE(store)){
+    return new FXEXEIcon(app);
+    }
+#ifndef CORE_IMAGE_FORMATS
+#ifdef HAVE_JPEG_H
+  if(fxcheckJPG(store)){
+    return new FXJPGIcon(app);
+    }
+#endif
+#ifdef HAVE_PNG_H
+  if(fxcheckPNG(store)){
+    return new FXPNGIcon(app);
+    }
+#endif
+#ifdef HAVE_TIFF_H
+  if(fxcheckTIF(store)){
+    return new FXTIFIcon(app);
+    }
+#endif
+#ifdef HAVE_JP2_H
+  if(fxcheckJP2(store)){
+    return new FXJP2Icon(app);
+    }
+#endif
+#ifdef HAVE_WEBP_H
+  if(fxcheckWEBP(store)){
+    return new FXWEBPIcon(app);
+    }
+#endif
+#endif
+  if(fxcheckPCX(store)){
+    return new FXPCXIcon(app);
+    }
+  if(fxcheckICO(store)){
+    return new FXICOIcon(app);
+    }
+  if(fxcheckRGB(store)){
+    return new FXRGBIcon(app);
+    }
+  if(fxcheckTGA(store)){
+    return new FXTGAIcon(app);
+    }
+  return NULL;
+  }
+
+
+// Determine image type from first header bytes in stream
+FXImage *FXIconSource::imageFromStream(FXApp* app,FXStream& store) const {
+  if(fxcheckBMP(store)){
+    return new FXBMPImage(app);
+    }
+  if(fxcheckGIF(store)){
+    return new FXGIFImage(app);
+    }
+  if(fxcheckIFF(store)){
+    return new FXIFFImage(app);
+    }
+  if(fxcheckPPM(store)){
+    return new FXPPMImage(app);
+    }
+  if(fxcheckRAS(store)){
+    return new FXRASImage(app);
+    }
+  if(fxcheckXBM(store)){
+    return new FXXBMImage(app);
+    }
+  if(fxcheckXPM(store)){
+    return new FXXPMImage(app);
+    }
+  if(fxcheckDDS(store)){
+    return new FXDDSImage(app);
+    }
+  if(fxcheckEXE(store)){
+    return new FXEXEImage(app);
+    }
+#ifndef CORE_IMAGE_FORMATS
+#ifdef HAVE_JPEG_H
+  if(fxcheckJPG(store)){
+    return new FXJPGImage(app);
+    }
+#endif
+#ifdef HAVE_PNG_H
+  if(fxcheckPNG(store)){
+    return new FXPNGImage(app);
+    }
+#endif
+#ifdef HAVE_TIFF_H
+  if(fxcheckTIF(store)){
+    return new FXTIFImage(app);
+    }
+#endif
+#ifdef HAVE_JP2_H
+  if(fxcheckJP2(store)){
+    return new FXJP2Image(app);
+    }
+#endif
+#ifdef HAVE_WEBP_H
+  if(fxcheckWEBP(store)){
+    return new FXWEBPImage(app);
+    }
+#endif
+#endif
+  if(fxcheckPCX(store)){
+    return new FXPCXImage(app);
+    }
+  if(fxcheckICO(store)){
+    return new FXICOImage(app);
+    }
+  if(fxcheckRGB(store)){
+    return new FXRGBImage(app);
+    }
+  if(fxcheckTGA(store)){
+    return new FXTGAImage(app);
+    }
+  return NULL;
+  }
+
+
 // Load from file
-FXIcon *FXIconSource::loadIconFile(const FXString& filename,const FXString& type) const {
+FXIcon *FXIconSource::loadIconFile(FXApp* app,const FXString& filename,const FXString& type) const {
   FXIcon *icon=NULL;
   FXTRACE((150,"FXIconSource loadIcon(%s)\n",filename.text()));
   if(!filename.empty()){
     FXFileStream store;
     if(store.open(filename,FXStreamLoad,65536)){
       if(type.empty()){
-        icon=loadIconStream(store,FXPath::extension(filename));
+        icon=loadIconStream(app,store,FXPath::extension(filename));
         }
       else{
-        icon=loadIconStream(store,type);
+        icon=loadIconStream(app,store,type);
         }
       store.close();
       }
@@ -148,12 +436,12 @@ FXIcon *FXIconSource::loadIconFile(const FXString& filename,const FXString& type
 
 
 // Load from data array
-FXIcon *FXIconSource::loadIconData(const void *pixels,const FXString& type) const {
+FXIcon *FXIconSource::loadIconData(FXApp* app,const void *pixels,const FXString& type) const {
   FXIcon *icon=NULL;
   if(pixels){
     FXMemoryStream store;
     store.open(FXStreamLoad,(FXuchar*)pixels);
-    icon=loadIconStream(store,type);
+    icon=loadIconStream(app,store,type);
     store.close();
     }
   return icon;
@@ -161,58 +449,14 @@ FXIcon *FXIconSource::loadIconData(const void *pixels,const FXString& type) cons
 
 
 // Load from already open stream
-FXIcon *FXIconSource::loadIconStream(FXStream& store,const FXString& type) const {
+FXIcon *FXIconSource::loadIconStream(FXApp* app,FXStream& store,const FXString& type) const {
   FXIcon *icon=NULL;
-  if(comparecase(FXBMPIcon::fileExt,type)==0){
-    icon=new FXBMPIcon(app);
+  if(!type.empty()){
+    icon=iconFromType(app,type);
     }
-  else if(comparecase(FXGIFIcon::fileExt,type)==0){
-    icon=new FXGIFIcon(app);
+  if(!icon){
+    icon=iconFromStream(app,store);
     }
-  else if(comparecase(FXICOIcon::fileExt,type)==0 || comparecase("cur",type)==0){
-    icon=new FXICOIcon(app);
-    }
-  else if(comparecase(FXIFFIcon::fileExt,type)==0 || comparecase("lbm",type)==0){
-    icon=new FXIFFIcon(app);
-    }
-  else if(comparecase(FXPCXIcon::fileExt,type)==0){
-    icon=new FXPCXIcon(app);
-    }
-  else if(comparecase(FXPPMIcon::fileExt,type)==0 || comparecase("pbm",type)==0 || comparecase("pgm",type)==0 || comparecase("pnm",type)==0){
-    icon=new FXPPMIcon(app);
-    }
-  else if(comparecase(FXRASIcon::fileExt,type)==0){
-    icon=new FXRASIcon(app);
-    }
-  else if(comparecase(FXRGBIcon::fileExt,type)==0){
-    icon=new FXRGBIcon(app);
-    }
-  else if(comparecase(FXTGAIcon::fileExt,type)==0){
-    icon=new FXTGAIcon(app);
-    }
-  else if(comparecase(FXXBMIcon::fileExt,type)==0){
-    icon=new FXXBMIcon(app);
-    }
-  else if(comparecase(FXXPMIcon::fileExt,type)==0){
-    icon=new FXXPMIcon(app);
-    }
-#ifndef CORE_IMAGE_FORMATS
-#ifdef HAVE_JPEG_H
-  else if(comparecase(FXJPGIcon::fileExt,type)==0 || comparecase("jpeg",type)==0){
-    icon=new FXJPGIcon(app);
-    }
-#endif
-#ifdef HAVE_PNG_H
-  else if(comparecase(FXPNGIcon::fileExt,type)==0){
-    icon=new FXPNGIcon(app);
-    }
-#endif
-#ifdef HAVE_TIFF_H
-  else if(comparecase(FXTIFIcon::fileExt,type)==0 || comparecase("tiff",type)==0){
-    icon=new FXTIFIcon(app);
-    }
-#endif
-#endif
   if(icon){
     if(icon->loadPixels(store)) return icon;
     delete icon;
@@ -222,17 +466,17 @@ FXIcon *FXIconSource::loadIconStream(FXStream& store,const FXString& type) const
 
 
 // Load from file
-FXImage *FXIconSource::loadImageFile(const FXString& filename,const FXString& type) const {
+FXImage *FXIconSource::loadImageFile(FXApp* app,const FXString& filename,const FXString& type) const {
   FXImage *image=NULL;
   FXTRACE((150,"FXIconSource loadImage(%s)\n",filename.text()));
   if(!filename.empty()){
     FXFileStream store;
     if(store.open(filename,FXStreamLoad,65536)){
       if(type.empty()){
-        image=loadImageStream(store,FXPath::extension(filename));
+        image=loadImageStream(app,store,FXPath::extension(filename));
         }
       else{
-        image=loadImageStream(store,type);
+        image=loadImageStream(app,store,type);
         }
       store.close();
       }
@@ -242,12 +486,12 @@ FXImage *FXIconSource::loadImageFile(const FXString& filename,const FXString& ty
 
 
 // Load from data array
-FXImage *FXIconSource::loadImageData(const void *pixels,const FXString& type) const {
+FXImage *FXIconSource::loadImageData(FXApp* app,const void *pixels,const FXString& type) const {
   FXImage *image=NULL;
   if(pixels){
     FXMemoryStream store;
     store.open(FXStreamLoad,(FXuchar*)pixels);
-    image=loadImageStream(store,type);
+    image=loadImageStream(app,store,type);
     store.close();
     }
   return image;
@@ -255,58 +499,14 @@ FXImage *FXIconSource::loadImageData(const void *pixels,const FXString& type) co
 
 
 // Load from already open stream
-FXImage *FXIconSource::loadImageStream(FXStream& store,const FXString& type) const {
+FXImage *FXIconSource::loadImageStream(FXApp* app,FXStream& store,const FXString& type) const {
   FXImage *image=NULL;
-  if(comparecase(FXBMPImage::fileExt,type)==0){
-    image=new FXBMPImage(app);
+  if(!type.empty()){
+    image=imageFromType(app,type);
     }
-  else if(comparecase(FXGIFImage::fileExt,type)==0){
-    image=new FXGIFImage(app);
+  if(!image){
+    image=imageFromStream(app,store);
     }
-  else if(comparecase(FXICOImage::fileExt,type)==0 || comparecase("cur",type)==0){
-    image=new FXICOImage(app);
-    }
-  else if(comparecase(FXIFFImage::fileExt,type)==0 || comparecase("lbm",type)==0){
-    image=new FXIFFImage(app);
-    }
-  else if(comparecase(FXPCXImage::fileExt,type)==0){
-    image=new FXPCXImage(app);
-    }
-  else if(comparecase(FXPPMImage::fileExt,type)==0 || comparecase("pbm",type)==0 || comparecase("pgm",type)==0 || comparecase("pnm",type)==0){
-    image=new FXPPMImage(app);
-    }
-  else if(comparecase(FXRASImage::fileExt,type)==0){
-    image=new FXRASImage(app);
-    }
-  else if(comparecase(FXRGBImage::fileExt,type)==0){
-    image=new FXRGBImage(app);
-    }
-  else if(comparecase(FXTGAImage::fileExt,type)==0){
-    image=new FXTGAImage(app);
-    }
-  else if(comparecase(FXXBMImage::fileExt,type)==0){
-    image=new FXXBMImage(app);
-    }
-  else if(comparecase(FXXPMImage::fileExt,type)==0){
-    image=new FXXPMImage(app);
-    }
-#ifndef CORE_IMAGE_FORMATS
-#ifdef HAVE_JPEG_H
-  else if(comparecase(FXJPGImage::fileExt,type)==0 || comparecase("jpeg",type)==0){
-    image=new FXJPGImage(app);
-    }
-#endif
-#ifdef HAVE_PNG_H
-  else if(comparecase(FXPNGImage::fileExt,type)==0){
-    image=new FXPNGImage(app);
-    }
-#endif
-#ifdef HAVE_TIFF_H
-  else if(comparecase(FXTIFImage::fileExt,type)==0 || comparecase("tiff",type)==0){
-    image=new FXTIFImage(app);
-    }
-#endif
-#endif
   if(image){
     if(image->loadPixels(store)) return image;
     delete image;
@@ -316,61 +516,38 @@ FXImage *FXIconSource::loadImageStream(FXStream& store,const FXString& type) con
 
 
 // Load icon and scale it such that its dimensions does not exceed given size
-FXIcon *FXIconSource::loadScaledIconFile(const FXString& filename,FXint size,FXint qual,const FXString& type) const {
-  return (FXIcon*)scaleToSize(loadIconFile(filename,type),size,qual);
+FXIcon *FXIconSource::loadScaledIconFile(FXApp* app,const FXString& filename,FXint size,FXint qual,const FXString& type) const {
+  return (FXIcon*)scaleToSize(loadIconFile(app,filename,type),size,qual);
   }
 
 
 // Load from data array
-FXIcon *FXIconSource::loadScaledIconData(const void *pixels,FXint size,FXint qual,const FXString& type) const {
-  return (FXIcon*)scaleToSize(loadIconData(pixels,type),size,qual);
+FXIcon *FXIconSource::loadScaledIconData(FXApp* app,const void *pixels,FXint size,FXint qual,const FXString& type) const {
+  return (FXIcon*)scaleToSize(loadIconData(app,pixels,type),size,qual);
   }
 
 
 // Load icon and scale it such that its dimensions does not exceed given size
-FXIcon *FXIconSource::loadScaledIconStream(FXStream& store,FXint size,FXint qual,const FXString& type) const {
-  return (FXIcon*)scaleToSize(loadIconStream(store,type),size,qual);
+FXIcon *FXIconSource::loadScaledIconStream(FXApp* app,FXStream& store,FXint size,FXint qual,const FXString& type) const {
+  return (FXIcon*)scaleToSize(loadIconStream(app,store,type),size,qual);
   }
 
 
 // Load image and scale it such that its dimensions does not exceed given size
-FXImage *FXIconSource::loadScaledImageFile(const FXString& filename,FXint size,FXint qual,const FXString& type) const {
-  return scaleToSize(loadImageFile(filename,type),size,qual);
+FXImage *FXIconSource::loadScaledImageFile(FXApp* app,const FXString& filename,FXint size,FXint qual,const FXString& type) const {
+  return scaleToSize(loadImageFile(app,filename,type),size,qual);
   }
 
 
 // Load from data array
-FXImage *FXIconSource::loadScaledImageData(const void *pixels,FXint size,FXint qual,const FXString& type) const {
-  return (FXImage*)scaleToSize(loadImageData(pixels,type),size,qual);
+FXImage *FXIconSource::loadScaledImageData(FXApp* app,const void *pixels,FXint size,FXint qual,const FXString& type) const {
+  return (FXImage*)scaleToSize(loadImageData(app,pixels,type),size,qual);
   }
 
 
 // Load image and scale it such that its dimensions does not exceed given size
-FXImage *FXIconSource::loadScaledImageStream(FXStream& store,FXint size,FXint qual,const FXString& type) const {
-  return scaleToSize(loadImageStream(store,type),size,qual);
+FXImage *FXIconSource::loadScaledImageStream(FXApp* app,FXStream& store,FXint size,FXint qual,const FXString& type) const {
+  return scaleToSize(loadImageStream(app,store,type),size,qual);
   }
-
-
-// Save to stream
-void FXIconSource::save(FXStream& store) const {
-  FXObject::save(store);
-  store << app;
-  }
-
-
-// Load from stream
-void FXIconSource::load(FXStream& store){
-  FXObject::load(store);
-  store >> app;
-  }
-
-
-// Delete
-FXIconSource::~FXIconSource(){
-  FXTRACE((100,"FXIconSource::~FXIconSource\n"));
-  app=(FXApp*)-1L;
-  }
-
-
 
 }

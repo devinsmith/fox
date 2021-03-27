@@ -3,39 +3,42 @@
 *                         D o c k T i t l e   W i d g e t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDockTitle.cpp,v 1.6 2006/01/22 17:58:23 fox Exp $                      *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXDockTitle.h"
 
 
@@ -74,8 +77,7 @@ FXDockTitle::FXDockTitle(){
 
 
 // Construct and init
-FXDockTitle::FXDockTitle(FXComposite* p,const FXString& text,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXDockHandler(p,tgt,sel,opts,x,y,w,h,pl,pr,pt,pb),caption(text){
+FXDockTitle::FXDockTitle(FXComposite* p,const FXString& text,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXDockHandler(p,tgt,sel,opts,x,y,w,h,pl,pr,pt,pb),caption(text){
   font=getApp()->getNormalFont();
   captionColor=getApp()->getSelforeColor();
   backColor=getApp()->getSelbackColor();
@@ -98,7 +100,7 @@ void FXDockTitle::detach(){
 
 // Get default width
 FXint FXDockTitle::getDefaultWidth(){
-  register FXint w=0;
+  FXint w=0;
   if(!caption.empty()) w=font->getTextWidth(caption.text(),caption.length());
   return padleft+padright+(border<<1)+w;
   }
@@ -106,7 +108,7 @@ FXint FXDockTitle::getDefaultWidth(){
 
 // Get default height
 FXint FXDockTitle::getDefaultHeight(){
-  register FXint h=0;
+  FXint h=0;
   if(!caption.empty()) h=font->getFontHeight();
   return padtop+padbottom+(border<<1)+h;
   }

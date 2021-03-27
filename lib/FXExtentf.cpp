@@ -3,27 +3,26 @@
 *          S i n g l e - P r e c i s i o n    E x t e n t    C l a s s          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2004,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2004,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXExtentf.cpp,v 1.3 2006/01/22 17:58:25 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXVec2f.h"
@@ -42,25 +41,25 @@ namespace FX {
 
 // Longest side
 FXfloat FXExtentf::longest() const {
-  register FXfloat x=upper.x-lower.x;
-  register FXfloat y=upper.y-lower.y;
-  return FXMAX(x,y);
+  FXfloat x=upper.x-lower.x;
+  FXfloat y=upper.y-lower.y;
+  return Math::fmax(x,y);
   }
 
 
 // Shortest side
 FXfloat FXExtentf::shortest() const {
-  register FXfloat x=upper.x-lower.x;
-  register FXfloat y=upper.y-lower.y;
-  return FXMIN(x,y);
+  FXfloat x=upper.x-lower.x;
+  FXfloat y=upper.y-lower.y;
+  return Math::fmin(x,y);
   }
 
 
 // Length of diagonal
 FXfloat FXExtentf::diameter() const {
-  register FXfloat x=upper.x-lower.x;
-  register FXfloat y=upper.y-lower.y;
-  return sqrtf(x*x+y*y);
+  FXfloat x=upper.x-lower.x;
+  FXfloat y=upper.y-lower.y;
+  return Math::sqrt(x*x+y*y);
   }
 
 
@@ -83,32 +82,34 @@ FXVec2f FXExtentf::center() const {
 
 
 // Test if empty
-bool FXExtentf::empty() const {
+FXbool FXExtentf::empty() const {
   return upper.x<lower.x || upper.y<lower.y;
   }
 
 // Test if box contains point
-bool FXExtentf::contains(FXfloat x,FXfloat y) const {
+FXbool FXExtentf::contains(FXfloat x,FXfloat y) const {
   return lower.x<=x && x<=upper.x && lower.y<=y && y<=upper.y;
   }
 
 
 // Test if box contains point p
-bool FXExtentf::contains(const FXVec2f& p) const {
+FXbool FXExtentf::contains(const FXVec2f& p) const {
   return lower.x<=p.x && p.x<=upper.x && lower.y<=p.y && p.y<=upper.y;
   }
 
 
 // Test if box contains another box
-bool FXExtentf::contains(const FXExtentf& ext) const {
+FXbool FXExtentf::contains(const FXExtentf& ext) const {
   return lower.x<=ext.lower.x && ext.upper.x<=upper.x && lower.y<=ext.lower.y && ext.upper.y<=upper.y;
   }
 
 
 // Include point into range
 FXExtentf& FXExtentf::include(FXfloat x,FXfloat y){
-  if(x<lower.x) lower.x=x; if(x>upper.x) upper.x=x;
-  if(y<lower.y) lower.y=y; if(y>upper.y) upper.y=y;
+  lower.x=Math::fmin(x,lower.x);
+  lower.y=Math::fmin(y,lower.y);
+  upper.x=Math::fmax(x,upper.x);
+  upper.y=Math::fmax(y,upper.y);
   return *this;
   }
 
@@ -121,14 +122,65 @@ FXExtentf& FXExtentf::include(const FXVec2f& v){
 
 // Include given box into box's range
 FXExtentf& FXExtentf::include(const FXExtentf& ext){
-  if(ext.lower.x<lower.x) lower.x=ext.lower.x; if(ext.upper.x>upper.x) upper.x=ext.upper.x;
-  if(ext.lower.y<lower.y) lower.y=ext.lower.y; if(ext.upper.y>upper.y) upper.y=ext.upper.y;
+  lower.x=Math::fmin(ext.lower.x,lower.x);
+  lower.y=Math::fmin(ext.lower.y,lower.y);
+  upper.x=Math::fmax(ext.upper.x,upper.x);
+  upper.y=Math::fmax(ext.upper.y,upper.y);
   return *this;
   }
 
 
+// Intersect box with ray u-v
+FXbool FXExtentf::intersect(const FXVec2f& u,const FXVec2f& v) const {
+  FXfloat hits[2];
+  return intersect(u,v-u,hits) && 0.0f<=hits[1] && hits[0]<=1.0f;
+  }
+
+
+// Intersect box with ray pos+lambda*dir, returning true if hit
+FXbool FXExtentf::intersect(const FXVec2f& pos,const FXVec2f& dir,FXfloat hit[]) const {
+  FXfloat f= FLT_MAX;
+  FXfloat n=-FLT_MAX;
+  FXfloat ni,fi;
+  if(__likely(dir.x!=0.0f)){
+    if(0.0f<dir.x){
+      ni=(lower.x-pos.x)/dir.x;
+      fi=(upper.x-pos.x)/dir.x;
+      }
+    else{
+      ni=(upper.x-pos.x)/dir.x;
+      fi=(lower.x-pos.x)/dir.x;
+      }
+    if(ni>n) n=ni;
+    if(fi<f) f=fi;
+    }
+  else{
+    if((pos.x<lower.x) || (pos.x>upper.x)) return false;
+    }
+  if(__likely(dir.y!=0.0f)){
+    if(0.0f<dir.y){
+      ni=(lower.y-pos.y)/dir.y;
+      fi=(upper.y-pos.y)/dir.y;
+      }
+    else{
+      ni=(upper.y-pos.y)/dir.y;
+      fi=(lower.y-pos.y)/dir.y;
+      }
+    if(ni>n) n=ni;
+    if(fi<f) f=fi;
+    if(n>f) return false;
+    }
+  else{
+    if((pos.y<lower.y) || (pos.y>upper.y)) return false;
+    }
+  hit[0]=n;
+  hit[1]=f;
+  return true;
+  }
+
+
 // Test if overlap
-bool overlap(const FXExtentf& a,const FXExtentf& b){
+FXbool overlap(const FXExtentf& a,const FXExtentf& b){
   return a.upper.x>=b.lower.x && a.lower.x<=b.upper.x && a.upper.y>=b.lower.y && a.lower.y<=b.upper.y;
   }
 

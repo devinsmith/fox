@@ -3,41 +3,42 @@
 *                         D o c k S i t e   W i d g e t                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2004,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2004,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDockBar.cpp,v 1.37.2.1 2006/05/10 13:18:13 fox Exp $                       *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
 #include "FXApp.h"
 #include "FXGIFIcon.h"
-#include "FXDCWindow.h"
-#include "FXDrawable.h"
-#include "FXWindow.h"
 #include "FXFrame.h"
 #include "FXComposite.h"
 #include "FXPacker.h"
@@ -142,10 +143,11 @@
 */
 
 
-#define FUDGE        30         // Vertical distance beyond which bar pulls out
-#define PROXIMITY    10         // Vertical proximity below which bar is sucked int dock
-#define TOLERANCE    30         // Horizontal alignment tolerance beyond which bar pulls out
-
+#define HANDLESIZE       6              // Resize handle length
+#define FUDGE            30             // Vertical distance beyond which bar pulls out
+#define PROXIMITY        10             // Vertical proximity below which bar is sucked int dock
+#define TOLERANCE        30             // Horizontal alignment tolerance beyond which bar pulls out
+#define DOCKINGSNAPDELAY 300000000      // Delay before dock bar snaps to dock site
 
 // Docking side
 #define LAYOUT_SIDE_MASK (LAYOUT_SIDE_LEFT|LAYOUT_SIDE_RIGHT|LAYOUT_SIDE_TOP|LAYOUT_SIDE_BOTTOM)
@@ -158,8 +160,13 @@ namespace FX {
 
 // Map
 FXDEFMAP(FXDockBar) FXDockBarMap[]={
+//  FXMAPFUNC(SEL_MOTION,0,FXDockBar::onMotion),
+//  FXMAPFUNC(SEL_ENTER,0,FXDockBar::onEnter),
+//  FXMAPFUNC(SEL_LEAVE,0,FXDockBar::onLeave),
   FXMAPFUNC(SEL_FOCUS_PREV,0,FXDockBar::onFocusLeft),
   FXMAPFUNC(SEL_FOCUS_NEXT,0,FXDockBar::onFocusRight),
+//  FXMAPFUNC(SEL_LEFTBUTTONPRESS,0,FXDockBar::onLeftBtnPress),
+//  FXMAPFUNC(SEL_LEFTBUTTONRELEASE,0,FXDockBar::onLeftBtnRelease),
   FXMAPFUNC(SEL_UPDATE,FXDockBar::ID_DOCK_FLOAT,FXDockBar::onUpdUndock),
   FXMAPFUNC(SEL_UPDATE,FXDockBar::ID_DOCK_TOP,FXDockBar::onUpdDockTop),
   FXMAPFUNC(SEL_UPDATE,FXDockBar::ID_DOCK_BOTTOM,FXDockBar::onUpdDockBottom),
@@ -183,32 +190,59 @@ FXDEFMAP(FXDockBar) FXDockBarMap[]={
 FXIMPLEMENT(FXDockBar,FXPacker,FXDockBarMap,ARRAYNUMBER(FXDockBarMap))
 
 
+/*
+// Cursor shape based on mode
+const FXDefaultCursor FXDockBar::cursorType[16]={
+  DEF_ARROW_CURSOR,
+  DEF_DRAGH_CURSOR,     // DRAG_TOP
+  DEF_DRAGH_CURSOR,     // DRAG_BOTTOM
+  DEF_ARROW_CURSOR,
+
+  DEF_DRAGV_CURSOR,     // DRAG_LEFT
+  DEF_DRAGTL_CURSOR,    // DRAG_LEFT DRAG_TOP
+  DEF_DRAGTR_CURSOR,    // DRAG_LEFT DRAG_BOTTOM
+  DEF_ARROW_CURSOR,
+
+  DEF_DRAGV_CURSOR,     // DRAG_RIGHT
+  DEF_DRAGTR_CURSOR,    // DRAG_RIGHT DRAG_TOP
+  DEF_DRAGTL_CURSOR,    // DRAG_RIGHT DRAG_BOTTOM
+  DEF_ARROW_CURSOR,
+
+  DEF_ARROW_CURSOR,
+  DEF_ARROW_CURSOR,
+  DEF_ARROW_CURSOR,
+  DEF_ARROW_CURSOR,
+  };
+*/
+
+
 // Deserialization
 FXDockBar::FXDockBar():drydock(NULL),wetdock(NULL){
   flags|=FLAG_ENABLED;
   gripx=0;
   gripy=0;
   allowed=ALLOW_EVERYWHERE;
+//  mode=DRAG_NONE;
   }
 
 
 // Make a dockable and, possibly, floatable toolbar
-FXDockBar::FXDockBar(FXComposite* p,FXComposite* q,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs),drydock(p),wetdock(q){
+FXDockBar::FXDockBar(FXComposite* p,FXComposite* q,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs),drydock(p),wetdock(q){
   flags|=FLAG_ENABLED;
   gripx=0;
   gripy=0;
   allowed=ALLOW_EVERYWHERE;
+//  mode=DRAG_NONE;
   }
 
 
 // Make a non-floatable toolbar
-FXDockBar::FXDockBar(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs),drydock(NULL),wetdock(NULL){
+FXDockBar::FXDockBar(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs),drydock(NULL),wetdock(NULL){
   flags|=FLAG_ENABLED;
   gripx=0;
   gripy=0;
   allowed=ALLOW_EVERYWHERE;
+//  mode=DRAG_NONE;
   }
 
 
@@ -237,12 +271,12 @@ void FXDockBar::setWetDock(FXComposite* wet){
 
 
 // Dock the bar before other window
-void FXDockBar::dock(FXDockSite* docksite,FXWindow* before,FXbool notify){
+void FXDockBar::dock(FXDockSite* docksite,FXWindow* other,FXbool notify){
   if(docksite && getParent()!=docksite){
     setDryDock(docksite);
-    reparent(docksite,before);
-    wetdock->hide();
-    docksite->dockToolBar(this,before);
+    reparent(docksite,other);
+    if(wetdock) wetdock->hide();
+    docksite->dockToolBar(this,other);
     if(notify && target){target->tryHandle(this,FXSEL(SEL_DOCKED,message),docksite);}
     }
   }
@@ -253,7 +287,7 @@ void FXDockBar::dock(FXDockSite* docksite,FXint localx,FXint localy,FXbool notif
   if(docksite && getParent()!=docksite){
     setDryDock(docksite);
     reparent(docksite,NULL);
-    wetdock->hide();
+    if(wetdock) wetdock->hide();
     docksite->dockToolBar(this,localx,localy);
     if(notify && target){target->tryHandle(this,FXSEL(SEL_DOCKED,message),docksite);}
     }
@@ -273,15 +307,39 @@ void FXDockBar::undock(FXint rootx,FXint rooty,FXbool notify){
   }
 
 
+// Return true if layout side is allowable
+FXbool FXDockBar::isAllowable(FXuint hints) const {
+  if(hints&LAYOUT_SIDE_LEFT){
+    if(hints&LAYOUT_SIDE_BOTTOM){       // Right
+      if(allowed&ALLOW_RIGHT) return true;
+      }
+    else{                               // Left
+      if(allowed&ALLOW_LEFT) return true;
+      }
+    }
+  else{
+    if(hints&LAYOUT_SIDE_BOTTOM){       // Bottom
+      if(allowed&ALLOW_BOTTOM) return true;
+      }
+    else{                               // Top
+      if(allowed&ALLOW_TOP) return true;
+      }
+    }
+  return false;
+  }
+
+
 // Search siblings of drydock for first dock opportunity
 FXDockSite* FXDockBar::findDockAtSide(FXuint side){
-  register FXDockSite* docksite;
-  register FXWindow *child;
+  FXDockSite* docksite;
+  FXWindow *child;
   if(drydock){
     child=drydock->getParent()->getFirst();
     while(child){
       docksite=dynamic_cast<FXDockSite*>(child);
-      if(docksite && docksite->shown() && side==(docksite->getLayoutHints()&LAYOUT_SIDE_MASK)) return docksite;
+      if(docksite && docksite->shown() && side==(docksite->getLayoutHints()&LAYOUT_SIDE_MASK)){
+        if(isAllowable(docksite->getLayoutHints())) return docksite;
+        }
       child=child->getNext();
       }
     }
@@ -294,8 +352,8 @@ FXbool FXDockBar::insideDock(FXDockSite* docksite,FXint barx,FXint bary){
   if(docksite){
 
     // Bar size
-    register FXint barw=getWidth();
-    register FXint barh=getHeight();
+    FXint barw=getWidth();
+    FXint barh=getHeight();
 
     // Vertically oriented dock
     if(docksite->getLayoutHints()&LAYOUT_SIDE_LEFT){
@@ -308,10 +366,10 @@ FXbool FXDockBar::insideDock(FXDockSite* docksite,FXint barx,FXint bary){
 
         // Test if either bar or dock "sticks out" too much to dock
         if(barh>docksite->getHeight()){
-          if(bary-TOLERANCE<=docksite->getY() && docksite->getY()+docksite->getHeight()<=bary+barh+TOLERANCE) return TRUE;
+          if(bary-TOLERANCE<=docksite->getY() && docksite->getY()+docksite->getHeight()<=bary+barh+TOLERANCE) return true;
           }
         else{
-          if(docksite->getY()-TOLERANCE<=bary && bary+barh<=docksite->getY()+docksite->getHeight()+TOLERANCE) return TRUE;
+          if(docksite->getY()-TOLERANCE<=bary && bary+barh<=docksite->getY()+docksite->getHeight()+TOLERANCE) return true;
           }
         }
       }
@@ -327,22 +385,22 @@ FXbool FXDockBar::insideDock(FXDockSite* docksite,FXint barx,FXint bary){
 
         // Test if either bar or dock "sticks out" too much to dock
         if(barw>docksite->getWidth()){
-          if(barx-TOLERANCE<=docksite->getX() && docksite->getX()+docksite->getWidth()<=barx+barw+TOLERANCE) return TRUE;
+          if(barx-TOLERANCE<=docksite->getX() && docksite->getX()+docksite->getWidth()<=barx+barw+TOLERANCE) return true;
           }
         else{
-          if(docksite->getX()-TOLERANCE<=barx && barx+barw<=docksite->getX()+docksite->getWidth()+TOLERANCE) return TRUE;
+          if(docksite->getX()-TOLERANCE<=barx && barx+barw<=docksite->getX()+docksite->getWidth()+TOLERANCE) return true;
           }
         }
       }
     }
-  return FALSE;
+  return false;
   }
 
 
 // Search siblings of drydock for dock opportunity near given coordinates
 FXDockSite* FXDockBar::findDockNear(FXint rootx,FXint rooty){
-  register FXDockSite *docksite;
-  register FXWindow *child;
+  FXDockSite *docksite;
+  FXWindow *child;
   FXint barx,bary;
   if(drydock){
 
@@ -351,29 +409,13 @@ FXDockSite* FXDockBar::findDockNear(FXint rootx,FXint rooty){
       barx-=child->getX();
       bary-=child->getY();
       }
-//    drydock->getParent()->translateCoordinatesFrom(barx,bary,getRoot(),rootx,rooty);
 
     // Localize dock site
     child=drydock->getParent()->getFirst();
     while(child){
       docksite=dynamic_cast<FXDockSite*>(child);
       if(docksite && docksite->shown() && insideDock(docksite,barx,bary)){
-        if(docksite->getLayoutHints()&LAYOUT_SIDE_LEFT){
-          if(docksite->getLayoutHints()&LAYOUT_SIDE_BOTTOM){    // Right
-            if(allowed&ALLOW_RIGHT) return docksite;
-            }
-          else{                                                 // Left
-            if(allowed&ALLOW_LEFT) return docksite;
-            }
-          }
-        else{
-          if(docksite->getLayoutHints()&LAYOUT_SIDE_BOTTOM){    // Bottom
-            if(allowed&ALLOW_BOTTOM) return docksite;
-            }
-          else{                                                 // Top
-            if(allowed&ALLOW_TOP) return docksite;
-            }
-          }
+        if(isAllowable(docksite->getLayoutHints())) return docksite;
         }
       child=child->getNext();
       }
@@ -386,7 +428,7 @@ FXDockSite* FXDockBar::findDockNear(FXint rootx,FXint rooty){
 long FXDockBar::onCmdUndock(FXObject*,FXSelector,void*){
   FXint rootx,rooty;
   translateCoordinatesTo(rootx,rooty,getRoot(),8,8);
-  undock(rootx,rooty,TRUE);
+  undock(rootx,rooty,true);
   return 1;
   }
 
@@ -400,11 +442,7 @@ long FXDockBar::onUpdUndock(FXObject* sender,FXSelector,void*){
 
 // Redock on top
 long FXDockBar::onCmdDockTop(FXObject*,FXSelector,void*){
-//  FXDockSite *docksite=findDockAtSide(LAYOUT_SIDE_TOP);
-//  if(docksite){
-//    dock(docksite,0,docksite->getHeight()-20,TRUE);
-//    }
-  dock(findDockAtSide(LAYOUT_SIDE_TOP),NULL,TRUE);
+  dock(findDockAtSide(LAYOUT_SIDE_TOP),NULL,true);
   return 1;
   }
 
@@ -419,7 +457,7 @@ long FXDockBar::onUpdDockTop(FXObject* sender,FXSelector,void*){
 
 // Redock on bottom
 long FXDockBar::onCmdDockBottom(FXObject*,FXSelector,void*){
-  dock(findDockAtSide(LAYOUT_SIDE_BOTTOM),NULL,TRUE);
+  dock(findDockAtSide(LAYOUT_SIDE_BOTTOM),NULL,true);
   return 1;
   }
 
@@ -434,7 +472,7 @@ long FXDockBar::onUpdDockBottom(FXObject* sender,FXSelector,void*){
 
 // Redock on left
 long FXDockBar::onCmdDockLeft(FXObject*,FXSelector,void*){
-  dock(findDockAtSide(LAYOUT_SIDE_LEFT),NULL,TRUE);
+  dock(findDockAtSide(LAYOUT_SIDE_LEFT),NULL,true);
   return 1;
   }
 
@@ -449,7 +487,7 @@ long FXDockBar::onUpdDockLeft(FXObject* sender,FXSelector,void*){
 
 // Redock on right
 long FXDockBar::onCmdDockRight(FXObject*,FXSelector,void*){
-  dock(findDockAtSide(LAYOUT_SIDE_RIGHT),NULL,TRUE);
+  dock(findDockAtSide(LAYOUT_SIDE_RIGHT),NULL,true);
   return 1;
   }
 
@@ -490,9 +528,6 @@ long FXDockBar::onPopupMenu(FXObject*,FXSelector,void* ptr){
   new FXMenuCommand(&dockmenu,tr("Flip"),&dockflipicon,this,ID_DOCK_FLIP);
   dockmenu.create();
   dockmenu.popup(NULL,event->root_x,event->root_y);
-  // FIXME funny problem: menu doesn't update until move despite call to refresh here
-//  getApp()->refresh();
-  dockmenu.forceRefresh();
   getApp()->runModalWhileShown(&dockmenu);
   return 1;
   }
@@ -528,7 +563,7 @@ long FXDockBar::onEndDragGrip(FXObject*,FXSelector,void* ptr){
       toolbardock=findDockNear(rootx,rooty);
       if(toolbardock){
         translateCoordinatesTo(localx,localy,toolbardock,0,0);
-        dock(toolbardock,localx,localy,TRUE);
+        dock(toolbardock,localx,localy,true);
         }
       }
     }
@@ -541,7 +576,7 @@ long FXDockBar::onDockTimer(FXObject*,FXSelector,void* ptr){
   FXDockSite *toolbardock=static_cast<FXDockSite*>(ptr);
   FXint localx,localy;
   translateCoordinatesTo(localx,localy,toolbardock,0,0);
-  dock(toolbardock,localx,localy,TRUE);
+  dock(toolbardock,localx,localy,true);
   return 1;
   }
 
@@ -571,7 +606,7 @@ long FXDockBar::onDraggedGrip(FXObject*,FXSelector,void* ptr){
 
     // Test if we pulled too far to stay inside
     if(!insideDock(toolbardock,dockx+toolbardock->getX(),docky+toolbardock->getY())){
-      undock(rootx,rooty,TRUE);
+      undock(rootx,rooty,true);
       }
     }
 
@@ -581,7 +616,7 @@ long FXDockBar::onDraggedGrip(FXObject*,FXSelector,void* ptr){
     // We're near a dock, if we hover around we'll dock there
     if(!(event->state&CONTROLMASK)){
       toolbardock=findDockNear(rootx,rooty);
-      if(toolbardock) getApp()->addTimeout(this,ID_TIMER,300,toolbardock);
+      if(toolbardock) getApp()->addTimeout(this,ID_TIMER,DOCKINGSNAPDELAY,toolbardock);
       }
 
     // Move around freely
@@ -590,6 +625,125 @@ long FXDockBar::onDraggedGrip(FXObject*,FXSelector,void* ptr){
 
   return 1;
   }
+
+
+/*
+// Find out where window was grabbed
+FXuchar FXDockBar::where(FXint x,FXint y) const {
+  FXuchar code=DRAG_NONE;
+  if((0<=x && x<border+padleft) || (0<=y && y<border+padtop) || (width-padright-border<=x && x<width) || (height-padbottom-border<=y && y<height)){
+    if(x<HANDLESIZE) code|=DRAG_LEFT;
+    if(width-HANDLESIZE<=x) code|=DRAG_RIGHT;
+    if(y<HANDLESIZE) code|=DRAG_TOP;
+    if(height-HANDLESIZE<=y) code|=DRAG_BOTTOM;
+    }
+  return code;
+  }
+
+
+// Change cursor if we entered the window normally
+long FXDockBar::onEnter(FXObject* sender,FXSelector sel,void* ptr){
+  FXPacker::onEnter(sender,sel,ptr);
+  if(((FXEvent*)ptr)->code!=CROSSINGGRAB){
+    setDefaultCursor(getApp()->getDefaultCursor(cursorType[where(((FXEvent*)ptr)->win_x,((FXEvent*)ptr)->win_y)]));
+    }
+  return 1;
+  }
+
+
+// Restore cursor if we left the window normally
+long FXDockBar::onLeave(FXObject* sender,FXSelector sel,void* ptr){
+  FXPacker::onLeave(sender,sel,ptr);
+  if(((FXEvent*)ptr)->code!=CROSSINGUNGRAB){
+    setDefaultCursor(getApp()->getDefaultCursor(DEF_ARROW_CURSOR));
+    }
+  return 1;
+  }
+
+
+// Pressed LEFT button
+long FXDockBar::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
+  FXEvent *event=(FXEvent*)ptr;
+  flags&=~FLAG_TIP;
+  handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
+  if(isEnabled()){
+    grab();
+    if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONPRESS,message),ptr)) return 1;
+    mode=where(event->win_x,event->win_y);
+    if(mode!=DRAG_NONE){
+      if(mode&DRAG_TOP) gripy=event->win_y;
+      else if(mode&DRAG_BOTTOM) gripy=event->win_y-height;
+      if(mode&DRAG_LEFT) gripx=event->win_x;
+      else if(mode&DRAG_RIGHT) gripx=event->win_x-width;
+      setDragCursor(getApp()->getDefaultCursor(cursorType[mode]));
+      }
+    return 1;
+    }
+  return 0;
+  }
+
+
+// Released LEFT button
+long FXDockBar::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
+  if(isEnabled()){
+    ungrab();
+    setDragCursor(getApp()->getDefaultCursor(DEF_ARROW_CURSOR));
+    if(target && target->tryHandle(this,FXSEL(SEL_LEFTBUTTONRELEASE,message),ptr)) return 1;
+    if(mode!=DRAG_NONE){
+      mode=DRAG_NONE;
+      recalc();
+      }
+    return 1;
+    }
+  return 0;
+  }
+
+
+// Moved the mouse
+long FXDockBar::onMotion(FXObject*,FXSelector,void* ptr){
+  FXEvent *event=(FXEvent*)ptr;
+  if(mode!=DRAG_NONE){
+    FXDockSite *toolbardock=dynamic_cast<FXDockSite*>(getParent());
+    FXint mousex,mousey;
+    FXint x,y,w,h;
+
+    // Translate to dock site's frame
+    toolbardock->translateCoordinatesFrom(mousex,mousey,getRoot(),event->root_x-gripx,event->root_y-gripy);
+
+    x=xpos;
+    y=ypos;
+    w=width;
+    h=height;
+
+    // Vertical
+    if(mode&DRAG_TOP){
+      y=mousey;
+      h=ypos+height-mousey;
+      }
+    else if(mode&DRAG_BOTTOM){
+      h=mousey-ypos;
+      }
+
+    // Horizontal
+    if(mode&DRAG_LEFT){
+      x=mousex;
+      w=xpos+width-mousex;
+      }
+    else if(mode&DRAG_RIGHT){
+      w=mousex-xpos;
+      }
+
+    // Resize and move
+    toolbardock->resizeToolBar(this,x,y,w,h);
+    recalc();
+    return 1;
+    }
+
+  // Change cursor based on location
+  setDefaultCursor(getApp()->getDefaultCursor(cursorType[where(event->win_x,event->win_y)]));
+  return 0;
+  }
+*/
 
 
 // Save data

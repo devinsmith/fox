@@ -3,38 +3,41 @@
 *                            R u l e r   W i d g e t                            *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2002,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXRuler.cpp,v 1.55 2006/01/28 20:29:30 fox Exp $                         *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXRuler.h"
 
 
@@ -224,8 +227,7 @@ FXRuler::FXRuler(){
 
 
 // Make a label
-FXRuler::FXRuler(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
+FXRuler::FXRuler(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
   flags|=FLAG_ENABLED|FLAG_SHOWN;
   target=tgt;
   message=sel;
@@ -339,7 +341,7 @@ void FXRuler::layout(){
   // Stretched
   if((options&RULER_ALIGN_LEFT) && (options&RULER_ALIGN_RIGHT)){
     shift=0;
-    setContentSize(space,TRUE);
+    setContentSize(space,true);
     }
 
   // Left aligned
@@ -584,7 +586,7 @@ void FXRuler::drawDownMarker(FXDCWindow& dc,FXint x,FXint y){
 
 // Handle repaint
 long FXRuler::onPaint(FXObject*,FXSelector,void* ptr){
-  FXint boxx,boxy,boxw,boxh,p,tick,lower,upper,th,tw;
+  FXint boxx,boxy,boxw,boxh,p,tick,lowertick,uppertick,th,tw;
   FXEvent *ev=(FXEvent*)ptr;
   FXDCWindow dc(this,ev);
   FXchar numeral;
@@ -629,13 +631,13 @@ long FXRuler::onPaint(FXObject*,FXSelector,void* ptr){
       FXASSERT(pixelPerTick>0.0);
 
       // Determine number of ticks to draw
-      lower=-(FXint)((FXdouble)marginLower/pixelPerTick);
-      upper=(FXint)((FXdouble)(documentSize+pixelPerTick-marginLower-1)/pixelPerTick);
+      lowertick=-(FXint)((FXdouble)marginLower/pixelPerTick);
+      uppertick=(FXint)((FXdouble)(documentSize+pixelPerTick-marginLower-1)/pixelPerTick);
 
       dc.setForeground(borderColor);
 
       // Draw ticks and numbers
-      for(tick=lower; tick<upper; tick++){
+      for(tick=lowertick; tick<uppertick; tick++){
 
         // Skip zero, it looks ugly
         if(tick){
@@ -749,13 +751,13 @@ long FXRuler::onPaint(FXObject*,FXSelector,void* ptr){
       FXASSERT(pixelPerTick>0.0);
 
       // Determine number of ticks to draw
-      lower=-(FXint)((FXdouble)marginLower/pixelPerTick);
-      upper=(FXint)((FXdouble)(documentSize+pixelPerTick-marginLower-1)/pixelPerTick);
+      lowertick=-(FXint)((FXdouble)marginLower/pixelPerTick);
+      uppertick=(FXint)((FXdouble)(documentSize+pixelPerTick-marginLower-1)/pixelPerTick);
 
       dc.setForeground(borderColor);
 
       // Draw ticks and numbers
-      for(tick=lower; tick<upper; tick++){
+      for(tick=lowertick; tick<uppertick; tick++){
 
         // Skip zero, it looks ugly
         if(tick){
@@ -848,8 +850,8 @@ long FXRuler::onPaint(FXObject*,FXSelector,void* ptr){
 
 // Pressed LEFT button
 long FXRuler::onLeftBtnPress(FXObject*,FXSelector,void* ptr){
-  register FXEvent* event=(FXEvent*)ptr;
-  register FXint lo,hi;
+  FXEvent* event=(FXEvent*)ptr;
+  FXint lo,hi;
   flags&=~FLAG_TIP;
   if(isEnabled()){
     grab();
@@ -897,7 +899,7 @@ long FXRuler::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
 
 // Determine what was picked
 FXint FXRuler::picked(FXint x,FXint y){
-  register FXint wlo,whi,lo,hi;
+  FXint wlo,whi,lo,hi;
   lo=pos+edgeSpacing+marginLower;
   hi=lo+documentSize-marginUpper-marginLower;
   if(options&RULER_VERTICAL){
@@ -935,7 +937,7 @@ FXint FXRuler::picked(FXint x,FXint y){
 
 // Moving
 long FXRuler::onMotion(FXObject*,FXSelector,void*ptr){
-  register FXEvent* event=(FXEvent*)ptr;
+  FXEvent* event=(FXEvent*)ptr;
   FXint value=(options&RULER_VERTICAL)?(event->win_y+off):(event->win_x+off);
   switch(mode){
     case MOUSE_NONE:
@@ -952,19 +954,19 @@ long FXRuler::onMotion(FXObject*,FXSelector,void*ptr){
         }
       return 0;
     case MOUSE_MARG_LOWER:
-      setMarginLower(value-pos-edgeSpacing,TRUE);
+      setMarginLower(value-pos-edgeSpacing,true);
       return 1;
     case MOUSE_MARG_UPPER:
-      setMarginUpper(pos+edgeSpacing+documentSize-value,TRUE);
+      setMarginUpper(pos+edgeSpacing+documentSize-value,true);
       return 1;
     case MOUSE_PARA_FIRST:
-      setIndentFirst(value-pos-edgeSpacing-marginLower,TRUE);
+      setIndentFirst(value-pos-edgeSpacing-marginLower,true);
       return 1;
     case MOUSE_PARA_LOWER:
-      setIndentLower(value-pos-edgeSpacing-marginLower,TRUE);
+      setIndentLower(value-pos-edgeSpacing-marginLower,true);
       return 1;
     case MOUSE_PARA_UPPER:
-      setIndentUpper(pos+edgeSpacing+documentSize-marginUpper-value,TRUE);
+      setIndentUpper(pos+edgeSpacing+documentSize-marginUpper-value,true);
       return 1;
     }
   return 0;
@@ -1264,7 +1266,7 @@ void FXRuler::setTextColor(FXColor clr){
 
 // Set ruler style
 void FXRuler::setRulerStyle(FXuint style){
-  FXuint opts=(options&~RULER_MASK) | (style&RULER_MASK);
+  FXuint opts=((style^options)&RULER_MASK)^options;
   if(options!=opts){
     options=opts;
     recalc();
@@ -1281,7 +1283,7 @@ FXuint FXRuler::getRulerStyle() const {
 
 // Set ruler alignment
 void FXRuler::setRulerAlignment(FXuint alignment,FXbool notify){
-  FXuint opts=(options&~RULER_ALIGN_MASK) | (alignment&RULER_ALIGN_MASK);
+  FXuint opts=((alignment^options)&RULER_ALIGN_MASK)^options;
   if(options!=opts){
     options=opts;
     recalc();

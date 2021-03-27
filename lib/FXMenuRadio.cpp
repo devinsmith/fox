@@ -3,40 +3,43 @@
 *                         M e n u R a d i o   W i d g e t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2002,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXMenuRadio.cpp,v 1.33 2006/01/22 17:58:36 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
 #include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXMenuCommand.h"
 #include "FXMenuRadio.h"
@@ -87,15 +90,14 @@ FXIMPLEMENT(FXMenuRadio,FXMenuCommand,FXMenuRadioMap,ARRAYNUMBER(FXMenuRadioMap)
 // Command menu item
 FXMenuRadio::FXMenuRadio(){
   radioColor=0;
-  check=FALSE;
+  check=false;
   }
 
 
 // Command menu item
-FXMenuRadio::FXMenuRadio(FXComposite* p,const FXString& text,FXObject* tgt,FXSelector sel,FXuint opts):
-  FXMenuCommand(p,text,NULL,tgt,sel,opts){
+FXMenuRadio::FXMenuRadio(FXComposite* p,const FXString& text,FXObject* tgt,FXSelector sel,FXuint opts):FXMenuCommand(p,text,NULL,tgt,sel,opts){
   radioColor=getApp()->getBackColor();
-  check=FALSE;
+  check=false;
   }
 
 
@@ -119,7 +121,7 @@ FXint FXMenuRadio::getDefaultHeight(){
 
 
 // Check button
-void FXMenuRadio::setCheck(FXbool s){
+void FXMenuRadio::setCheck(FXuchar s){
   if(check!=s){
     check=s;
     update();
@@ -129,35 +131,35 @@ void FXMenuRadio::setCheck(FXbool s){
 
 // Change state to checked
 long FXMenuRadio::onCheck(FXObject*,FXSelector,void*){
-  setCheck(TRUE);
+  setCheck(true);
   return 1;
   }
 
 
 // Change state to unchecked
 long FXMenuRadio::onUncheck(FXObject*,FXSelector,void*){
-  setCheck(FALSE);
+  setCheck(false);
   return 1;
   }
 
 
 // Change state to indeterminate
 long FXMenuRadio::onUnknown(FXObject*,FXSelector,void*){
-  setCheck(MAYBE);
+  setCheck(maybe);
   return 1;
   }
 
 
 // Update value from a message
 long FXMenuRadio::onCmdSetValue(FXObject*,FXSelector,void* ptr){
-  setCheck((FXbool)(FXuval)ptr);
+  setCheck((FXuchar)(FXuval)ptr);
   return 1;
   }
 
 
 // Update value from a message
 long FXMenuRadio::onCmdSetIntValue(FXObject*,FXSelector,void* ptr){
-  setCheck((FXbool)*((FXint*)ptr));
+  setCheck((FXuchar)*((FXint*)ptr));
   return 1;
   }
 
@@ -182,8 +184,8 @@ long FXMenuRadio::onButtonRelease(FXObject*,FXSelector,void*){
   if(!isEnabled()) return 0;
   getParent()->handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
   if(active){
-    setCheck(TRUE);
-    if(target){ target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)TRUE); }
+    setCheck(true);
+    if(target){ target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)true); }
     }
   return 1;
   }
@@ -210,9 +212,9 @@ long FXMenuRadio::onKeyRelease(FXObject*,FXSelector,void* ptr){
     FXTRACE((200,"%s::onKeyRelease %p keysym=0x%04x state=%04x\n",getClassName(),this,event->code,event->state));
     if(event->code==KEY_space || event->code==KEY_KP_Space || event->code==KEY_Return || event->code==KEY_KP_Enter){
       flags&=~FLAG_PRESSED;
-      setCheck(TRUE);
+      setCheck(true);
       getParent()->handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
-      if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)TRUE);
+      if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)true);
       return 1;
       }
     }
@@ -236,9 +238,9 @@ long FXMenuRadio::onHotKeyRelease(FXObject*,FXSelector,void*){
   FXTRACE((200,"%s::onHotKeyRelease %p\n",getClassName(),this));
   if(isEnabled() && (flags&FLAG_PRESSED)){
     flags&=~FLAG_PRESSED;
-    setCheck(TRUE);
+    setCheck(true);
     getParent()->handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
-    if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)TRUE);
+    if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)true);
     }
   return 1;
   }
@@ -247,8 +249,8 @@ long FXMenuRadio::onHotKeyRelease(FXObject*,FXSelector,void*){
 // Accelerator activated
 long FXMenuRadio::onCmdAccel(FXObject*,FXSelector,void*){
   if(isEnabled()){
-    setCheck(TRUE);
-    if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)TRUE);
+    setCheck(true);
+    if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXuval)true);
     return 1;
     }
   return 0;
@@ -321,13 +323,13 @@ long FXMenuRadio::onPaint(FXObject*,FXSelector,void* ptr){
   dc.drawArc(xx,yy,9,9,0,360*64);
 
   // Draw the bullit
-  if(check!=FALSE){
+  if(check!=false){
     FXRectangle recs[3];
     recs[0].x=xx+4; recs[0].y=yy+3; recs[0].w=2; recs[0].h=1;
     recs[1].x=xx+3; recs[1].y=yy+4; recs[1].w=4; recs[1].h=2;
     recs[2].x=xx+4; recs[2].y=yy+6; recs[2].w=2; recs[2].h=1;
     if(isEnabled()){
-      if(check==MAYBE)
+      if(check==maybe)
         dc.setForeground(shadowColor);
       else
         dc.setForeground(textColor);

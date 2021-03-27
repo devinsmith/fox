@@ -3,31 +3,32 @@
 *       P e r s i s t e n t   S t o r a g e   S t r e a m   C l a s s e s       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXStream.cpp,v 1.66.2.3 2006/09/13 18:18:52 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXElement.h"
+#include "FXArray.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXObject.h"
+#include "FXDLL.h"
 
 
 /*
@@ -49,14 +50,6 @@
 
 
 #define MAXCLASSNAME       256          // Maximum class name length
-#define DEF_HASH_SIZE      32           // Initial table size (MUST be power of 2)
-#define MAX_LOAD           80           // Maximum hash table load factor (%)
-#define FUDGE              5            // Fudge for hash table size
-#define UNUSEDSLOT         0xffffffff   // Unsused slot marker
-#define CLASSIDFLAG        0x80000000   // Marks it as a class ID
-
-#define HASH1(x,n) (((FXuint)(FXuval)(x)*13)%(n))         // Number [0..n-1]
-#define HASH2(x,n) (1|(((FXuint)(FXuval)(x)*17)%((n)-1))) // Number [1..n-2]
 
 
 using namespace FX;
@@ -83,22 +76,21 @@ FXStream::FXStream(const FXObject *cont){
   }
 
 
-
 // Set stream to big endian mode if true
-void FXStream::setBigEndian(bool big){
+void FXStream::setBigEndian(FXbool big){
   swap=(big^FOX_BIGENDIAN);
   }
 
 
 // Return true if big endian mode.
-bool FXStream::isBigEndian() const {
+FXbool FXStream::isBigEndian() const {
   return (swap^FOX_BIGENDIAN);
   }
 
 
 // Destroy PersistentStore object
 FXStream::~FXStream(){
-  if(owns){FXFREE(&begptr);}
+  if(owns){freeElms(begptr);}
   parent=(FXObject*)-1L;
   begptr=(FXuchar*)-1L;
   endptr=(FXuchar*)-1L;
@@ -147,13 +139,13 @@ void FXStream::setSpace(FXuval size){
     if(begptr+size!=endptr){
 
       // Old buffer location
-      register FXuchar *oldbegptr=begptr;
+      FXuchar *oldbegptr=begptr;
 
       // Only resize if owned
       if(!owns){ fxerror("FXStream::setSpace: cannot resize external data buffer.\n"); }
 
       // Resize the buffer
-      if(!FXRESIZE(&begptr,FXuchar,size)){ code=FXStreamAlloc; return; }
+      if(!resizeElms(begptr,size)){ code=FXStreamAlloc; return; }
 
       // Adjust pointers, buffer may have moved
       endptr=begptr+size;
@@ -167,25 +159,25 @@ void FXStream::setSpace(FXuval size){
 
 
 // Open for save or load
-bool FXStream::open(FXStreamDirection save_or_load,FXuval size,FXuchar* data){
+FXbool FXStream::open(FXStreamDirection save_or_load,FXuchar* data,FXuval size,FXbool owned){
   if(save_or_load!=FXStreamSave && save_or_load!=FXStreamLoad){fxerror("FXStream::open: illegal stream direction.\n");}
   if(!dir){
 
     // Use external buffer space
     if(data){
       begptr=data;
-      if(size==ULONG_MAX)
+      if(size==~0UL)
         endptr=(FXuchar*)(FXival)-1L;
       else
         endptr=begptr+size;
       wrptr=begptr;
       rdptr=begptr;
-      owns=false;
+      owns=owned;
       }
 
     // Use internal buffer space
     else{
-      if(!FXCALLOC(&begptr,FXuchar,size)){ code=FXStreamAlloc; return false; }
+      if(!callocElms(begptr,size)){ code=FXStreamAlloc; return false; }
       endptr=begptr+size;
       wrptr=begptr;
       rdptr=begptr;
@@ -213,18 +205,19 @@ bool FXStream::open(FXStreamDirection save_or_load,FXuval size,FXuchar* data){
 
 
 // Flush buffer
-bool FXStream::flush(){
+FXbool FXStream::flush(){
+  if(dir!=FXStreamSave){fxerror("FXStream::flush: illegal stream direction.\n");}
   writeBuffer(0);
   return code==FXStreamOK;
   }
 
 
 // Close store; return true if no errors have been encountered
-bool FXStream::close(){
+FXbool FXStream::close(){
   if(dir){
     hash.clear();
     dir=FXStreamDead;
-    if(owns){FXFREE(&begptr);}
+    if(owns){freeElms(begptr);}
     begptr=NULL;
     wrptr=NULL;
     rdptr=NULL;
@@ -237,7 +230,7 @@ bool FXStream::close(){
 
 
 // Move to position
-bool FXStream::position(FXlong offset,FXWhence whence){
+FXbool FXStream::position(FXlong offset,FXWhence whence){
   if(dir==FXStreamDead){fxerror("FXStream::position: stream is not open.\n");}
   if(code==FXStreamOK){
     if(whence==FXFromCurrent) offset=offset+pos;
@@ -376,7 +369,7 @@ FXStream& FXStream::save(const FXuchar* p,FXuval n){
 
 // Write array of shorts
 FXStream& FXStream::save(const FXushort* p,FXuval n){
-  register const FXuchar *q=(const FXuchar*)p;
+  const FXuchar *q=(const FXuchar*)p;
   if(code==FXStreamOK){
     n<<=1;
     FXASSERT(begptr<=rdptr);
@@ -419,7 +412,7 @@ FXStream& FXStream::save(const FXushort* p,FXuval n){
 
 // Write array of ints
 FXStream& FXStream::save(const FXuint* p,FXuval n){
-  register const FXuchar *q=(const FXuchar*)p;
+  const FXuchar *q=(const FXuchar*)p;
   if(code==FXStreamOK){
     n<<=2;
     FXASSERT(begptr<=rdptr);
@@ -466,7 +459,7 @@ FXStream& FXStream::save(const FXuint* p,FXuval n){
 
 // Write array of doubles
 FXStream& FXStream::save(const FXdouble* p,FXuval n){
-  register const FXuchar *q=(const FXuchar*)p;
+  const FXuchar *q=(const FXuchar*)p;
   if(code==FXStreamOK){
     n<<=3;
     FXASSERT(begptr<=rdptr);
@@ -621,7 +614,6 @@ FXStream& FXStream::operator>>(FXdouble& v){
   }
 
 
-
 /************************  Load Blocks of Basic Types  *************************/
 
 // Read array of bytes
@@ -647,7 +639,7 @@ FXStream& FXStream::load(FXuchar* p,FXuval n){
 
 // Read array of shorts
 FXStream& FXStream::load(FXushort* p,FXuval n){
-  register FXuchar *q=(FXuchar*)p;
+  FXuchar *q=(FXuchar*)p;
   if(code==FXStreamOK){
     n<<=1;
     FXASSERT(begptr<=rdptr);
@@ -690,7 +682,7 @@ FXStream& FXStream::load(FXushort* p,FXuval n){
 
 // Read array of ints
 FXStream& FXStream::load(FXuint* p,FXuval n){
-  register FXuchar *q=(FXuchar*)p;
+  FXuchar *q=(FXuchar*)p;
   if(code==FXStreamOK){
     n<<=2;
     FXASSERT(begptr<=rdptr);
@@ -737,7 +729,7 @@ FXStream& FXStream::load(FXuint* p,FXuval n){
 
 // Read array of doubles
 FXStream& FXStream::load(FXdouble* p,FXuval n){
-  register FXuchar *q=(FXuchar*)p;
+  FXuchar *q=(FXuchar*)p;
   if(code==FXStreamOK){
     n<<=3;
     FXASSERT(begptr<=rdptr);
@@ -797,10 +789,10 @@ FXStream& FXStream::load(FXdouble* p,FXuval n){
 FXStream& FXStream::addObject(const FXObject* v){
   if(v){
     if(dir==FXStreamSave){
-      hash.insert((void*)v,(void*)(FXuval)seq++);
+      hash.insert((FXptr)v,(FXptr)(FXuval)seq++);
       }
     else if(dir==FXStreamLoad){
-      hash.insert((void*)(FXuval)seq++,(void*)v);
+      hash.insert((FXptr)(FXuval)seq++,(FXptr)v);
       }
     }
   return *this;
@@ -812,8 +804,8 @@ FXStream& FXStream::addObject(const FXObject* v){
 
 // Save object
 FXStream& FXStream::saveObject(const FXObject* v){
-  register const FXMetaClass *cls;
-  register const FXchar *name;
+  const FXMetaClass *cls;
+  const FXchar *name;
   FXuint tag,zero=0;
   if(dir!=FXStreamSave){ fxerror("FXStream::saveObject: wrong stream direction.\n"); }
   if(code==FXStreamOK){
@@ -821,12 +813,12 @@ FXStream& FXStream::saveObject(const FXObject* v){
       *this << zero;
       return *this;
       }
-    tag=(FXuint)(FXuval)hash.find((void*)v);    // Already in table
+    tag=(FXuint)(FXuval)hash.at((FXptr)v);      // Already in table
     if(tag){
       *this << tag;
       return *this;
       }
-    hash.insert((void*)v,(void*)(FXuval)seq++); // Add to table
+    hash.insert((FXptr)v,(FXptr)(FXuval)seq++); // Add to table
     cls=v->getMetaClass();
     name=cls->getClassName();
     tag=strlen(name)+1;
@@ -848,7 +840,7 @@ FXStream& FXStream::saveObject(const FXObject* v){
 
 // Load object
 FXStream& FXStream::loadObject(FXObject*& v){
-  register const FXMetaClass *cls;
+  const FXMetaClass *cls;
   FXchar name[MAXCLASSNAME+1];
   FXuint tag,esc;
   if(dir!=FXStreamLoad){ fxerror("FXStream::loadObject: wrong stream direction.\n"); }
@@ -859,7 +851,7 @@ FXStream& FXStream::loadObject(FXObject*& v){
       return *this;
       }
     if(tag>=0x80000000){
-      v=(FXObject*)hash.find((void*)(FXuval)tag);
+      v=(FXObject*)hash.at((FXptr)(FXuval)tag);
       if(!v){
         code=FXStreamFormat;                    // Bad format in stream
         }
@@ -881,7 +873,7 @@ FXStream& FXStream::loadObject(FXObject*& v){
       return *this;
       }
     v=cls->makeInstance();                      // Build some object!!
-    hash.insert((void*)(FXuval)seq++,(void*)v); // Add to table
+    hash.insert((FXptr)(FXuval)seq++,(FXptr)v); // Add to table
     FXTRACE((100,"%08ld: loadObject(%s)\n",(FXuval)pos,v->getClassName()));
     v->load(*this);
     }

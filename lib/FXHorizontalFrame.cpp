@@ -3,35 +3,38 @@
 *              H o r i z o n t a l   C o n t a i n e r   O b j e c t            *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXHorizontalFrame.cpp,v 1.28 2006/01/22 17:58:31 fox Exp $               *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXHorizontalFrame.h"
 
@@ -63,16 +66,15 @@ FXIMPLEMENT(FXHorizontalFrame,FXPacker,FXHorizontalFrameMap,ARRAYNUMBER(FXHorizo
 
 
 // Make a horizontal one
-FXHorizontalFrame::FXHorizontalFrame(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):
-  FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
+FXHorizontalFrame::FXHorizontalFrame(FXComposite* p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb,FXint hs,FXint vs):FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,hs,vs){
   }
 
 
 // Compute minimum width based on child layout hints
 FXint FXHorizontalFrame::getDefaultWidth(){
-  register FXint w,wcum,wmax,mw;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint w,wcum,wmax,mw;
+  FXWindow* child;
+  FXuint hints;
   wcum=wmax=mw=0;
   if(options&PACK_UNIFORM_WIDTH) mw=maxChildWidth();
   for(child=getFirst(); child; child=child->getNext()){
@@ -98,9 +100,9 @@ FXint FXHorizontalFrame::getDefaultWidth(){
 
 // Compute minimum height based on child layout hints
 FXint FXHorizontalFrame::getDefaultHeight(){
-  register FXint h,hmax,hcum,mh;
-  register FXWindow* child;
-  register FXuint hints;
+  FXint h,hmax,hcum,mh;
+  FXWindow* child;
+  FXuint hints;
   hmax=hcum=mh=0;
   if(options&PACK_UNIFORM_HEIGHT) mh=maxChildHeight();
   for(child=getFirst(); child; child=child->getNext()){
@@ -125,14 +127,14 @@ FXint FXHorizontalFrame::getDefaultHeight(){
 
 // Recalculate layout
 void FXHorizontalFrame::layout(){
-  register FXint left,right,top,bottom,remain,extra_space,total_space,t,x,y,w,h;
-  register FXWindow* child;
-  register FXint sumexpand=0;
-  register FXint numexpand=0;
-  register FXint mw=0;
-  register FXint mh=0;
-  register FXint e=0;
-  register FXuint hints;
+  FXint left,right,top,bottom,remain,extra_space,total_space,t,x,y,w,h;
+  FXWindow* child;
+  FXint sumexpand=0;
+  FXint numexpand=0;
+  FXint mw=0;
+  FXint mh=0;
+  FXint e=0;
+  FXuint hints;
 
   // Placement rectangle; right/bottom non-inclusive
   left=border+padleft;

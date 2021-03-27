@@ -3,44 +3,41 @@
 *                         K e y b o a r d   H a n d l i n g                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxkeyboard.cpp,v 1.14.2.2 2006/04/14 01:21:01 fox Exp $                      *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
 #include "fxkeys.h"
-#include "fxpriv.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXObject.h"
-#include "FXDict.h"
 #include "FXString.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
-#include "FXApp.h"
-#include "FXId.h"
-#include "FXDrawable.h"
+#include "FXEvent.h"
 #include "FXWindow.h"
+#include "FXApp.h"
+#include "fxpriv.h"
 
 /*
   Notes:
@@ -206,7 +203,7 @@ static const FXuint keymapCtl[] = {
 
 
 // True if OS does not distinguish between left & right Alt/Ctrl/Shift keys
-static FXbool bNoLR=FALSE;
+static FXbool bNoLR=false;
 static BYTE ksRShft=0;
 static BYTE ksRCtrl=0;
 static BYTE ksLMenu=0;
@@ -230,12 +227,12 @@ UINT wkbGetCodePage(){
 
 // Checks if the right-hand ALT key is used as a 2nd shift key
 static FXbool wkbAltGrDown(PBYTE ks){
-  static FXbool bHasAltGr=FALSE;
+  static FXbool bHasAltGr=false;
   static HKL hklOld = NULL;
   HKL hkl=GetKeyboardLayout(0);
   if(hklOld!=hkl){
     hklOld=hkl;
-    bHasAltGr=FALSE;
+    bHasAltGr=false;
     for(FXuint ch=0x20; ch<=0xff ; ++ch){
       // <MSDN>
       // For keyboard layouts that use the right-hand ALT key as a shift key
@@ -244,7 +241,7 @@ static FXbool wkbAltGrDown(PBYTE ks){
       // converted internally into CTRL+ALT.
       // </MSDN>
       if(HIBYTE(VkKeyScanEx(ch,hkl))==6){
-        bHasAltGr=TRUE;
+        bHasAltGr=true;
         break;
         }
       }
@@ -411,7 +408,6 @@ int WINAPI wkbToUnicodeExWin9x(UINT uVirtKey,UINT uScanCode,const BYTE* lpKeySta
   if(cnt<=0) return cnt;
   return MultiByteToWideChar(CP_ACP,0,(LPCSTR)&c,cnt,pwszBuff,cchBuff);
   }
-
 
 #endif
 

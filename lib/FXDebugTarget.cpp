@@ -3,29 +3,41 @@
 *                      D e b u g - T a r g e t   O b j e c t                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDebugTarget.cpp,v 1.33 2006/01/22 17:58:22 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
+#include "FXMutex.h"
 #include "FXStream.h"
+#include "FXString.h"
+#include "FXString.h"
+#include "FXSize.h"
+#include "FXPoint.h"
+#include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
+#include "FXRegistry.h"
+#include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXApp.h"
 #include "FXDebugTarget.h"
 
 /*
@@ -124,8 +136,14 @@ const char *const FXDebugTarget::messageTypeName[]={
   "SEL_QUERY_HELP",
   "SEL_DOCKED",
   "SEL_FLOATED",
+  "SEL_SPACEBALLMOTION",
+  "SEL_SPACEBALLBUTTONPRESS",
+  "SEL_SPACEBALLBUTTONRELEASE",
   "SEL_SESSION_NOTIFY",
-  "SEL_SESSION_CLOSED"
+  "SEL_SESSION_CLOSED",
+  "SEL_COPYDATA",
+  "SEL_IME_START",
+  "SEL_IME_END"
   };
 
 
@@ -153,7 +171,7 @@ long FXDebugTarget::onMessage(FXObject* sender,FXSelector sel,void* ptr){
   FXuint msid=FXSELID(sel);
   FXASSERT(ARRAYNUMBER(messageTypeName)==SEL_LAST);
   if(sender!=lastsender || sel!=lastsel){
-    fxmessage("\nTYPE:%-23s ID:%-5d SENDER: %-15s PTR: 0x%08p #%-4d",type<SEL_LAST?messageTypeName[type]:"ILLEGAL",msid,sender?sender->getClassName():"NULL",ptr,1);
+    fxmessage("\nTYPE:%-23s ID:%-5d SENDER: %-15s PTR: %8p #%-4d",type<SEL_LAST?messageTypeName[type]:"ILLEGAL",msid,sender?sender->getClassName():"NULL",ptr,1);
     lastsender=sender;
     lastsel=sel;
     count=1;

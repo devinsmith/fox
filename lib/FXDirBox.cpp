@@ -3,31 +3,30 @@
 *                     D i r e c t o r y   B o x   O b j e c t                   *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXDirBox.cpp,v 1.65 2006/01/22 17:58:22 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxascii.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
@@ -37,18 +36,19 @@
 #include "FXStat.h"
 #include "FXFile.h"
 #include "FXDir.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
 #include "FXObjectList.h"
+#include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXImage.h"
 #include "FXIcon.h"
 #include "FXGIFIcon.h"
 #include "FXBMPIcon.h"
-#include "FXFont.h"
-#include "FXDC.h"
-#include "FXWindow.h"
 #include "FXFrame.h"
 #include "FXLabel.h"
 #include "FXTextField.h"
@@ -63,15 +63,21 @@
 #include "FXTreeList.h"
 #include "FXTreeListBox.h"
 #include "FXDirBox.h"
-#include "FXFileDict.h"
+#include "FXDictionary.h"
+#include "FXDictionaryOf.h"
+#include "FXIconCache.h"
+#include "FXFileAssociations.h"
 #include "icons.h"
 
 /*
   Notes:
   - When setting path, it adds all directories from the top down to
     the lowest directory.
+  - When switching from one path to the next, keep as much of the old path
+    as possible; remove and create minimum number of items.
+  - Thus, if path is same as old path, there's no change in the items.
   - Share icons with other widgets; upgrade icons to some nicer ones.
-  - Should some of these icons move to FXFileDict?
+  - Should some of these icons move to FXFileAssociations?
   - Need to support ":" directory list separator so we can path not just
     a single path but a list of paths.
 */
@@ -86,7 +92,7 @@ namespace FX {
 // Map
 FXDEFMAP(FXDirBox) FXDirBoxMap[]={
   FXMAPFUNC(SEL_CHANGED,FXDirBox::ID_TREE,FXDirBox::onTreeChanged),
-  FXMAPFUNC(SEL_CLICKED,FXDirBox::ID_TREE,FXDirBox::onTreeClicked),
+  FXMAPFUNC(SEL_COMMAND,FXDirBox::ID_TREE,FXDirBox::onTreeCommand),
   FXMAPFUNC(SEL_COMMAND,FXDirBox::ID_SETVALUE,FXDirBox::onCmdSetValue),
   FXMAPFUNC(SEL_COMMAND,FXDirBox::ID_SETSTRINGVALUE,FXDirBox::onCmdSetStringValue),
   FXMAPFUNC(SEL_COMMAND,FXDirBox::ID_GETSTRINGVALUE,FXDirBox::onCmdGetStringValue),
@@ -98,10 +104,9 @@ FXIMPLEMENT(FXDirBox,FXTreeListBox,FXDirBoxMap,ARRAYNUMBER(FXDirBoxMap))
 
 
 // Directory box
-FXDirBox::FXDirBox(FXComposite *p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXTreeListBox(p,tgt,sel,opts,x,y,w,h, pl,pr,pt,pb){
+FXDirBox::FXDirBox(FXComposite *p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXTreeListBox(p,tgt,sel,opts,x,y,w,h, pl,pr,pt,pb){
   associations=NULL;
-  if(!(options&DIRBOX_NO_OWN_ASSOC)) associations=new FXFileDict(getApp());
+  if(!(options&DIRBOX_NO_OWN_ASSOC)) associations=new FXFileAssociations(getApp());
   foldericon=new FXGIFIcon(getApp(),minifolder);
   cdromicon=new FXGIFIcon(getApp(),minicdrom);
   harddiskicon=new FXGIFIcon(getApp(),miniharddisk);
@@ -175,92 +180,147 @@ long FXDirBox::onCmdGetStringValue(FXObject*,FXSelector,void* ptr){
 
 // Return item path
 FXString FXDirBox::getItemPathname(FXTreeItem *item) const {
-  FXString string;
+  FXString path;
   if(item){
-    while(item->getParent()){
-      string.prepend(getItemText(item));
+    while(1){
+      path.prepend(item->getText());
       item=item->getParent();
-      if(item->getParent()) string.prepend(PATHSEPSTRING);
+      if(!item) break;
+      if(item->getParent()) path.prepend(PATHSEP);
       }
-    string.prepend(getItemText(item));
     }
-  return string;
+  return path;
   }
 
 
-#ifndef WIN32           // UNIX flavor
-
-// Return the item from the absolute pathname
-FXTreeItem* FXDirBox::getPathnameItem(const FXString& path){
-  register FXFileAssoc *fileassoc;
-  register FXTreeItem *item;
-  register FXIcon *icon;
-  register FXint beg=0;
-  register FXint end=0;
-
-  // Remove old items first
-  clearItems();
-
-  // Parse past root
-  if(ISPATHSEP(path[0])) end++;
-
-  // Absolute path?
-  if(beg<end){
-
-    // Determine associations, icons and type
-    icon=foldericon;
-    if(associations){
-      fileassoc=associations->findDirBinding("/");
-      if(fileassoc && fileassoc->miniicon) icon=fileassoc->miniicon;
-      }
-
-    // Create item
-    if(id()) icon->create();
-
-    // Add root
-    item=appendItem(NULL,"/",icon,icon);
-
-    // Add the rest
-    while(end<path.length()){
-
-      // Begin of path component
-      beg=end;
-
-      // Find next path separator
-      while(end<path.length() && !ISPATHSEP(path[end])) end++;
-
-      // Determine associations, icons and type
-      icon=foldericon;
-      if(associations){
-        fileassoc=associations->findDirBinding(path.left(end).text());
-        if(fileassoc && fileassoc->miniicon) icon=fileassoc->miniicon;
-        }
-
-      // Add next item under last
-      item=appendItem(item,path.mid(beg,end-beg),icon,icon);
-
-      // Create item
-      if(id()) icon->create();
-
-      // Skip over path separator
-      if(end<path.length() && ISPATHSEP(path[end])) end++;
-      }
-
-    // Return leaf item
-    return item;
+// Find child of item matching name
+static FXTreeItem* findItemChild(FXTreeItem* item,const FXString& name){
+  while(item){
+#ifdef WIN32
+    if(comparecase(name,item->getText())==0) return item;
+#else
+    if(compare(name,item->getText())==0) return item;
+#endif
+    item=item->getNext();
     }
   return NULL;
   }
 
-#else                   // Windows flavor
+
+#ifdef WIN32            // Windows flavor
 
 // Return the item from the absolute pathname
 FXTreeItem* FXDirBox::getPathnameItem(const FXString& path){
-  register FXFileAssoc *fileassoc;
-  register FXTreeItem *item,*it;
-  register FXIcon *icon;
-  register FXint beg=0;
-  register FXint end=0;
+  FXTreeItem *item=NULL;
+  if(!path.empty()){
+    FXint beg=0;
+    FXint end=0;
+
+    // Parse root directory
+    if(ISPATHSEP(path[end])){
+      end++;
+      if(ISPATHSEP(path[end])) end++;
+      }
+    else if(Ascii::isLetter(path[end]) && path[end+1]==':'){
+      end+=2;
+      if(ISPATHSEP(path[end])) end++;
+      }
+
+    // Absolute path?
+    if(beg<end){
+      FXString     name;
+      FXFileAssoc *assoc;
+      FXTreeItem  *child;
+      FXIcon      *icon;
+      FXString    *drives;
+      FXint        ndrives;
+
+      // Path component
+      name=path.mid(beg,end-beg);
+
+      // First try find if existing root item
+      if((item=findItemChild(getFirstItem(),name))==NULL){
+
+        // List drives
+        ndrives=FXDir::listDrives(drives);
+
+        // Add the drives
+        for(FXint i=0; i<ndrives; ++i){
+          icon=foldericon;
+          if(associations){
+            assoc=associations->findDirBinding(drives[i]);
+            if(assoc && assoc->miniicon) icon=assoc->miniicon;
+            }
+          child=appendItem(NULL,drives[i],icon,icon);
+          if(id()) child->create();
+          }
+
+        // Delete drive list
+        delete [] drives;
+
+        // Perhaps something else?
+        if((item=findItemChild(getFirstItem(),name))==NULL){
+          icon=foldericon;
+          if(associations){
+            assoc=associations->findDirBinding(path.left(end));
+            if(assoc && assoc->miniicon) icon=assoc->miniicon;
+            }
+          item=appendItem(NULL,name,icon,icon);
+          if(id()) item->create();
+          }
+        }
+
+      // Now the subdirectories
+      while(end<path.length()){
+
+        beg=end;
+
+        // Bracket the next component
+        while(end<path.length() && !ISPATHSEP(path[end])) end++;
+
+        // Path component
+        name=path.mid(beg,end-beg);
+
+        // Find child, remove other siblings if not found
+        if((child=findItemChild(item->getFirst(),name))==NULL){
+
+          // Remove the old ones
+          removeItems(item->getFirst(),item->getLast());
+
+          // Update icon
+          icon=foldericon;
+          if(associations){
+            assoc=associations->findDirBinding(path.left(end));
+            if(assoc && assoc->miniicon) icon=assoc->miniicon;
+            }
+          child=appendItem(item,name,icon,icon);
+          if(id()) child->create();
+          }
+
+        // Skip over path separators
+        while(ISPATHSEP(path[end])) end++;
+
+        // Next level down
+        item=child;
+        }
+      }
+    }
+  return item;
+  }
+
+
+
+
+
+#if 0
+
+// Return the item from the absolute pathname
+FXTreeItem* FXDirBox::getPathnameItem(const FXString& path){
+  FXFileAssoc *fileassoc;
+  FXTreeItem *item,*it;
+  FXIcon *icon;
+  FXint beg=0;
+  FXint end=0;
   FXchar drivename[10];
 //  FXchar volumename[256];
 //  FXchar filesystem[100];
@@ -369,7 +429,7 @@ FXTreeItem* FXDirBox::getPathnameItem(const FXString& path){
         // Determine associations, icons and type
         icon=foldericon;
         if(associations){
-          fileassoc=associations->findDirBinding(path.left(end).text());
+          fileassoc=associations->findDirBinding(path.left(end));
           if(fileassoc && fileassoc->miniicon) icon=fileassoc->miniicon;
           }
 
@@ -389,21 +449,96 @@ FXTreeItem* FXDirBox::getPathnameItem(const FXString& path){
     }
   return NULL;
   }
+#endif
+
+#else                   // UNIX flavor
+
+
+// Return the item from the absolute pathname
+FXTreeItem* FXDirBox::getPathnameItem(const FXString& path){
+  FXTreeItem *item=NULL;
+  if(!path.empty()){
+    FXint beg=0;
+    FXint end=0;
+
+    // Parse root directory
+    if(ISPATHSEP(path[0])) end++;
+
+    // Absolute path?
+    if(beg<end){
+      FXString     name;
+      FXFileAssoc *assoc;
+      FXTreeItem  *child;
+      FXIcon      *icon;
+
+      // Path component
+      name=path.mid(beg,end-beg);
+
+      // Find root item, or create it if needed
+      if((item=findItemChild(getFirstItem(),name))==NULL){
+
+        // Update icon
+        icon=foldericon;
+        if(associations){
+          assoc=associations->findDirBinding(path.left(end));
+          if(assoc && assoc->miniicon) icon=assoc->miniicon;
+          }
+
+        // Create item
+        item=appendItem(NULL,name,icon,icon);
+        if(id()) item->create();
+        }
+
+      // Now the subdirectories
+      while(end<path.length()){
+
+        beg=end;
+
+        // Bracket the next component
+        while(end<path.length() && !ISPATHSEP(path[end])) end++;
+
+        // Path component
+        name=path.mid(beg,end-beg);
+
+        // Find child, remove other siblings if not found
+        if((child=findItemChild(item->getFirst(),name))==NULL){
+
+          // Remove the old ones
+          removeItems(item->getFirst(),item->getLast());
+
+          // Update icon
+          icon=foldericon;
+          if(associations){
+            assoc=associations->findDirBinding(path.left(end));
+            if(assoc && assoc->miniicon) icon=assoc->miniicon;
+            }
+
+          // Add new
+          child=appendItem(item,name,icon,icon);
+          if(id()) child->create();
+          }
+
+        // Skip over path separators
+        while(ISPATHSEP(path[end])) end++;
+
+        // Next level down
+        item=child;
+        }
+      }
+    }
+  return item;
+  }
 
 #endif
 
 
 // Forward clicked message from list to target
-long FXDirBox::onTreeClicked(FXObject*,FXSelector,void* ptr){
+long FXDirBox::onTreeCommand(FXObject*,FXSelector,void* ptr){
   FXString string=getItemPathname((FXTreeItem*)ptr);
-  button->handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);    // Unpost the list
-  if(ptr){
-    field->setText(tree->getItemText((FXTreeItem*)ptr));
-    field->setIcon(tree->getItemClosedIcon((FXTreeItem*)ptr));
-    removeItem(((FXTreeItem*)ptr)->getFirst());
-    if(target) target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)string.text());
-    }
-  return 1;
+  field->setText(tree->getItemText((FXTreeItem*)ptr));
+  field->setIcon(tree->getItemClosedIcon((FXTreeItem*)ptr));
+  removeItem(((FXTreeItem*)ptr)->getFirst());
+  return target && target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)string.text());
   }
 
 
@@ -416,8 +551,9 @@ long FXDirBox::onTreeChanged(FXObject*,FXSelector,void* ptr){
 
 
 // Set directory
-void FXDirBox::setDirectory(const FXString& pathname){
-  setCurrentItem(getPathnameItem(FXPath::absolute(pathname)));
+void FXDirBox::setDirectory(const FXString& pathname,FXbool notify){
+  FXTRACE((100,"FXDirBox::setDirectory(%s,%d)\n",pathname.text(),notify));
+  setCurrentItem(getPathnameItem(FXPath::absolute(pathname)),notify);
   }
 
 
@@ -427,12 +563,16 @@ FXString FXDirBox::getDirectory() const {
   }
 
 
-// Change associations table; force regeneration of the items
-// in the tree list so all the new bindings take effect
-void FXDirBox::setAssociations(FXFileDict* assocs){
+// Change file associations; delete the old one unless it was shared
+void FXDirBox::setAssociations(FXFileAssociations* assocs,FXbool owned,FXbool notify){
+  FXuint opts=options;
+  options^=((owned-1)^options)&DIRBOX_NO_OWN_ASSOC;
   if(associations!=assocs){
+    FXString path=getDirectory();
+    if(!(opts&DIRBOX_NO_OWN_ASSOC)) delete associations;
     associations=assocs;
-    setDirectory(getDirectory());
+    clearItems(notify);
+    setDirectory(path,notify);
     }
   }
 
@@ -476,7 +616,7 @@ FXDirBox::~FXDirBox(){
   delete floppyicon;
   delete nethoodicon;
   delete zipdiskicon;
-  associations=(FXFileDict*)-1L;
+  associations=(FXFileAssociations*)-1L;
   foldericon=(FXIcon*)-1L;
   cdromicon=(FXIcon*)-1L;
   harddiskicon=(FXIcon*)-1L;

@@ -3,37 +3,40 @@
 *                     S h e l l   W i n d o w   O b j e c t                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXShell.cpp,v 1.81 2006/01/22 17:58:41 fox Exp $                         *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXApp.h"
 #include "FXShell.h"
 
@@ -68,14 +71,12 @@ FXIMPLEMENT(FXShell,FXComposite,FXShellMap,ARRAYNUMBER(FXShellMap))
 
 
 // Create a toplevel window
-FXShell::FXShell(FXApp* a,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXComposite(a,NULL,opts,x,y,w,h){
+FXShell::FXShell(FXApp* a,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXComposite(a,NULL,opts,x,y,w,h){
   }
 
 
 // Create a toplevel window
-FXShell::FXShell(FXWindow* own,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXComposite(own->getApp(),own,opts,x,y,w,h){
+FXShell::FXShell(FXWindow* own,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXComposite(own->getApp(),own,opts,x,y,w,h){
   }
 
 
@@ -97,7 +98,6 @@ void FXShell::create(){
 
 // Schedule layout to be peformed during idle time
 void FXShell::recalc(){
-  getApp()->removeChore(this,ID_LAYOUT);
   getApp()->addChore(this,ID_LAYOUT);
   flags|=FLAG_DIRTY;
   }
@@ -142,10 +142,10 @@ long FXShell::onConfigure(FXObject* sender,FXSelector sel,void* ptr){
     // in recalc() would never fire until we're all done with the resizing.
     // We'd love to have a fix for this, but it seems difficult because of
     // the need to pass "non-client" events over to the DefWindowProc...
-#ifndef WIN32
-    recalc();           // On UNIX, we process idle messages during a resize
-#else
+#ifdef WIN32
     layout();           // On Windows, we are in a modal loop and we have to force it
+#else
+    recalc();           // On UNIX, we process idle messages during a resize
 #endif
     }
   return 1;
@@ -214,7 +214,7 @@ long FXShell::onKeyPress(FXObject* sender,FXSelector sel,void* ptr){
   if(((FXEvent*)ptr)->code==KEY_Return || ((FXEvent*)ptr)->code==KEY_KP_Enter){
 
     // Find default widget
-    FXWindow *def=findDefault(this);
+    FXWindow* def=findDefault();
 
     // Handle default key
     if(def && def->handle(sender,sel,ptr)) return 1;
@@ -233,7 +233,7 @@ long FXShell::onKeyRelease(FXObject* sender,FXSelector sel,void* ptr){
   if(((FXEvent*)ptr)->code==KEY_Return || ((FXEvent*)ptr)->code==KEY_KP_Enter){
 
     // Find default widget
-    FXWindow *def=findDefault(this);
+    FXWindow* def=findDefault();
 
     // Handle default key
     if(def && def->handle(sender,sel,ptr)) return 1;

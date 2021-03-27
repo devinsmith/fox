@@ -3,30 +3,29 @@
 *                    F i l e   S e l e c t i o n   D i a l o g                  *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXFileDialog.cpp,v 1.51 2006/01/23 06:03:16 fox Exp $                    *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
@@ -35,12 +34,12 @@
 #include "FXPath.h"
 #include "FXStat.h"
 #include "FXFile.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
-#include "FXId.h"
-#include "FXDrawable.h"
+#include "FXEvent.h"
 #include "FXWindow.h"
+#include "FXApp.h"
 #include "FXRecentFiles.h"
 #include "FXFrame.h"
 #include "FXLabel.h"
@@ -67,45 +66,52 @@ using namespace FX;
 namespace FX {
 
 
+// File dialog registry section name
+const FXchar FXFileDialog::sectionName[]="File Dialog";
+
+
+
 // Object implementation
 FXIMPLEMENT(FXFileDialog,FXDialogBox,NULL,0)
 
 
 // Construct file fialog box
-FXFileDialog::FXFileDialog(FXWindow* owner,const FXString& name,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXDialogBox(owner,name,opts|DECOR_TITLE|DECOR_BORDER|DECOR_RESIZE|DECOR_CLOSE,x,y,w,h,0,0,0,0,4,4){
-  initdialog();
-  }
-
-
-// Construct free-floating file dialog box
-FXFileDialog::FXFileDialog(FXApp* a,const FXString& name,FXuint opts,FXint x,FXint y,FXint w,FXint h):
-  FXDialogBox(a,name,opts|DECOR_TITLE|DECOR_BORDER|DECOR_RESIZE|DECOR_CLOSE,x,y,w,h,0,0,0,0,4,4){
-  initdialog();
-  }
-
-
-// Initialize dialog and load settings
-void FXFileDialog::initdialog(){
+FXFileDialog::FXFileDialog(FXWindow* own,const FXString& name,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXDialogBox(own,name,opts|DECOR_TITLE|DECOR_BORDER|DECOR_RESIZE|DECOR_CLOSE,x,y,w,h,4,4,4,4,4,4){
   filebox=new FXFileSelector(this,NULL,0,LAYOUT_FILL_X|LAYOUT_FILL_Y);
   filebox->acceptButton()->setTarget(this);
   filebox->acceptButton()->setSelector(FXDialogBox::ID_ACCEPT);
   filebox->cancelButton()->setTarget(this);
   filebox->cancelButton()->setSelector(FXDialogBox::ID_CANCEL);
-  setWidth(getApp()->reg().readIntEntry("File Dialog","width",getWidth()));
-  setHeight(getApp()->reg().readIntEntry("File Dialog","height",getHeight()));
-  setFileBoxStyle(getApp()->reg().readUnsignedEntry("File Dialog","style",getFileBoxStyle()));
-  showHiddenFiles(getApp()->reg().readUnsignedEntry("File Dialog","showhidden",showHiddenFiles()));
+  loadSettings();
   }
 
 
-// Hide window and save settings
-void FXFileDialog::hide(){
-  FXDialogBox::hide();
-  getApp()->reg().writeIntEntry("File Dialog","width",getWidth());
-  getApp()->reg().writeIntEntry("File Dialog","height",getHeight());
-  getApp()->reg().writeUnsignedEntry("File Dialog","style",getFileBoxStyle());
-  getApp()->reg().writeUnsignedEntry("File Dialog","showhidden",showHiddenFiles());
+// Construct free-floating file dialog box
+FXFileDialog::FXFileDialog(FXApp* a,const FXString& name,FXuint opts,FXint x,FXint y,FXint w,FXint h):FXDialogBox(a,name,opts|DECOR_TITLE|DECOR_BORDER|DECOR_RESIZE|DECOR_CLOSE,x,y,w,h,4,4,4,4,4,4){
+  filebox=new FXFileSelector(this,NULL,0,LAYOUT_FILL_X|LAYOUT_FILL_Y);
+  filebox->acceptButton()->setTarget(this);
+  filebox->acceptButton()->setSelector(FXDialogBox::ID_ACCEPT);
+  filebox->cancelButton()->setTarget(this);
+  filebox->cancelButton()->setSelector(FXDialogBox::ID_CANCEL);
+  loadSettings();
+  }
+
+
+// Load settings from registry
+void FXFileDialog::loadSettings(){
+  setWidth(getApp()->reg().readIntEntry(sectionName,"width",getWidth()));
+  setHeight(getApp()->reg().readIntEntry(sectionName,"height",getHeight()));
+  setFileBoxStyle(getApp()->reg().readUIntEntry(sectionName,"style",getFileBoxStyle()));
+  showHiddenFiles(getApp()->reg().readBoolEntry(sectionName,"showhidden",showHiddenFiles()));
+  }
+
+
+// Save settings to registry
+void FXFileDialog::saveSettings(){
+  getApp()->reg().writeIntEntry(sectionName,"width",getWidth());
+  getApp()->reg().writeIntEntry(sectionName,"height",getHeight());
+  getApp()->reg().writeUIntEntry(sectionName,"style",getFileBoxStyle());
+  getApp()->reg().writeBoolEntry(sectionName,"showhidden",showHiddenFiles());
   }
 
 
@@ -124,6 +130,18 @@ FXString FXFileDialog::getFilename() const {
 // Return empty-string terminated list of selected file names,
 FXString* FXFileDialog::getFilenames() const {
   return filebox->getFilenames();
+  }
+
+
+// Set directory
+void FXFileDialog::setDirectory(const FXString& path){
+  filebox->setDirectory(path);
+  }
+
+
+// Get directory
+FXString FXFileDialog::getDirectory() const {
+  return filebox->getDirectory();
   }
 
 
@@ -151,21 +169,9 @@ FXString FXFileDialog::getPatternList() const {
   }
 
 
-// Set directory
-void FXFileDialog::setDirectory(const FXString& path){
-  filebox->setDirectory(path);
-  }
-
-
-// Get directory
-FXString FXFileDialog::getDirectory() const {
-  return filebox->getDirectory();
-  }
-
-
 // Set current file pattern from the list
-void FXFileDialog::setCurrentPattern(FXint n){
-  filebox->setCurrentPattern(n);
+void FXFileDialog::setCurrentPattern(FXint patno){
+  filebox->setCurrentPattern(patno);
   }
 
 
@@ -174,13 +180,16 @@ FXint FXFileDialog::getCurrentPattern() const {
   return filebox->getCurrentPattern();
   }
 
-FXString FXFileDialog::getPatternText(FXint patno) const {
-  return filebox->getPatternText(patno);
+
+// Change pattern text for pattern number
+void FXFileDialog::setPatternText(FXint patno,const FXString& text){
+  filebox->setPatternText(patno,text);
   }
 
 
-void FXFileDialog::setPatternText(FXint patno,const FXString& text){
-  filebox->setPatternText(patno,text);
+// Get pattern text for given pattern number
+FXString FXFileDialog::getPatternText(FXint patno) const {
+  return filebox->getPatternText(patno);
   }
 
 
@@ -191,12 +200,12 @@ FXint FXFileDialog::getNumPatterns() const {
 
 
 // Allow pattern entry
-void FXFileDialog::allowPatternEntry(FXbool allow){
-  filebox->allowPatternEntry(allow);
+void FXFileDialog::allowPatternEntry(FXbool flag){
+  filebox->allowPatternEntry(flag);
   }
 
 
-// Return TRUE if pattern entry is allowed
+// Return true if pattern entry is allowed
 FXbool FXFileDialog::allowPatternEntry() const {
   return filebox->allowPatternEntry();
   }
@@ -250,27 +259,27 @@ FXuint FXFileDialog::getMatchMode() const {
   }
 
 
-// Return TRUE if showing hidden files
+// Return true if showing hidden files
 FXbool FXFileDialog::showHiddenFiles() const {
   return filebox->showHiddenFiles();
   }
 
 
 // Show or hide hidden files
-void FXFileDialog::showHiddenFiles(FXbool showing){
-  filebox->showHiddenFiles(showing);
+void FXFileDialog::showHiddenFiles(FXbool flag){
+  filebox->showHiddenFiles(flag);
   }
 
 
-// Return TRUE if image preview on
+// Return true if image preview on
 FXbool FXFileDialog::showImages() const {
   return filebox->showImages();
   }
 
 
 // Show or hide preview images
-void FXFileDialog::showImages(FXbool showing){
-  filebox->showImages(showing);
+void FXFileDialog::showImages(FXbool flag){
+  filebox->showImages(flag);
   }
 
 
@@ -287,20 +296,20 @@ void FXFileDialog::setImageSize(FXint size){
 
 
 // Show readonly button
-void FXFileDialog::showReadOnly(FXbool show){
-  filebox->showReadOnly(show);
+void FXFileDialog::showReadOnly(FXbool flag){
+  filebox->showReadOnly(flag);
   }
 
 
-// Return TRUE if readonly is shown
+// Return true if readonly is shown
 FXbool FXFileDialog::shownReadOnly() const {
   return filebox->shownReadOnly();
   }
 
 
 // Set initial state of readonly button
-void FXFileDialog::setReadOnly(FXbool state){
-  filebox->setReadOnly(state);
+void FXFileDialog::setReadOnly(FXbool flag){
+  filebox->setReadOnly(flag);
   }
 
 
@@ -311,16 +320,64 @@ FXbool FXFileDialog::getReadOnly() const {
 
 
 // Allow or disallow navigation
-void FXFileDialog::allowNavigation(FXbool navigable){
-  filebox->allowNavigation(navigable);
+void FXFileDialog::allowNavigation(FXbool flag){
+  filebox->allowNavigation(flag);
   }
-  
-  
+
+
 // Is navigation allowed?
 FXbool FXFileDialog::allowNavigation() const{
   return filebox->allowNavigation();
   }
-  
+
+
+// Set draggable files
+void FXFileDialog::setDraggableFiles(FXbool flag){
+  filebox->setDraggableFiles(flag);
+  }
+
+
+// Are files draggable?
+FXbool FXFileDialog::getDraggableFiles() const {
+  return filebox->getDraggableFiles();
+  }
+
+
+// Set file time format
+void FXFileDialog::setTimeFormat(const FXString& fmt){
+  filebox->setTimeFormat(fmt);
+  }
+
+
+// Return file time format
+FXString FXFileDialog::getTimeFormat() const {
+  return filebox->getTimeFormat();
+  }
+
+
+// Change file associations
+void FXFileDialog::setAssociations(FXFileAssociations* assoc,FXbool owned){
+  filebox->setAssociations(assoc,owned);
+  }
+
+
+// Return file associations
+FXFileAssociations* FXFileDialog::getAssociations() const {
+  return filebox->getAssociations();
+  }
+
+
+// Change icon loader
+void FXFileDialog::setIconSource(FXIconSource* src){
+  filebox->setIconSource(src);
+  }
+
+
+// Return icon loader
+FXIconSource* FXFileDialog::getIconSource() const {
+  return filebox->getIconSource();
+  }
+
 
 // Save data
 void FXFileDialog::save(FXStream& store) const {
@@ -338,6 +395,7 @@ void FXFileDialog::load(FXStream& store){
 
 // Cleanup
 FXFileDialog::~FXFileDialog(){
+  saveSettings();
   filebox=(FXFileSelector*)-1L;
   }
 
@@ -347,8 +405,8 @@ FXString FXFileDialog::getOpenFilename(FXWindow* owner,const FXString& caption,c
   FXFileDialog opendialog(owner,caption);
   FXString filename;
   opendialog.setSelectMode(SELECTFILE_EXISTING);
-  opendialog.setFilename(path);
   opendialog.setPatternList(patterns);
+  opendialog.setFilename(path);
   opendialog.setCurrentPattern(initial);
   if(opendialog.execute()){
     filename=opendialog.getFilename();
@@ -362,8 +420,8 @@ FXString FXFileDialog::getOpenFilename(FXWindow* owner,const FXString& caption,c
 FXString FXFileDialog::getSaveFilename(FXWindow* owner,const FXString& caption,const FXString& path,const FXString& patterns,FXint initial){
   FXFileDialog savedialog(owner,caption);
   savedialog.setSelectMode(SELECTFILE_ANY);
-  savedialog.setFilename(path);
   savedialog.setPatternList(patterns);
+  savedialog.setFilename(path);
   savedialog.setCurrentPattern(initial);
   if(savedialog.execute()){
     return savedialog.getFilename();
@@ -376,8 +434,8 @@ FXString FXFileDialog::getSaveFilename(FXWindow* owner,const FXString& caption,c
 FXString* FXFileDialog::getOpenFilenames(FXWindow* owner,const FXString& caption,const FXString& path,const FXString& patterns,FXint initial){
   FXFileDialog opendialog(owner,caption);
   opendialog.setSelectMode(SELECTFILE_MULTIPLE);
-  opendialog.setFilename(path);
   opendialog.setPatternList(patterns);
+  opendialog.setFilename(path);
   opendialog.setCurrentPattern(initial);
   if(opendialog.execute()){
     return opendialog.getFilenames();

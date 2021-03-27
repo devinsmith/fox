@@ -1,45 +1,47 @@
 /********************************************************************************
 *                                                                               *
-*                               T a b   O b j e c t                             *
+*                          T a b   B a r   W i d g e t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXTabBar.cpp,v 1.28 2006/01/22 17:58:45 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
 #include "fxkeys.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXApp.h"
-#include "FXDCWindow.h"
+#include "FXEvent.h"
 #include "FXFont.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXIcon.h"
 #include "FXTabBar.h"
-#include "FXTabBook.h"
 
 
 /*
@@ -83,8 +85,7 @@ FXIMPLEMENT(FXTabBar,FXPacker,FXTabBarMap,ARRAYNUMBER(FXTabBarMap))
 
 
 // Make a tab bar
-FXTabBar::FXTabBar(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,0,0){
+FXTabBar::FXTabBar(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,0,0){
   flags|=FLAG_ENABLED;
   target=tgt;
   message=sel;
@@ -95,9 +96,9 @@ FXTabBar::FXTabBar(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint
 
 // Get width
 FXint FXTabBar::getDefaultWidth(){
-  register FXint w,wtabs,maxtabw,t,ntabs;
-  register FXuint hints;
-  register FXWindow *child;
+  FXint w,wtabs,maxtabw,t,ntabs;
+  FXuint hints;
+  FXWindow *child;
 
   // Left or right tabs
   if(options&TABBOOK_SIDEWAYS){
@@ -133,9 +134,9 @@ FXint FXTabBar::getDefaultWidth(){
 
 // Get height
 FXint FXTabBar::getDefaultHeight(){
-  register FXint h,htabs,maxtabh,t,ntabs;
-  register FXuint hints;
-  register FXWindow *child;
+  FXint h,htabs,maxtabh,t,ntabs;
+  FXuint hints;
+  FXWindow *child;
 
   // Left or right tabs
   if(options&TABBOOK_SIDEWAYS){
@@ -171,10 +172,10 @@ FXint FXTabBar::getDefaultHeight(){
 
 // Recalculate layout
 void FXTabBar::layout(){
-  register FXint i,px,py,pw,ph,x,y,xx,yy,w,h,maxtabw,maxtabh,cumw,cumh,newcurrent;
-  register FXWindow *raisetab=NULL;
-  register FXWindow *tab;
-  register FXuint hints;
+  FXint i,px,py,pw,ph,x,y,xx,yy,w,h,maxtabw,maxtabh,cumw,cumh,newcurrent;
+  FXWindow *raisetab=NULL;
+  FXWindow *tab;
+  FXuint hints;
 
   newcurrent=-1;
 
@@ -339,9 +340,9 @@ void FXTabBar::layout(){
           if(x+w>px+pw-2) x=px+pw-w-2;
           if(x<px+2) x=px+2;
           if(options&TABBOOK_BOTTOMTABS)
-            tab->position(xx+2,-4,w,h);
+            tab->position(x+2,-4,w,h);
           else
-            tab->position(xx+2,height-h+4,w,h);
+            tab->position(x+2,height-h+4,w,h);
           tab->lower();
           xx+=w;
           }
@@ -350,9 +351,9 @@ void FXTabBar::layout(){
           if(x+w>px+pw-2) x=px+pw-w-2;
           if(x<px) x=px;
           if(options&TABBOOK_BOTTOMTABS)
-            tab->position(xx,-2,w,h);
+            tab->position(x,-2,w,h);
           else
-            tab->position(xx,height-h+2,w,h);
+            tab->position(x,height-h+2,w,h);
           raisetab=tab;
           xx+=w-3;
           }
@@ -368,10 +369,9 @@ void FXTabBar::layout(){
 
 
 // Set current subwindow
-void FXTabBar::setCurrent(FXint panel,FXbool notify){
-  register FXint nc=isMemberOf(&FXTabBook::metaClass)?numChildren()>>1:numChildren();
-  if(panel!=current && 0<=panel && panel<nc){
-    current=panel;
+void FXTabBar::setCurrent(FXint index,FXbool notify){
+  if(index!=current && 0<=index && index<numChildren()){
+    current=index;
     recalc();
     if(notify && target){ target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXival)current); }
     }
@@ -395,7 +395,7 @@ long FXTabBar::onFocusNext(FXObject*,FXSelector,void* ptr){
   if(child) child=child->getNext(); else child=getFirst();
   while(child && !child->shown()) child=child->getNext();
   if(child){
-    setCurrent(indexOfChild(child),TRUE);
+    setCurrent(indexOfChild(child),true);
     child->handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
     return 1;
     }
@@ -409,7 +409,7 @@ long FXTabBar::onFocusPrev(FXObject*,FXSelector,void* ptr){
   if(child) child=child->getPrev(); else child=getLast();
   while(child && !child->shown()) child=child->getPrev();
   if(child){
-    setCurrent(indexOfChild(child),TRUE);
+    setCurrent(indexOfChild(child),true);
     child->handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
     return 1;
     }
@@ -476,7 +476,7 @@ long FXTabBar::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
 
 // Open item
 long FXTabBar::onCmdOpen(FXObject*,FXSelector sel,void*){
-  setCurrent(FXSELID(sel)-ID_OPEN_FIRST,TRUE);
+  setCurrent(FXSELID(sel)-ID_OPEN_FIRST,true);
   return 1;
   }
 
@@ -490,7 +490,7 @@ long FXTabBar::onUpdOpen(FXObject* sender,FXSelector sel,void*){
 
 // The sender of the message is the item to open up
 long FXTabBar::onCmdOpenItem(FXObject* sender,FXSelector,void*){
-  setCurrent(indexOfChild((FXWindow*)sender),TRUE);
+  setCurrent(indexOfChild((FXWindow*)sender),true);
   return 1;
   }
 

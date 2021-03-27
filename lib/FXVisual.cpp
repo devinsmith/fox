@@ -3,47 +3,50 @@
 *                            V i s u a l   C l a s s                            *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXVisual.cpp,v 1.79.2.1 2007/05/15 05:23:43 fox Exp $                        *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
+#include "FXElement.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
 #include "FXAccelTable.h"
-#include "FXObjectList.h"
-#include "FXApp.h"
 #include "FXVisual.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXApp.h"
 
 
 /*
   Notes:
 
   - Purpose is to provide the illusion of having True Color on all systems.
-  - The visual is what determines how an RGB tuple maps to a color on the device.
-  - Thus, the visual also knows the colormap, and perhaps other lookup mechanisms.
+  - The visual is what determines how an RGB tuple maps to a color on the
+    device; thus, the visual also knows the colormap.
   - When a drawable is created, it is created with a certain visual.
   - When painting, graphic contexts are specific for a certain visual; hence,
     the visual should probably keep track of the gc's.
@@ -88,9 +91,8 @@
     is not included.
 */
 
-
-#define DISPLAY(app) ((Display*)((app)->display))
-
+#define TOPIC_CONSTRUCT 1000
+#define TOPIC_CREATION  1001
 
 // Maximum size of the colormap; for high-end graphics systems
 // you may want to define HIGHENDGRAPHICS to allow large colormaps
@@ -111,56 +113,164 @@ FXIMPLEMENT(FXVisual,FXId,NULL,0)
 
 
 // Deserialization
-FXVisual::FXVisual(){
-  flags=0;
-  hint=1;
-  depth=0;
-  numcolors=0;
-  numred=0;
-  numgreen=0;
-  numblue=0;
-  maxcolors=1000000;
-  type=VISUALTYPE_UNKNOWN;
-  info=NULL;
-  visual=NULL;
-  colormap=0;
-  freemap=FALSE;
+FXVisual::FXVisual():visual(NULL),colormap(0),maxcolors(1000000),numcolors(0),numred(0),numgreen(0),numblue(0),depth(0),flags(VISUAL_DEFAULT),hint(32),type(Unknown),freemap(false){
+  FXTRACE((TOPIC_CONSTRUCT,"FXVisual::FXVisual %p\n",this));
 #ifndef WIN32
-  gc=0;
   scrollgc=0;
+  gc=0;
 #endif
   }
 
 
 // Construct
-FXVisual::FXVisual(FXApp* a,FXuint flgs,FXuint d):FXId(a){
-  FXTRACE((100,"FXVisual::FXVisual %p\n",this));
-  flags=flgs;
-  hint=FXMAX(1,d);
-  depth=0;
-  numcolors=0;
-  numred=0;
-  numgreen=0;
-  numblue=0;
-  maxcolors=1000000;
-  type=VISUALTYPE_UNKNOWN;
-  info=NULL;
-  visual=NULL;
-  colormap=0;
-  freemap=FALSE;
+FXVisual::FXVisual(FXApp* a,FXuint flgs,FXuint hnt):FXId(a),visual(NULL),colormap(0),maxcolors(1000000),numcolors(0),numred(0),numgreen(0),numblue(0),depth(0),flags(flgs),hint(hnt),type(Unknown),freemap(false){
+  FXTRACE((TOPIC_CONSTRUCT,"FXVisual::FXVisual %p\n",this));
 #ifndef WIN32
-  visual=NULL;
-  gc=0;
   scrollgc=0;
+  gc=0;
 #endif
   }
 
 
-#ifndef WIN32
+#if defined(WIN32) ///////////////// WIN32 //////////////////////////////////////
 
-/*******************************************************************************/
 
-// X11 Internal helper functions
+// Pallette
+struct LOGPALETTE256 {
+  WORD         palVersion;
+  WORD         palNumEntries;
+  PALETTEENTRY palPalEntry[257];
+  };
+
+
+// Bitmap info
+struct BITMAPINFO256 {
+  BITMAPINFOHEADER bmiHeader;
+  DWORD            bmiColors[256];
+  };
+
+
+// Get number of bits in n
+static inline FXuint findnbits(DWORD n){
+  FXuint nb=0;
+  while(n){nb+=(n&1);n>>=1;}
+  return nb;
+  }
+
+
+// Make palette with first 20 colors equal to system colors
+static HPALETTE createGenericPalette(){
+  HPALETTE hStockPalette,hPalette;
+  LOGPALETTE256 palette;
+  FXint num,r,g,b;
+
+  // We will use the stock palette
+  hStockPalette=(HPALETTE)GetStockObject(DEFAULT_PALETTE);
+
+  // Fill in first 20 entries from system color palette
+  num=GetPaletteEntries(hStockPalette,0,20,palette.palPalEntry);
+
+  // Calculate remaining 216 colors, 8 of which match the standard
+  // 20 colors and 4 of which match the gray shades above
+  for(r=0; r<256; r+=51){
+    for(g=0; g<256; g+=51){
+      for(b=0; b<256; b+=51){
+        palette.palPalEntry[num].peRed=r;
+        palette.palPalEntry[num].peGreen=g;
+        palette.palPalEntry[num].peBlue=b;
+        palette.palPalEntry[num].peFlags=0;
+        num++;
+        }
+      }
+    }
+
+  // Fill in the rest
+  palette.palVersion=0x300;
+  palette.palNumEntries=num;
+
+  // Create palette and we're done
+  hPalette=CreatePalette((const LOGPALETTE*)&palette);
+
+  // Return palette
+  return hPalette;
+  }
+
+
+// Initialize
+void FXVisual::create(){
+  if(!xid){
+    if(getApp()->isInitialized()){
+      FXTRACE((TOPIC_CREATION,"%s::create %p\n",getClassName(),this));
+      FXuint redbits,greenbits,bluebits,redmask,greenmask,bluemask;
+      BITMAPINFO256 bmi;
+      HBITMAP hbm;
+      HDC hdc;
+
+      // Check for palette support
+      hdc=GetDC(GetDesktopWindow());
+
+      // Check for palette mode; assume 8-bit for now
+      if(GetDeviceCaps(hdc,RASTERCAPS)&RC_PALETTE){
+        colormap=createGenericPalette();
+        depth=8;
+        numred=6;               // We have a 6x6x6 ramp, at least...
+        numgreen=6;
+        numblue=6;
+        numcolors=256;
+        freemap=true;
+        type=Index;
+        }
+
+      // True color mode; find out how deep
+      else{
+        memset(&bmi,0,sizeof(BITMAPINFO256));
+        bmi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+        // Get a device-dependent bitmap that's compatible with the
+        // screen, then convert the DDB to a DIB.  We need to call GetDIBits
+        // twice: the first call just fills in the BITMAPINFOHEADER; the
+        // second fills in the bitfields or palette.
+        hbm=CreateCompatibleBitmap(hdc,1,1);
+        GetDIBits(hdc,hbm,0,1,NULL,(LPBITMAPINFO)&bmi,DIB_RGB_COLORS);
+        GetDIBits(hdc,hbm,0,1,NULL,(LPBITMAPINFO)&bmi,DIB_RGB_COLORS);
+        DeleteObject(hbm);
+        if(bmi.bmiHeader.biCompression==BI_BITFIELDS){
+          redmask=bmi.bmiColors[0];
+          greenmask=bmi.bmiColors[1];
+          bluemask=bmi.bmiColors[2];
+          FXTRACE((150,"redmask   = %08x\n",redmask));
+          FXTRACE((150,"greenmask = %08x\n",greenmask));
+          FXTRACE((150,"bluemask  = %08x\n",bluemask));
+          redbits=findnbits(redmask);
+          greenbits=findnbits(greenmask);
+          bluebits=findnbits(bluemask);
+          numred=1<<redbits;
+          numgreen=1<<greenbits;
+          numblue=1<<bluebits;
+          depth=redbits+greenbits+bluebits;
+          numcolors=numred*numgreen*numblue;
+          type=Color;
+          }
+        else{
+          type=Unknown;
+          }
+        }
+      ReleaseDC(GetDesktopWindow(),hdc);
+
+      FXTRACE((150,"numred          = %d\n",numred));
+      FXTRACE((150,"numgreen        = %d\n",numgreen));
+      FXTRACE((150,"numblue         = %d\n",numblue));
+      FXTRACE((150,"numcolors       = %d\n",numcolors));
+      FXTRACE((150,"depth           = %d\n",depth));
+      FXTRACE((150,"type            = %d\n",type));
+
+      // Visual is realized
+      xid=(FXID)1L;
+      }
+    }
+  }
+
+
+#else /////////////////////////////// X11 ///////////////////////////////////////
 
 
 // Standard dither kernel
@@ -174,7 +284,7 @@ static const FXint dither[16]={
 
 // Find shift amount
 static inline FXuint findshift(FXPixel mask){
-  register FXuint sh=0;
+  FXuint sh=0;
   while(!(mask&(1<<sh))) sh++;
   return sh;
   }
@@ -182,22 +292,18 @@ static inline FXuint findshift(FXPixel mask){
 
 // Apply gamma correction to an intensity value in [0..max].
 static FXuint gamma_adjust(FXdouble gamma,FXuint value,FXuint max){
-  register FXdouble x=(FXdouble)value / (FXdouble)max;
-  return (FXuint) (((FXdouble)max * pow(x,1.0/gamma))+0.5);
+  FXdouble x=(FXdouble)value / (FXdouble)max;
+  return (FXuint) (((FXdouble)max * Math::pow(x,1.0/gamma))+0.5);
   }
-
-
-// Apparently, fabs() gives trouble on HP-UX aCC compiler
-static inline double fxabs(double a){ return a<0 ? -a : a; }
 
 
 // Setup for true color
 void FXVisual::setuptruecolor(){
-  register FXuint  redshift,greenshift,blueshift;
-  register FXPixel redmask,greenmask,bluemask;
-  register FXPixel redmax,greenmax,bluemax;
-  register FXuint i,c,d,r,g,b;
-  register FXdouble gamma;
+  FXuint   redshift,greenshift,blueshift;
+  FXPixel  redmask,greenmask,bluemask,alphamask;
+  FXPixel  redmax,greenmax,bluemax;
+  FXuint   i,c,d,r,g,b;
+  FXdouble gamma;
 
   // Get gamma
   gamma=getApp()->reg().readRealEntry("SETTINGS","displaygamma",1.0);
@@ -206,6 +312,7 @@ void FXVisual::setuptruecolor(){
   redmask=((Visual*)visual)->red_mask;
   greenmask=((Visual*)visual)->green_mask;
   bluemask=((Visual*)visual)->blue_mask;
+  alphamask=~(redmask|greenmask|bluemask);              // Collect bits unused by r,g,b for alpha
   redshift=findshift(redmask);
   greenshift=findshift(greenmask);
   blueshift=findshift(bluemask);
@@ -224,9 +331,9 @@ void FXVisual::setuptruecolor(){
       r=(redmax*c+dither[d])/255;
       g=(greenmax*c+dither[d])/255;
       b=(bluemax*c+dither[d])/255;
-      rpix[d][i]=r << redshift;
-      gpix[d][i]=g << greenshift;
-      bpix[d][i]=b << blueshift;
+      rpix[d][i]=alphamask | (r << redshift);           // Unused (alpha) bits are set to 1
+      gpix[d][i]=alphamask | (g << greenshift);
+      bpix[d][i]=alphamask | (b << blueshift);
       }
     }
 
@@ -237,35 +344,38 @@ void FXVisual::setuptruecolor(){
   FXTRACE((150,"  gamma        = %6f\n",gamma));
   FXTRACE((150,"  map_entries  = %d\n",((Visual*)visual)->map_entries));
   FXTRACE((150,"  numcolors    = %d\n",numcolors));
-  FXTRACE((150,"  BitOrder     = %s\n",(BitmapBitOrder(DISPLAY(getApp()))==MSBFirst)?"MSBFirst":"LSBFirst"));
-  FXTRACE((150,"  ByteOrder    = %s\n",(ImageByteOrder(DISPLAY(getApp()))==MSBFirst)?"MSBFirst":"LSBFirst"));
-  FXTRACE((150,"  Padding      = %d\n",BitmapPad(DISPLAY(getApp()))));
+  FXTRACE((150,"  BitOrder     = %s\n",(BitmapBitOrder((Display*)getApp()->getDisplay())==MSBFirst)?"MSBFirst":"LSBFirst"));
+  FXTRACE((150,"  ByteOrder    = %s\n",(ImageByteOrder((Display*)getApp()->getDisplay())==MSBFirst)?"MSBFirst":"LSBFirst"));
+  FXTRACE((150,"  Padding      = %d\n",BitmapPad((Display*)getApp()->getDisplay())));
   FXTRACE((150,"  redmax       = %3ld; redmask   =%08lx; redshift   = %-2d\n",redmax,redmask,redshift));
   FXTRACE((150,"  greenmax     = %3ld; greenmask =%08lx; greenshift = %-2d\n",greenmax,greenmask,greenshift));
   FXTRACE((150,"  bluemax      = %3ld; bluemask  =%08lx; blueshift  = %-2d\n",bluemax,bluemask,blueshift));
 
   // Set type
-  type=VISUALTYPE_TRUE;
+  type=Color;
   }
 
 
 // Setup direct color
 void FXVisual::setupdirectcolor(){
-  register FXuint  redshift,greenshift,blueshift;
-  register FXPixel redmask,greenmask,bluemask;
-  register FXPixel redmax,greenmax,bluemax;
-  register FXuint  mapsize,maxcols,i,j,r,g,b,emax,rr,gg,bb,d;
-  register FXuint  bestmatchr,bestmatchg,bestmatchb;
-  register FXdouble mindist,dist,gamma;
-  register FXbool gottable,allocedcolor;
-  XColor *table,color;
-  FXPixel *alloced;
+  FXuint   redshift,greenshift,blueshift;
+  FXPixel  redmask,greenmask,bluemask;
+  FXPixel  redmax,greenmax,bluemax;
+  FXuint   mapsize,maxcols,i,j,r,g,b,emax,rr,gg,bb,d;
+  FXuint   bestmatchr,bestmatchg,bestmatchb,gottable,allocedcolor;
+  FXint    mindist,dist;
+  FXdouble gamma;
+  XColor   table[MAX_MAPSIZE],color;
+  FXPixel  alloced[MAX_MAPSIZE];
 
   // Get gamma
   gamma=getApp()->reg().readRealEntry("SETTINGS","displaygamma",1.0);
 
   // Get map size
   mapsize=((Visual*)visual)->map_entries;
+
+  // Just in case you're on a high-end system
+  FXASSERT(mapsize<=MAX_MAPSIZE);
 
   // Arrangement of pixels
   redmask=((Visual*)visual)->red_mask;
@@ -294,10 +404,6 @@ void FXVisual::setupdirectcolor(){
 
   gottable=0;
 
-  // Allocate color table
-  FXMALLOC(&table,XColor,mapsize);
-  FXMALLOC(&alloced,FXPixel,mapsize);
-
   // Allocate ramp
   for(i=r=g=b=0; i<=emax; i++){
 
@@ -308,7 +414,7 @@ void FXVisual::setupdirectcolor(){
     color.flags=DoRed|DoGreen|DoBlue;
 
     // First try just using XAllocColor
-    allocedcolor=XAllocColor(DISPLAY(getApp()),colormap,&color);
+    allocedcolor=XAllocColor((Display*)getApp()->getDisplay(),colormap,&color);
     if(!allocedcolor){
 
       // Get colors in the map
@@ -323,26 +429,26 @@ void FXVisual::setupdirectcolor(){
           if(gg<greenmax) gg++;
           if(bb<bluemax) bb++;
           }
-        XQueryColors(DISPLAY(getApp()),colormap,table,mapsize);
+        XQueryColors((Display*)getApp()->getDisplay(),colormap,table,mapsize);
         gottable=1;
         }
 
       // Find best match for red
-      for(mindist=1.0E10,bestmatchr=0,j=0; j<mapsize; j++){
-        dist=fxabs(color.red-table[j].red);
-        if(dist<mindist){ bestmatchr=j; mindist=dist; if(mindist==0.0) break; }
+      for(mindist=2147483647,bestmatchr=0,j=0; j<mapsize; j++){
+        dist=Math::iabs(color.red-table[j].red);
+        if(dist<mindist){ bestmatchr=j; mindist=dist; if(mindist==0) break; }
         }
 
       // Find best match for green
-      for(mindist=1.0E10,bestmatchg=0,j=0; j<mapsize; j++){
-        dist=fxabs(color.green-table[j].green);
-        if(dist<mindist){ bestmatchg=j; mindist=dist; if(mindist==0.0) break; }
+      for(mindist=2147483647,bestmatchg=0,j=0; j<mapsize; j++){
+        dist=Math::iabs(color.green-table[j].green);
+        if(dist<mindist){ bestmatchg=j; mindist=dist; if(mindist==0) break; }
         }
 
       // Find best match for blue
-      for(mindist=1.0E10,bestmatchb=0,j=0; j<mapsize; j++){
-        dist=fxabs(color.blue-table[j].blue);
-        if(dist<mindist){ bestmatchb=j; mindist=dist; if(mindist==0.0) break; }
+      for(mindist=2147483647,bestmatchb=0,j=0; j<mapsize; j++){
+        dist=Math::iabs(color.blue-table[j].blue);
+        if(dist<mindist){ bestmatchb=j; mindist=dist; if(mindist==0) break; }
         }
 
       // Now try to allocate this color
@@ -353,7 +459,7 @@ void FXVisual::setupdirectcolor(){
       // Try to allocate the closest match color.  This should only
       // fail if the cell is read/write.  Otherwise, we're incrementing
       // the cell's reference count.
-      allocedcolor=XAllocColor(DISPLAY(getApp()),colormap,&color);
+      allocedcolor=XAllocColor((Display*)getApp()->getDisplay(),colormap,&color);
       if(!allocedcolor){
         color.red=table[bestmatchr].red;
         color.green=table[bestmatchg].green;
@@ -380,10 +486,6 @@ void FXVisual::setupdirectcolor(){
       }
     }
 
-  // Free table
-  FXFREE(&table);
-  FXFREE(&alloced);
-
   // What did we get
   FXTRACE((150,"Direct color:\n"));
   FXTRACE((150,"  visual id    = 0x%02lx\n",((Visual*)visual)->visualid));
@@ -396,17 +498,16 @@ void FXVisual::setupdirectcolor(){
   FXTRACE((150,"  bluemax      = %3ld; bluemask  =%08lx; blueshift  = %-2d\n",bluemax,bluemask,blueshift));
 
   // Set type
-  type=VISUALTYPE_TRUE;
+  type=Color;
   }
 
 
 // Setup for pseudo color
 void FXVisual::setuppseudocolor(){
-  register FXuint r,g,b,mapsize,bestmatch,maxcols,i,d;
-  register FXdouble mindist,dist,gamma,dr,dg,db;
-  register FXPixel redmax,greenmax,bluemax;
-  register FXbool gottable,allocedcolor;
-  XColor table[256],color;
+  FXuint   r,g,b,mapsize,bestmatch,maxcols,gottable,allocedcolor,i,d;
+  FXdouble mindist,dist,gamma,dr,dg,db;
+  FXPixel  redmax,greenmax,bluemax;
+  XColor   table[256],color;
 
   // Get gamma
   gamma=getApp()->reg().readRealEntry("SETTINGS","displaygamma",1.0);
@@ -448,7 +549,7 @@ void FXVisual::setuppseudocolor(){
         color.flags=DoRed|DoGreen|DoBlue;
 
         // First try just using XAllocColor
-        allocedcolor=XAllocColor(DISPLAY(getApp()),colormap,&color);
+        allocedcolor=XAllocColor((Display*)getApp()->getDisplay(),colormap,&color);
         if(!allocedcolor){
 
           // Get colors in the map
@@ -457,7 +558,7 @@ void FXVisual::setuppseudocolor(){
               table[i].pixel=i;
               table[i].flags=DoRed|DoGreen|DoBlue;
               }
-            XQueryColors(DISPLAY(getApp()),colormap,table,mapsize);
+            XQueryColors((Display*)getApp()->getDisplay(),colormap,table,mapsize);
             gottable=1;
             }
 
@@ -482,7 +583,7 @@ void FXVisual::setuppseudocolor(){
           // Try to allocate the closest match color.  This should only
           // fail if the cell is read/write.  Otherwise, we're incrementing
           // the cell's reference count.
-          allocedcolor=XAllocColor(DISPLAY(getApp()),colormap,&color);
+          allocedcolor=XAllocColor((Display*)getApp()->getDisplay(),colormap,&color);
 
           // Cell was read/write; we can't use read/write cells as some
           // other app might change our colors and mess up the display.
@@ -528,29 +629,33 @@ void FXVisual::setuppseudocolor(){
   FXTRACE((150,"  bluemax      = %ld\n",bluemax));
 
   // Set type
-  type=VISUALTYPE_INDEX;
+  type=Index;
   }
 
 
 // Setup for static color
 void FXVisual::setupstaticcolor(){
-  register FXuint mapsize,bestmatch,i,nr,ng,nb,r,g,b,j,d;
-  register FXdouble mindist,dist,gamma,dr,dg,db;
-  register FXPixel redmax,greenmax,bluemax;
-  FXbool rcnt[256],gcnt[256],bcnt[256];
-  XColor table[256],color;
+  FXuint   mapsize,bestmatch,i,nr,ng,nb,r,g,b,j,d;
+  FXdouble mindist,dist,gamma,dr,dg,db;
+  FXPixel  redmax,greenmax,bluemax;
+  FXuchar  rcnt[256],gcnt[256],bcnt[256];
+  XColor   table[256],color;
 
   // Get gamma
   gamma=getApp()->reg().readRealEntry("SETTINGS","displaygamma",1.0);
   mapsize=((Visual*)visual)->map_entries;
   if(mapsize>256) mapsize=256;
 
-  // Read back table
+  // Set indexes to read
   for(i=0; i<mapsize; i++) table[i].pixel=i;
-  XQueryColors(DISPLAY(getApp()),colormap,table,mapsize);
+
+  // Read back table
+  XQueryColors((Display*)getApp()->getDisplay(),colormap,table,mapsize);
 
   // How many shades of r,g,b do we have?
-  for(i=0; i<256; i++){ rcnt[i]=gcnt[i]=bcnt[i]=0; }
+  for(i=0; i<256; i++){
+    rcnt[i]=gcnt[i]=bcnt[i]=0;
+    }
   for(i=0; i<mapsize; i++){
     rcnt[table[i].red/257]=1;
     gcnt[table[i].green/257]=1;
@@ -634,17 +739,16 @@ void FXVisual::setupstaticcolor(){
   FXTRACE((150,"  bluemax      = %ld\n",bluemax));
 
   // Set type
-  type=VISUALTYPE_INDEX;
+  type=Index;
   }
 
 
 // Setup for gray scale
 void FXVisual::setupgrayscale(){
-  register FXuint g,bestmatch,mapsize,maxcols,graymax,i,d;
-  register FXdouble mindist,dist,gamma,dr,dg,db;
-  register FXbool gottable,allocedcolor;
-  XColor table[256],color;
-  FXPixel alloced[256];
+  FXuint   g,bestmatch,mapsize,maxcols,graymax,gottable,allocedcolor,i,d;
+  FXdouble mindist,dist,gamma,dr,dg,db;
+  XColor   table[256],color;
+  FXPixel  alloced[256];
 
   // Get gamma
   gamma=getApp()->reg().readRealEntry("SETTINGS","displaygamma",1.0);
@@ -669,7 +773,7 @@ void FXVisual::setupgrayscale(){
     color.flags=DoRed|DoGreen|DoBlue;
 
     // First try just using XAllocColor
-    allocedcolor=XAllocColor(DISPLAY(getApp()),colormap,&color);
+    allocedcolor=XAllocColor((Display*)getApp()->getDisplay(),colormap,&color);
     if(!allocedcolor){
 
       // Get colors in the map
@@ -678,7 +782,7 @@ void FXVisual::setupgrayscale(){
           table[i].pixel=i;
           table[i].flags=DoRed|DoGreen|DoBlue;
           }
-        XQueryColors(DISPLAY(getApp()),colormap,table,mapsize);
+        XQueryColors((Display*)getApp()->getDisplay(),colormap,table,mapsize);
         gottable=1;
         }
 
@@ -703,7 +807,7 @@ void FXVisual::setupgrayscale(){
       // Try to allocate the closest match color.  This should only
       // fail if the cell is read/write.  Otherwise, we're incrementing
       // the cell's reference count.
-      allocedcolor=XAllocColor(DISPLAY(getApp()),colormap,&color);
+      allocedcolor=XAllocColor((Display*)getApp()->getDisplay(),colormap,&color);
 
       // Cell was read/write; we can't use read/write cells as some
       // other app might change our colors and mess up the display.
@@ -740,14 +844,14 @@ void FXVisual::setupgrayscale(){
   FXTRACE((150,"  graymax      = %d\n",graymax));
 
   // Set type
-  type=VISUALTYPE_GRAY;
+  type=Gray;
   }
 
 
 // Setup for static gray
 void FXVisual::setupstaticgray(){
-  register FXuint i,d,c,graymax;
-  register FXdouble gamma;
+  FXuint   i,d,c,graymax;
+  FXdouble gamma;
 
   // Get gamma
   gamma=getApp()->reg().readRealEntry("SETTINGS","displaygamma",1.0);
@@ -773,14 +877,14 @@ void FXVisual::setupstaticgray(){
   FXTRACE((150,"  numcolors    = %d\n",numcolors));
   FXTRACE((150,"  graymax      = %d\n",graymax));
 
-  type=VISUALTYPE_GRAY;
+  type=Gray;
   }
 
 
 // Setup for pixmap monochrome; this one has no colormap!
 void FXVisual::setuppixmapmono(){
-  register FXuint d,i,c;
-  register FXdouble gamma;
+  FXuint   d,i,c;
+  FXdouble gamma;
 
   // Get gamma
   gamma=getApp()->reg().readRealEntry("SETTINGS","displaygamma",1.0);
@@ -806,7 +910,7 @@ void FXVisual::setuppixmapmono(){
   FXTRACE((150,"  white        = 1\n"));
 
   // Set type
-  type=VISUALTYPE_MONO;
+  type=Mono;
   }
 
 
@@ -814,11 +918,10 @@ void FXVisual::setuppixmapmono(){
 // Try determine standard colormap
 static FXbool getstdcolormap(Display *dpy,VisualID visualid,XStandardColormap& map){
   XStandardColormap *stdmaps=NULL;
-  int status,count,i;
-  status=XGetRGBColormaps(dpy,RootWindow(dpy,DefaultScreen(dpy)),&stdmaps,&count,XA_RGB_DEFAULT_MAP);
-  if(status){
-    status=FALSE;
-    for(i=0; i<count; i++){
+  FXbool status=false;
+  int count;
+  if(XGetRGBColormaps(dpy,RootWindow(dpy,DefaultScreen(dpy)),&stdmaps,&count,XA_RGB_DEFAULT_MAP)){
+    for(int i=0; i<count; i++){
       FXTRACE((150,"Standarn XA_RGB_DEFAULT_MAP map #%d:\n",i));
       FXTRACE((150,"  colormap   = %ld\n",stdmaps[i].colormap));
       FXTRACE((150,"  red_max    = %ld  red_mult   = %ld\n",stdmaps[i].red_max,stdmaps[i].red_mult));
@@ -830,7 +933,7 @@ static FXbool getstdcolormap(Display *dpy,VisualID visualid,XStandardColormap& m
       if(stdmaps[i].visualid==visualid){
         FXTRACE((150,"  Matched\n"));
         map=stdmaps[i];
-        status=TRUE;
+        status=true;
         break;
         }
       }
@@ -844,20 +947,20 @@ static FXbool getstdcolormap(Display *dpy,VisualID visualid,XStandardColormap& m
 // Determine colormap, then initialize it
 void FXVisual::setupcolormap(){
   //XStandardColormap stdmap;
-  if(flags&VISUAL_MONOCHROME){
+  if(flags&VISUAL_MONO){
     colormap=None;
     FXTRACE((150,"%s::create: need no colormap\n",getClassName()));
     setuppixmapmono();
     }
   else{
-    if((flags&VISUAL_OWNCOLORMAP) || (visual!=DefaultVisual(DISPLAY(getApp()),DefaultScreen(DISPLAY(getApp()))))){
-      colormap=XCreateColormap(DISPLAY(getApp()),RootWindow(DISPLAY(getApp()),DefaultScreen(DISPLAY(getApp()))),((Visual*)visual),AllocNone);
+    if((flags&VISUAL_OWN_COLORMAP) || (visual!=DefaultVisual((Display*)getApp()->getDisplay(),DefaultScreen((Display*)getApp()->getDisplay())))){
+      colormap=XCreateColormap((Display*)getApp()->getDisplay(),RootWindow((Display*)getApp()->getDisplay(),DefaultScreen((Display*)getApp()->getDisplay())),((Visual*)visual),AllocNone);
       FXTRACE((150,"%s::create: allocate colormap\n",getClassName()));
-      freemap=TRUE;
+      freemap=true;
       }
     else{
       //getstdcolormap(DISPLAY(getApp()),((Visual*)visual)->visualid,stdmap);
-      colormap=DefaultColormap(DISPLAY(getApp()),DefaultScreen(DISPLAY(getApp())));
+      colormap=DefaultColormap((Display*)getApp()->getDisplay(),DefaultScreen((Display*)getApp()->getDisplay()));
       FXTRACE((150,"%s::create: use default colormap\n",getClassName()));
       }
     switch(((Visual*)visual)->c_class){
@@ -882,111 +985,67 @@ void* FXVisual::setupgc(FXbool gex){
   gval.graphics_exposures=gex;
 
   // For default visual; this is easy as we already have a matching window
-  if((Visual*)visual==DefaultVisual(DISPLAY(getApp()),DefaultScreen(DISPLAY(getApp()))) && depth==DefaultDepth(DISPLAY(getApp()),DefaultScreen(DISPLAY(getApp())))){
-    gg=XCreateGC(DISPLAY(getApp()),XDefaultRootWindow(DISPLAY(getApp())),GCFillStyle|GCGraphicsExposures,&gval);
+  if((Visual*)visual==DefaultVisual((Display*)getApp()->getDisplay(),DefaultScreen((Display*)getApp()->getDisplay())) && depth==(FXuint)DefaultDepth((Display*)getApp()->getDisplay(),DefaultScreen((Display*)getApp()->getDisplay()))){
+    gg=XCreateGC((Display*)getApp()->getDisplay(),XDefaultRootWindow((Display*)getApp()->getDisplay()),GCFillStyle|GCGraphicsExposures,&gval);
     }
 
   // For arbitrary visual; create a temporary pixmap of the same depth as the visual
   else{
-    drawable=XCreatePixmap(DISPLAY(getApp()),XDefaultRootWindow(DISPLAY(getApp())),1,1,depth);
-    gg=XCreateGC(DISPLAY(getApp()),drawable,GCFillStyle|GCGraphicsExposures,&gval);
-    XFreePixmap(DISPLAY(getApp()),drawable);
+    drawable=XCreatePixmap((Display*)getApp()->getDisplay(),XDefaultRootWindow((Display*)getApp()->getDisplay()),1,1,depth);
+    gg=XCreateGC((Display*)getApp()->getDisplay(),drawable,GCFillStyle|GCGraphicsExposures,&gval);
+    XFreePixmap((Display*)getApp()->getDisplay(),drawable);
     }
   return gg;
   }
-
-
-#else
-
-/*******************************************************************************/
-
-// WIN32 Internal helper functions
-
-
-struct LOGPALETTE256 {
-  WORD         palVersion;
-  WORD         palNumEntries;
-  PALETTEENTRY palPalEntry[257];
-  };
-
-
-struct BITMAPINFO256 {
-  BITMAPINFOHEADER bmiHeader;
-  DWORD            bmiColors[256];
-  };
-
-
-// Get number of bits in n
-static inline FXuint findnbits(DWORD n){
-  register FXuint nb=0;
-  while(n){nb+=(n&1);n>>=1;}
-  return nb;
-  }
-
-
-// Make palette
-static HPALETTE createAllPurposePalette(){
-  LOGPALETTE256 palette;
-  HPALETTE hPalette,hStockPalette;
-  FXint num,r,g,b;
-
-  // We will use the stock palette
-  hStockPalette=(HPALETTE)GetStockObject(DEFAULT_PALETTE);
-
-  // Fill in first 20 entries from system color palette
-  num=GetPaletteEntries(hStockPalette,0,20,palette.palPalEntry);
-
-  // Calculate remaining 216 colors, 8 of which match the standard
-  // 20 colors and 4 of which match the gray shades above
-  for(r=0; r<256; r+=51){
-    for(g=0; g<256; g+=51){
-      for(b=0; b<256; b+=51){
-        palette.palPalEntry[num].peRed=r;
-        palette.palPalEntry[num].peGreen=g;
-        palette.palPalEntry[num].peBlue=b;
-        palette.palPalEntry[num].peFlags=0;
-        num++;
-        }
-      }
-    }
-
-
-  // Fill in the rest
-  palette.palVersion=0x300;
-  palette.palNumEntries=num;
-
-  // Create palette and we're done
-  hPalette=CreatePalette((const LOGPALETTE*)&palette);
-
-  // Return palette
-  return hPalette;
-  }
-
-
-#endif
-
-
-/*******************************************************************************/
 
 
 // Initialize
 void FXVisual::create(){
   if(!xid){
     if(getApp()->isInitialized()){
-      FXTRACE((100,"%s::create %p\n",getClassName(),this));
-#ifndef WIN32
+      FXTRACE((TOPIC_CREATION,"%s::create %p\n",getClassName(),this));
       XVisualInfo vitemplate;
       XVisualInfo *vi;
       FXint nvi,i,d,dbest;
 
       // Assume the default
-      visual=DefaultVisual(DISPLAY(getApp()),DefaultScreen(DISPLAY(getApp())));
-      depth=DefaultDepth(DISPLAY(getApp()),DefaultScreen(DISPLAY(getApp())));
+      visual=DefaultVisual((Display*)getApp()->getDisplay(),DefaultScreen((Display*)getApp()->getDisplay()));
+      depth=DefaultDepth((Display*)getApp()->getDisplay(),DefaultScreen((Display*)getApp()->getDisplay()));
+
+      // Force a given visual
+      if(flags&VISUAL_FORCE){
+        vitemplate.screen=DefaultScreen((Display*)getApp()->getDisplay());
+        vitemplate.visualid=hint;
+        vi=XGetVisualInfo((Display*)getApp()->getDisplay(),VisualScreenMask|VisualIDMask,&vitemplate,&nvi);
+        if(vi){
+          visual=vi[0].visual;
+          depth=vi[0].depth;
+          XFree((char*)vi);
+          }
+        }
+
+      // Get the best (deepest) visual
+      else if(flags&VISUAL_BEST){
+        vitemplate.screen=DefaultScreen((Display*)getApp()->getDisplay());
+        vi=XGetVisualInfo((Display*)getApp()->getDisplay(),VisualScreenMask,&vitemplate,&nvi);
+        if(vi){
+          for(i=0,dbest=1000000; i<nvi; i++){
+            d=vi[i].depth-hint;
+            if(d<0) d*=-100;         // Strongly prefer >= hint
+            if(d<dbest){
+              dbest=d;
+              visual=vi[i].visual;
+              depth=vi[i].depth;
+              }
+            }
+          XFree((char*)vi);
+          }
+        }
 
       // True color
-      if(flags&VISUAL_TRUECOLOR){
-        vitemplate.screen=DefaultScreen(DISPLAY(getApp()));
-        vi=XGetVisualInfo(DISPLAY(getApp()),VisualScreenMask,&vitemplate,&nvi);
+      else if(flags&VISUAL_COLOR){
+        vitemplate.screen=DefaultScreen((Display*)getApp()->getDisplay());
+        vi=XGetVisualInfo((Display*)getApp()->getDisplay(),VisualScreenMask,&vitemplate,&nvi);
         if(vi){
           for(i=0,dbest=1000000; i<nvi; i++){
             if((vi[i].c_class==DirectColor) || (vi[i].c_class==TrueColor)){
@@ -1004,9 +1063,9 @@ void FXVisual::create(){
         }
 
       // Index color
-      else if(flags&VISUAL_INDEXCOLOR){
-        vitemplate.screen=DefaultScreen(DISPLAY(getApp()));
-        vi=XGetVisualInfo(DISPLAY(getApp()),VisualScreenMask,&vitemplate,&nvi);
+      else if(flags&VISUAL_INDEX){
+        vitemplate.screen=DefaultScreen((Display*)getApp()->getDisplay());
+        vi=XGetVisualInfo((Display*)getApp()->getDisplay(),VisualScreenMask,&vitemplate,&nvi);
         if(vi){
           for(i=0,dbest=1000000; i<nvi; i++){
             if((vi[i].c_class==StaticColor) || (vi[i].c_class==PseudoColor)){
@@ -1024,9 +1083,9 @@ void FXVisual::create(){
         }
 
       // Gray scale color
-      else if(flags&VISUAL_GRAYSCALE){
-        vitemplate.screen=DefaultScreen(DISPLAY(getApp()));
-        vi=XGetVisualInfo(DISPLAY(getApp()),VisualScreenMask,&vitemplate,&nvi);
+      else if(flags&VISUAL_GRAY){
+        vitemplate.screen=DefaultScreen((Display*)getApp()->getDisplay());
+        vi=XGetVisualInfo((Display*)getApp()->getDisplay(),VisualScreenMask,&vitemplate,&nvi);
         if(vi){
           for(i=0,dbest=1000000; i<nvi; i++){
             if((vi[i].c_class==GrayScale) || (vi[i].c_class==StaticGray)){
@@ -1043,26 +1102,9 @@ void FXVisual::create(){
           }
         }
 
-      // Get the best (deepest) visual
-      else if(flags&VISUAL_BEST){
-        vitemplate.screen=DefaultScreen(DISPLAY(getApp()));
-        vi=XGetVisualInfo(DISPLAY(getApp()),VisualScreenMask,&vitemplate,&nvi);
-        if(vi){
-          for(i=0,dbest=1000000; i<nvi; i++){
-            d=vi[i].depth-hint;
-            if(d<0) d*=-100;         // Strongly prefer >= hint
-            if(d<dbest){
-              dbest=d;
-              visual=vi[i].visual;
-              depth=vi[i].depth;
-              }
-            }
-          XFree((char*)vi);
-          }
-        }
-
       // Monochrome visual (for masks and stipples, not for windows)
-      else if(flags&VISUAL_MONOCHROME){
+      else if(flags&VISUAL_MONO){
+        // FIXME Is "visual" valid for monochrome?
         numcolors=2;
         depth=1;
         }
@@ -1073,88 +1115,44 @@ void FXVisual::create(){
       setupcolormap();
 
       // Make GC's for this visual
-      gc=setupgc(FALSE);
-      scrollgc=setupgc(TRUE);
+      scrollgc=setupgc(true);
+      gc=setupgc(false);
 
-      xid=1;
-#else
-
-      HDC hdc;
-      HBITMAP hbm;
-      BITMAPINFO256 bmi;
-      FXuint redbits,greenbits,bluebits,redmask,greenmask,bluemask;
-
-      // Check for palette support
-      hdc=GetDC(GetDesktopWindow());
-
-      // Check for palette mode; assume 8-bit for now
-      if(GetDeviceCaps(hdc,RASTERCAPS)&RC_PALETTE){
-        colormap=createAllPurposePalette();
-        depth=8;
-        numred=6;               // We have a 6x6x6 ramp, at least...
-        numgreen=6;
-        numblue=6;
-        numcolors=256;
-        type=VISUALTYPE_INDEX;
-        freemap=TRUE;
+/*
+#ifdef HAVE_XRENDER_H
+      XRenderPictFormat *pf=XRenderFindVisualFormat(DISPLAY(getApp()),(Visual*)visual);
+      if(pf){
+        FXTRACE((100,"pf->id              = %d\n",pf->id));
+        FXTRACE((100,"pf->type            = %d\n",pf->type));
+        FXTRACE((100,"pf->depth           = %d\n",pf->depth));
+        FXTRACE((100,"pf->direct.red      = %d\n",pf->direct.red));
+        FXTRACE((100,"pf->direct.redMask  = 0x%x\n",pf->direct.redMask));
+        FXTRACE((100,"pf->direct.green    = %d\n",pf->direct.green));
+        FXTRACE((100,"pf->direct.greenMask= 0x%x\n",pf->direct.greenMask));
+        FXTRACE((100,"pf->direct.blue     = %d\n",pf->direct.blue));
+        FXTRACE((100,"pf->direct.blueMask = 0x%x\n",pf->direct.blueMask));
+        FXTRACE((100,"pf->direct.alpha    = %d\n",pf->direct.alpha));
+        FXTRACE((100,"pf->direct.alphaMask= 0x%x\n",pf->direct.alphaMask));
+        FXTRACE((100,"pf->colormap        = %d (colormap=%d)\n",pf->colormap,colormap));
         }
-
-      // True color mode; find out how deep
-      else{
-        memset(&bmi,0,sizeof(BITMAPINFO256));
-        bmi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
-        // Get a device-dependent bitmap that's compatible with the
-        // screen, then convert the DDB to a DIB.  We need to call GetDIBits
-        // twice: the first call just fills in the BITMAPINFOHEADER; the
-        // second fills in the bitfields or palette.
-        hbm=CreateCompatibleBitmap(hdc,1,1);
-        GetDIBits(hdc,hbm,0,1,NULL,(LPBITMAPINFO)&bmi,DIB_RGB_COLORS);
-        GetDIBits(hdc,hbm,0,1,NULL,(LPBITMAPINFO)&bmi,DIB_RGB_COLORS);
-        DeleteObject(hbm);
-        if(bmi.bmiHeader.biCompression==BI_BITFIELDS){
-          redmask=bmi.bmiColors[0];
-          greenmask=bmi.bmiColors[1];
-          bluemask=bmi.bmiColors[2];
-          FXTRACE((150,"redmask   = %08x\n",redmask));
-          FXTRACE((150,"greenmask = %08x\n",greenmask));
-          FXTRACE((150,"bluemask  = %08x\n",bluemask));
-          redbits=findnbits(redmask);
-          greenbits=findnbits(greenmask);
-          bluebits=findnbits(bluemask);
-          numred=1<<redbits;
-          numgreen=1<<greenbits;
-          numblue=1<<bluebits;
-          depth=redbits+greenbits+bluebits;
-          numcolors=numred*numgreen*numblue;
-          type=VISUALTYPE_TRUE;
-          }
-        else{
-          type=VISUALTYPE_UNKNOWN;
-          }
-        }
-      ReleaseDC(GetDesktopWindow(),hdc);
-
-      FXTRACE((150,"numred          = %d\n",numred));
-      FXTRACE((150,"numgreen        = %d\n",numgreen));
-      FXTRACE((150,"numblue         = %d\n",numblue));
-      FXTRACE((150,"numcolors       = %d\n",numcolors));
-      FXTRACE((150,"depth           = %d\n",depth));
-      FXTRACE((150,"type            = %d\n",type));
-
-      // This is just a placeholder
-      xid=(void*)1;
 #endif
+*/
+      // Visual is realized
+      xid=(FXID)((Visual*)visual)->visualid;
       }
     }
   }
 
 
+#endif //////////////////////////////////////////////////////////////////////////
+
+
 // Detach visual
 void FXVisual::detach(){
   if(xid){
-    FXTRACE((100,"%s::detach %p\n",getClassName(),this));
+    FXTRACE((TOPIC_CREATION,"%s::detach %p\n",getClassName(),this));
     colormap=0;
-    freemap=FALSE;
+    freemap=false;
     xid=0;
     }
   }
@@ -1164,17 +1162,17 @@ void FXVisual::detach(){
 void FXVisual::destroy(){
   if(xid){
     if(getApp()->isInitialized()){
-      FXTRACE((100,"%s::destroy %p\n",getClassName(),this));
-#ifndef WIN32
-      if(freemap){XFreeColormap(DISPLAY(getApp()),colormap);}
-      XFreeGC(DISPLAY(getApp()),(GC)gc);
-      XFreeGC(DISPLAY(getApp()),(GC)scrollgc);
+      FXTRACE((TOPIC_CREATION,"%s::destroy %p\n",getClassName(),this));
+#ifdef WIN32
+      if(freemap){ DeleteObject((HPALETTE)colormap); }
 #else
-      if(freemap){DeleteObject((HPALETTE)colormap);}
+      if(freemap){ XFreeColormap((Display*)getApp()->getDisplay(),colormap); }
+      XFreeGC((Display*)getApp()->getDisplay(),(GC)scrollgc);
+      XFreeGC((Display*)getApp()->getDisplay(),(GC)gc);
 #endif
-      colormap=0;
-      freemap=FALSE;
       }
+    colormap=0;
+    freemap=false;
     xid=0;
     }
   }
@@ -1182,30 +1180,29 @@ void FXVisual::destroy(){
 
 // Get pixel value for color
 FXPixel FXVisual::getPixel(FXColor clr){
-#ifndef WIN32
+#ifdef WIN32
+  return PALETTERGB(FXREDVAL(clr),FXGREENVAL(clr),FXBLUEVAL(clr));
+#else
   switch(type){
-    case VISUALTYPE_TRUE:    return rpix[1][FXREDVAL(clr)] | gpix[1][FXGREENVAL(clr)] | bpix[1][FXBLUEVAL(clr)];
-    case VISUALTYPE_INDEX:   return lut[rpix[1][FXREDVAL(clr)]+gpix[1][FXGREENVAL(clr)]+bpix[1][FXBLUEVAL(clr)]];
-    case VISUALTYPE_GRAY:    return gpix[1][(77*FXREDVAL(clr)+151*FXGREENVAL(clr)+29*FXBLUEVAL(clr))>>8];
-    case VISUALTYPE_MONO:    return gpix[1][(77*FXREDVAL(clr)+151*FXGREENVAL(clr)+29*FXBLUEVAL(clr))>>8];
-    case VISUALTYPE_UNKNOWN: return 0;
+    case Mono:  return gpix[1][(77*FXREDVAL(clr)+151*FXGREENVAL(clr)+29*FXBLUEVAL(clr))>>8];
+    case Gray:  return gpix[1][(77*FXREDVAL(clr)+151*FXGREENVAL(clr)+29*FXBLUEVAL(clr))>>8];
+    case Index: return lut[rpix[1][FXREDVAL(clr)]+gpix[1][FXGREENVAL(clr)]+bpix[1][FXBLUEVAL(clr)]];
+    case Color: return rpix[1][FXREDVAL(clr)] | gpix[1][FXGREENVAL(clr)] | bpix[1][FXBLUEVAL(clr)];
     }
   return 0;
-#else
-  return PALETTERGB(FXREDVAL(clr),FXGREENVAL(clr),FXBLUEVAL(clr));
 #endif
   }
 
 
 // Get color value for pixel
 FXColor FXVisual::getColor(FXPixel pix){
-#ifndef WIN32
+#ifdef WIN32
+  return PALETTEINDEX(pix);
+#else
   XColor color;
   color.pixel=pix;
-  XQueryColor(DISPLAY(getApp()),colormap,&color);
+  XQueryColor((Display*)getApp()->getDisplay(),colormap,&color);
   return FXRGB(((color.red+128)/257),((color.green+128)/257),((color.blue+128)/257));
-#else
-  return PALETTEINDEX(pix);
 #endif
   }
 
@@ -1222,7 +1219,8 @@ void FXVisual::setMaxColors(FXuint maxcols){
 void FXVisual::save(FXStream& store) const {
   FXId::save(store);
   store << flags;
-  store << depth;
+  store << hint;
+  store << maxcolors;
   }
 
 
@@ -1230,13 +1228,14 @@ void FXVisual::save(FXStream& store) const {
 void FXVisual::load(FXStream& store){
   FXId::load(store);
   store >> flags;
-  store >> depth;
+  store >> hint;
+  store >> maxcolors;
   }
 
 
 // Destroy
 FXVisual::~FXVisual(){
-  FXTRACE((100,"FXVisual::~FXVisual %p\n",this));
+  FXTRACE((TOPIC_CONSTRUCT,"FXVisual::~FXVisual %p\n",this));
   destroy();
   }
 

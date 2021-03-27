@@ -3,39 +3,42 @@
 *                            L a b e l   W i d g e t                            *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXLabel.cpp,v 1.59.2.1 2006/12/11 15:57:26 fox Exp $                         *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
+#include "FXFont.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
+#include "FXDCWindow.h"
 #include "FXApp.h"
 #include "FXAccelTable.h"
-#include "FXDCWindow.h"
-#include "FXFont.h"
 #include "FXIcon.h"
 #include "FXLabel.h"
 
@@ -47,6 +50,9 @@
   - When text changes, do we delete the hot key, or parse it from the new label?
   - It makes sense for certain ``passive'' widgets such as labels to have onUpdate;
     for example, to show/hide/whatever based on changing data structures.
+  - Perhaps its better to only set accelerator, tip, and help texts from constructor,
+    not from setText().  In particular when connected to data targets that make no
+    assumptions about what they're connected to.
 */
 
 #define JUSTIFY_MASK    (JUSTIFY_HZ_APART|JUSTIFY_VT_APART)
@@ -87,26 +93,25 @@ FXLabel::FXLabel(){
   flags|=FLAG_ENABLED;
   icon=(FXIcon*)-1L;
   font=(FXFont*)-1L;
+  textColor=0;
   hotkey=0;
   hotoff=0;
-  textColor=0;
   }
 
 
 // Make a label
-FXLabel::FXLabel(FXComposite* p,const FXString& text,FXIcon* ic,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
+FXLabel::FXLabel(FXComposite* p,const FXString& text,FXIcon* ic,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXFrame(p,opts,x,y,w,h,pl,pr,pt,pb){
   FXString string=text.section('\t',0);
-  flags|=FLAG_ENABLED;
-  label=stripHotKey(string);
-  tip=text.section('\t',1);
-  help=text.section('\t',2);
-  icon=ic;
-  font=getApp()->getNormalFont();
-  textColor=getApp()->getForeColor();
   hotkey=parseHotKey(string);
+  label=stripHotKey(string);
   hotoff=findHotKey(string);
+  font=getApp()->getNormalFont();
+  help=text.section('\t',2);
+  tip=text.section('\t',1);
+  textColor=getApp()->getForeColor();
+  icon=ic;
   addHotKey(hotkey);
+  flags|=FLAG_ENABLED;
   }
 
 
@@ -146,8 +151,8 @@ void FXLabel::disable(){
 
 // Get height of multi-line label
 FXint FXLabel::labelHeight(const FXString& text) const {
-  register FXint beg,end;
-  register FXint th=0;
+  FXint beg,end;
+  FXint th=0;
   beg=0;
   do{
     end=beg;
@@ -162,8 +167,8 @@ FXint FXLabel::labelHeight(const FXString& text) const {
 
 // Get width of multi-line label
 FXint FXLabel::labelWidth(const FXString& text) const {
-  register FXint beg,end;
-  register FXint w,tw=0;
+  FXint beg,end;
+  FXint w,tw=0;
   beg=0;
   do{
     end=beg;
@@ -232,8 +237,8 @@ void FXLabel::just_y(FXint& ty,FXint& iy,FXint th,FXint ih){
 
 // Draw multi-line label, with underline for hotkey
 void FXLabel::drawLabel(FXDCWindow& dc,const FXString& text,FXint hot,FXint tx,FXint ty,FXint tw,FXint){
-  register FXint beg,end;
-  register FXint xx,yy;
+  FXint beg,end;
+  FXint xx,yy;
   yy=ty+font->getFontAscent();
   beg=0;
   do{
@@ -298,7 +303,7 @@ long FXLabel::onCmdSetStringValue(FXObject*,FXSelector,void* ptr){
 
 // Obtain value from text field
 long FXLabel::onCmdGetStringValue(FXObject*,FXSelector,void* ptr){
-  *((FXString*)ptr)=getText();
+  *((FXString*)ptr)=label;
   return 1;
   }
 
@@ -410,7 +415,7 @@ long FXLabel::onCmdGetTip(FXObject*,FXSelector,void* ptr){
 
 // We were asked about tip text
 long FXLabel::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryTip(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryTip(sender,sel,ptr)) return 1;
   if((flags&FLAG_TIP) && !tip.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&tip);
     return 1;
@@ -421,7 +426,7 @@ long FXLabel::onQueryTip(FXObject* sender,FXSelector sel,void* ptr){
 
 // We were asked about status text
 long FXLabel::onQueryHelp(FXObject* sender,FXSelector sel,void* ptr){
-  if(FXWindow::onQueryHelp(sender,sel,ptr)) return 1;
+  if(FXFrame::onQueryHelp(sender,sel,ptr)) return 1;
   if((flags&FLAG_HELP) && !help.empty()){
     sender->handle(this,FXSEL(SEL_COMMAND,ID_SETSTRINGVALUE),(void*)&help);
     return 1;
@@ -432,8 +437,8 @@ long FXLabel::onQueryHelp(FXObject* sender,FXSelector sel,void* ptr){
 
 // Change text
 void FXLabel::setText(const FXString& text){
-  FXString string=stripHotKey(text);
   FXHotKey hkey=parseHotKey(text);
+  FXString string=stripHotKey(text);
   FXint hoff=findHotKey(text);
   if(label!=string || hkey!=hotkey || hotoff!=hoff){
     label.adopt(string);

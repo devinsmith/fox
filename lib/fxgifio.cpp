@@ -3,30 +3,29 @@
 *                        G I F   I n p u t / O u t p u t                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: fxgifio.cpp,v 1.79 2006/01/22 17:58:52 fox Exp $                         *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
+#include "FXElement.h"
 #include "FXStream.h"
-#include "fxpriv.h"
 
 
 /*
@@ -59,14 +58,22 @@ using namespace FX;
 namespace FX {
 
 
-extern FXAPI bool fxcheckGIF(FXStream& store);
-extern FXAPI bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height);
-extern FXAPI bool fxsaveGIF(FXStream& store,const FXColor *data,FXint width,FXint height,bool fast=true);
+extern FXbool fxfsquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& actualcolors,FXint w,FXint h,FXint maxcolors);
+extern FXbool fxezquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& actualcolors,FXint w,FXint h,FXint maxcolors);
+extern FXbool fxwuquantize(FXuchar* dst,const FXColor* src,FXColor* colormap,FXint& actualcolors,FXint w,FXint h,FXint maxcolors);
+
+
+#ifndef FXLOADGIF
+extern FXAPI FXbool fxcheckGIF(FXStream& store);
+extern FXAPI FXbool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXbool alpha=true);
+extern FXAPI FXbool fxsaveGIF(FXStream& store,const FXColor *data,FXint width,FXint height,FXbool fast=true);
+#endif
 
 
 // Codes found in the GIF specification
 const FXuchar TAG_EXTENSION   = 0x21;   // Extension block
 const FXuchar TAG_GRAPHIC     = 0xF9;   // Graphic control block
+const FXuchar TAG_COMMENT     = 0xFE;   // Comment extension
 const FXuchar TAG_IMAGE       = 0x2c;   // Image separator
 const FXuchar TAG_TERMINATOR  = 0x00;   // Block terminator
 const FXuchar TAG_GRAPHICSIZE = 0x04;   // Graphic block size
@@ -84,7 +91,7 @@ const FXuchar TAG_SUF         = 0x61;   // Version suffix
 
 
 // Check if stream contains a GIF
-bool fxcheckGIF(FXStream& store){
+FXbool fxcheckGIF(FXStream& store){
   FXuchar signature[3];
   store.load(signature,3);
   store.position(-3,FXFromCurrent);
@@ -93,11 +100,11 @@ bool fxcheckGIF(FXStream& store){
 
 
 // Load image from stream
-bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
+FXbool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXbool flag){
   const   FXint Yinit[4]={0,4,2,1};
   const   FXint Yinc[4]={8,8,4,2};
   FXint   imwidth,imheight,interlace,ncolors,npixels,maxpixels,i;
-  FXuchar c1,c2,c3,sbsize,flags,alpha,*ptr,*buf,*pix;
+  FXuchar c1,c2,c3,sbsize,flagbits,background,index,*ptr,*buf,*pix;
   FXColor colormap[256];
   FXint   BitOffset;                  // Bit Offset of next code
   FXint   ByteOffset;                 // Byte offset of next code
@@ -144,12 +151,12 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   // Get screen descriptor
   store >> c1 >> c2;    // Skip screen width
   store >> c1 >> c2;    // Skip screen height
-  store >> flags;       // Get flags
-  store >> alpha;       // Background
+  store >> flagbits;    // Get flag bits
+  store >> background;  // Background
   store >> c2;          // Skip aspect ratio
 
   // Determine number of colors
-  ncolors=2<<(flags&7);
+  ncolors=2<<(flagbits&7);
   BitMask=ncolors-1;
 
   // If no colormap, spec says first 2 colors are black and white
@@ -157,11 +164,11 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   colormap[1]=FXRGB(255,255,255);
 
   // Read global map if there is one
-  if(flags&0x80){
+  if(flagbits&0x80){
     for(i=0; i<ncolors; i++){
-      store >> ((FXuchar*)(colormap+i))[0];     // Blue
-      store >> ((FXuchar*)(colormap+i))[1];     // Green
       store >> ((FXuchar*)(colormap+i))[2];     // Red
+      store >> ((FXuchar*)(colormap+i))[1];     // Green
+      store >> ((FXuchar*)(colormap+i))[0];     // Blue
       ((FXuchar*)(colormap+i))[3]=255;          // Alpha
       }
     }
@@ -178,12 +185,13 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
       if(c2==TAG_GRAPHIC){
         store >> sbsize;
         if(sbsize!=TAG_GRAPHICSIZE) return false;
-        store >> flags;         // Flags
+        store >> flagbits;      // Flag bits
         store >> c3 >> c3;      // Delay time
-        store >> alpha;         // Alpha color index; we suspect alpha<ncolors not always true...
+        store >> index;         // Alpha color index; we suspect alpha<ncolors not always true...
         store >> c3;
-        if(flags&1){            // Clear alpha channel of alpha color
-          colormap[alpha]&=FXRGBA(255,255,255,0);       // Clear the alpha channel but keep the RGB
+        if(flagbits&1){            // Clear alpha channel of alpha color
+          background=index;
+          flag=true;
           }
         continue;
         }
@@ -211,27 +219,27 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
       imheight=(c2<<8)+c1;
 
       // Get image flags
-      store >> flags;
+      store >> flagbits;
 
       // Read local map if there is one
-      if(flags&0x80){
-        ncolors=2<<(flags&7);
+      if(flagbits&0x80){
+        ncolors=2<<(flagbits&7);
         for(i=0; i<ncolors; i++){
-          store >> ((FXuchar*)(colormap+i))[0]; // Red
+          store >> ((FXuchar*)(colormap+i))[2]; // Red
           store >> ((FXuchar*)(colormap+i))[1]; // Green
-          store >> ((FXuchar*)(colormap+i))[2]; // Blue
+          store >> ((FXuchar*)(colormap+i))[0]; // Blue
           ((FXuchar*)(colormap+i))[3]=255;      // Alpha
           }
         }
 
       // Interlaced image
-      interlace=(flags&0x40);
+      interlace=(flagbits&0x40);
 
       // Total pixels expected
       maxpixels=imwidth*imheight;
 
       // Allocate memory
-      if(!FXMALLOC(&data,FXColor,maxpixels)) return false;
+      if(!allocElms(data,maxpixels)) return false;
 
       // Set up pointers; we're using the first 3/4 of the
       // data array for the compressed data, and the latter 1/4 for
@@ -261,7 +269,7 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
       ReadMask=MaxCode-1;
 
       // Maximum code should not exceed 4096
-      if(MaxCode>=4096){ FXFREE(&data); return false; }
+      if(MaxCode>=4096){ freeElms(data); return false; }
 
       // Read all blocks of compressed data into one single buffer.
       // We have an extra test to make sure we don't write past 3/4
@@ -269,7 +277,7 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
       ptr=buf;
       do{
         store >> sbsize;
-        if(ptr+sbsize>pix){ FXFREE(&data); return false; }
+        if(ptr+sbsize>pix){ freeElms(data); return false; }
         store.load(ptr,sbsize);
         ptr+=sbsize;
         }
@@ -342,14 +350,14 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
         else{
 
           // If we're at maxcode and didn't get a clear, stop loading
-          if(FreeCode>=4096){ FXFREE(&data); return false; }
+          if(FreeCode>=4096){ freeElms(data); return false; }
 
           CurCode=InCode=Code;
 
           // If greater or equal to FreeCode, not in the hash table yet; repeat the last character decoded
           if(CurCode>=FreeCode){
             CurCode=OldCode;
-            if(OutCount>4096){ FXFREE(&data); return false; }
+            if(OutCount>4096){ freeElms(data); return false; }
             OutCode[OutCount++]=FinChar;
             }
 
@@ -357,12 +365,12 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
           // through the hash table to its end; each code in the chain puts its
           // associated output code on the output queue.
           while(CurCode>=ClearCode){
-            if(OutCount>4096 || CurCode>=FreeCode){ FXFREE(&data); return false; }
+            if(OutCount>4096 || CurCode>=FreeCode){ freeElms(data); return false; }
             OutCode[OutCount++]=Suffix[CurCode];
             CurCode=Prefix[CurCode];
             }
 
-          if(OutCount>4096){ FXFREE(&data); return false; }
+          if(OutCount>4096){ freeElms(data); return false; }
 
           // The last code in the chain is treated as raw data
           FinChar=CurCode&BitMask;
@@ -427,7 +435,7 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
 
       // Technically, this is incorrect; but we have so
       // many GIF87a's that we have to keep doing this!
-      colormap[alpha]&=FXRGBA(255,255,255,0);
+      if(flag){ colormap[background]&=FXRGBA(255,255,255,0); }
 
       // Apply colormap
       for(i=0; i<maxpixels; i++){
@@ -453,7 +461,7 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
 
 
 // Save a gif file to a stream
-bool fxsaveGIF(FXStream& store,const FXColor *data,FXint width,FXint height,bool fast){
+FXbool fxsaveGIF(FXStream& store,const FXColor *data,FXint width,FXint height,FXbool flag){
   FXuint   clearcode,endcode,freecode,findcode,prefix,current,outaccu,initcodesize,codesize,hash,step;
   FXint    maxpixels,ncolors,bitsperpixel,colormapsize,outbits,src,dst,i;
   FXuchar  c1,c2,alpha,*pixels,*output;
@@ -462,19 +470,19 @@ bool fxsaveGIF(FXStream& store,const FXColor *data,FXint width,FXint height,bool
   FXushort codetab[5003];
 
   // Must make sense
-  if(!data || width<=0 || height<=0) return false;
+  if(!data || width<=0 || height<=0 || width>65535 || height>65535) return false;
 
   // How many pixels
   maxpixels=width*height;
 
   // Allocate temp buffer for pixels
-  if(!FXMALLOC(&output,FXuchar,(maxpixels<<1))) return false;
+  if(!allocElms(output,((FXuval)maxpixels)<<1)) return false;
   pixels=output+maxpixels;
 
   // First, try EZ quantization, because it is exact; a previously
   // loaded GIF will be re-saved with exactly the same colors.
   if(!fxezquantize(pixels,data,colormap,ncolors,width,height,256)){
-    if(fast){
+    if(flag){
       fxfsquantize(pixels,data,colormap,ncolors,width,height,256);
       }
     else{
@@ -493,7 +501,7 @@ bool fxsaveGIF(FXStream& store,const FXColor *data,FXint width,FXint height,bool
   store << TAG_SUF;
 
   // Figure out bits per pixel
-  for(bitsperpixel=1; ncolors>(1<<bitsperpixel); bitsperpixel++);
+  for(bitsperpixel=1; ncolors>(1<<bitsperpixel); bitsperpixel++){}
 
   // Colormap size
   colormapsize=1<<bitsperpixel;
@@ -514,14 +522,14 @@ bool fxsaveGIF(FXStream& store,const FXColor *data,FXint width,FXint height,bool
 
   // Output colormap
   for(i=0; i<colormapsize; i++){
-    store << ((FXuchar*)(colormap+i))[0]; // Blue
+    store << ((FXuchar*)(colormap+i))[2]; // Blue
     store << ((FXuchar*)(colormap+i))[1]; // Green
-    store << ((FXuchar*)(colormap+i))[2]; // Red
+    store << ((FXuchar*)(colormap+i))[0]; // Red
     }
 
   // Output Graphics Control Extension, if alpha is present
-  for(i=0,alpha=0; i<ncolors; i++){
-    if(((FXuchar*)(colormap+i))[3]==0){
+  for(i=0; i<ncolors; i++){
+    if(((FXuchar*)(colormap+i))[0]==0){
       alpha=i;
       store << TAG_EXTENSION;   // Extension Introducer
       store << TAG_GRAPHIC;     // Graphic Control Label
@@ -662,7 +670,7 @@ nxt:continue;
   store << TAG_ENDFILE;         // File terminator
 
   // Free storage
-  FXFREE(&output);
+  freeElms(output);
   return true;
   }
 

@@ -3,38 +3,40 @@
 *                       F o u r - W a y   S p l i t t e r                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FX4Splitter.cpp,v 1.52 2006/02/20 03:32:13 fox Exp $                     *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FX4Splitter.h"
 
 /*
@@ -50,7 +52,7 @@
 
 
 // Splitter styles
-#define FOURSPLITTER_MASK     FOURSPLITTER_TRACKING
+#define FOURSPLITTER_MASK     (FOURSPLITTER_TRACKING|FOURSPLITTER_HORIZONTAL|FOURSPLITTER_VERTICAL)
 
 // Modes
 #define NOWHERE      0
@@ -140,105 +142,118 @@ FXWindow *FX4Splitter::getTopLeft() const {
 
 // Get top right child
 FXWindow *FX4Splitter::getTopRight() const {
-  if(!getTopLeft()) return NULL;
-  return getTopLeft()->getNext();
+  return getTopLeft() ? getTopLeft()->getNext() : NULL;
   }
 
 
 // Get bottom left child
 FXWindow *FX4Splitter::getBottomLeft() const {
-  if(!getTopRight()) return NULL;
-  return getTopRight()->getNext();
+  return getTopRight() ? getTopRight()->getNext() : NULL;
   }
 
 
 // Get bottom right child
 FXWindow *FX4Splitter::getBottomRight() const {
-  if(!getBottomLeft()) return NULL;
-  return getBottomLeft()->getNext();
+  return getBottomLeft() ? getBottomLeft()->getNext() : NULL;
   }
 
 
 // Get default width
 FXint FX4Splitter::getDefaultWidth(){
-  FXWindow *tl=getTopLeft();
-  FXWindow *tr=getTopRight();
-  FXWindow *bl=getBottomLeft();
-  FXWindow *br=getBottomRight();
+  FXWindow *ptl=getTopLeft();
+  FXWindow *ptr=getTopRight();
+  FXWindow *pbl=getBottomLeft();
+  FXWindow *pbr=getBottomRight();
   FXint tlw=0,blw=0,trw=0,brw=0,set=0;
-  if(tl && tl->shown()){ tlw=tl->getDefaultWidth(); set|=ExpandTopLeft; }
-  if(tr && tr->shown()){ trw=tr->getDefaultWidth(); set|=ExpandTopRight; }
-  if(bl && bl->shown()){ blw=bl->getDefaultWidth(); set|=ExpandBottomLeft; }
-  if(br && br->shown()){ brw=br->getDefaultWidth(); set|=ExpandBottomRight; }
+  if(ptl && ptl->shown()){ tlw=ptl->getDefaultWidth(); set|=ExpandTopLeft; }
+  if(ptr && ptr->shown()){ trw=ptr->getDefaultWidth(); set|=ExpandTopRight; }
+  if(pbl && pbl->shown()){ blw=pbl->getDefaultWidth(); set|=ExpandBottomLeft; }
+  if(pbr && pbr->shown()){ brw=pbr->getDefaultWidth(); set|=ExpandBottomRight; }
   switch(set){
+
+    // None expanded
+    case ExpandNone: return 0;
+
+    // Single panel expanded
     case ExpandTopLeft: return tlw;
     case ExpandTopRight: return trw;
-    case ExpandBottomRight: return brw;
     case ExpandBottomLeft: return blw;
+    case ExpandBottomRight: return brw;
 
-    case ExpandTopLeft|ExpandTopRight: return trw+tlw+barsize;
-    case ExpandBottomLeft|ExpandBottomRight: return brw+blw+barsize;
+    // Two panels expanded on same row/column
+    case ExpandTopLeft|ExpandTopRight: return tlw+trw+barsize;
+    case ExpandBottomLeft|ExpandBottomRight: return blw+brw+barsize;
+    case ExpandTopLeft|ExpandBottomLeft: return FXMAX(tlw,blw);
+    case ExpandTopRight|ExpandBottomRight: return FXMAX(trw,brw);
 
-    case ExpandBottomLeft|ExpandTopLeft: return FXMAX(tlw,blw);
-    case ExpandBottomLeft|ExpandTopRight: return FXMAX(blw,trw);
-    case ExpandBottomRight|ExpandTopLeft: return FXMAX(brw,tlw);
-    case ExpandBottomRight|ExpandTopRight: return FXMAX(brw,trw);
+    // Diagonally opposite panels expanded
+    case ExpandTopLeft|ExpandBottomRight: return (options&FOURSPLITTER_VERTICAL)?tlw+brw+barsize:FXMAX(brw,tlw);
+    case ExpandTopRight|ExpandBottomLeft: return (options&FOURSPLITTER_VERTICAL)?trw+blw+barsize:FXMAX(blw,trw);
 
-    case ExpandBottomLeft|ExpandTopLeft|ExpandTopRight: return FXMAX(trw+tlw+barsize,blw);
-    case ExpandBottomRight|ExpandTopLeft|ExpandTopRight: return FXMAX(trw+tlw+barsize,brw);
-    case ExpandTopLeft|ExpandBottomLeft|ExpandBottomRight: return FXMAX(brw+blw+barsize,tlw);
-    case ExpandTopRight|ExpandBottomLeft|ExpandBottomRight: return FXMAX(brw+blw+barsize,trw);
-
-    case ExpandTopLeft|ExpandBottomLeft|ExpandTopRight|ExpandBottomRight: return barsize+FXMAX(tlw,blw)+FXMAX(trw,brw);
+    // Three panels expanded
+    case ExpandTopLeft|ExpandTopRight|ExpandBottomLeft: return (options&FOURSPLITTER_VERTICAL)?FXMAX(tlw,blw)+trw+barsize:FXMAX(tlw+trw+barsize,blw);
+    case ExpandTopLeft|ExpandTopRight|ExpandBottomRight: return (options&FOURSPLITTER_VERTICAL)?tlw+FXMAX(trw,brw)+barsize:FXMAX(tlw+trw+barsize,brw);
+    case ExpandTopLeft|ExpandBottomLeft|ExpandBottomRight: return (options&FOURSPLITTER_VERTICAL)?FXMAX(tlw,blw)+brw+barsize:FXMAX(tlw,blw+brw+barsize);
+    case ExpandTopRight|ExpandBottomLeft|ExpandBottomRight: return (options&FOURSPLITTER_VERTICAL)?blw+FXMAX(trw,brw)+barsize:FXMAX(trw,blw+brw+barsize);
     }
-  return 0;
+
+  // Default is all expanded
+  return FXMAX(tlw,blw)+FXMAX(trw,brw)+barsize;
   }
 
 
 // Get default height
 FXint FX4Splitter::getDefaultHeight(){
-  FXWindow *tl=getTopLeft();
-  FXWindow *tr=getTopRight();
-  FXWindow *bl=getBottomLeft();
-  FXWindow *br=getBottomRight();
+  FXWindow *ptl=getTopLeft();
+  FXWindow *ptr=getTopRight();
+  FXWindow *pbl=getBottomLeft();
+  FXWindow *pbr=getBottomRight();
   FXint tlh=0,blh=0,trh=0,brh=0,set=0;
-  if(tl && tl->shown()){ tlh=tl->getDefaultHeight(); set|=ExpandTopLeft; }
-  if(tr && tr->shown()){ trh=tr->getDefaultHeight(); set|=ExpandTopRight; }
-  if(bl && bl->shown()){ blh=bl->getDefaultHeight(); set|=ExpandBottomLeft; }
-  if(br && br->shown()){ brh=br->getDefaultHeight(); set|=ExpandBottomRight; }
+  if(ptl && ptl->shown()){ tlh=ptl->getDefaultHeight(); set|=ExpandTopLeft; }
+  if(ptr && ptr->shown()){ trh=ptr->getDefaultHeight(); set|=ExpandTopRight; }
+  if(pbl && pbl->shown()){ blh=pbl->getDefaultHeight(); set|=ExpandBottomLeft; }
+  if(pbr && pbr->shown()){ brh=pbr->getDefaultHeight(); set|=ExpandBottomRight; }
   switch(set){
+
+    // None expanded
+    case ExpandNone: return 0;
+
+    // Single panel expanded
     case ExpandTopLeft: return tlh;
     case ExpandTopRight: return trh;
-    case ExpandBottomRight: return brh;
     case ExpandBottomLeft: return blh;
+    case ExpandBottomRight: return brh;
 
+    // Two panels expanded on same row/column
     case ExpandTopLeft|ExpandTopRight: return FXMAX(tlh,trh);
     case ExpandBottomLeft|ExpandBottomRight: return FXMAX(blh,brh);
+    case ExpandTopLeft|ExpandBottomLeft: return tlh+blh+barsize;
+    case ExpandTopRight|ExpandBottomRight: return trh+brh+barsize;
 
-    case ExpandBottomLeft|ExpandTopLeft: return blh+tlh+barsize;
-    case ExpandBottomLeft|ExpandTopRight: return blh+trh+barsize;
-    case ExpandBottomRight|ExpandTopLeft: return brh+tlh+barsize;
-    case ExpandBottomRight|ExpandTopRight: return brh+trh+barsize;
+    // Diagonally opposite panels expanded
+    case ExpandTopLeft|ExpandBottomRight: return (options&FOURSPLITTER_VERTICAL)?FXMAX(tlh,brh):tlh+brh+barsize;
+    case ExpandTopRight|ExpandBottomLeft: return (options&FOURSPLITTER_VERTICAL)?FXMAX(trh,brh):trh+blh+barsize;
 
-    case ExpandBottomLeft|ExpandTopLeft|ExpandTopRight: return FXMAX(tlh,trh)+blh+barsize;
-    case ExpandBottomRight|ExpandTopLeft|ExpandTopRight: return FXMAX(tlh,trh)+brh+barsize;
-    case ExpandTopLeft|ExpandBottomLeft|ExpandBottomRight: return FXMAX(blh,brh)+tlh+barsize;
-    case ExpandTopRight|ExpandBottomLeft|ExpandBottomRight: return FXMAX(blh,brh)+trh+barsize;
-
-    case ExpandTopLeft|ExpandBottomLeft|ExpandTopRight|ExpandBottomRight: return barsize+FXMAX(tlh,trh)+FXMAX(blh,brh);
+    // Three panels expanded
+    case ExpandTopLeft|ExpandTopRight|ExpandBottomLeft: return (options&FOURSPLITTER_VERTICAL)?FXMAX(tlh+blh+barsize,trh):FXMAX(tlh,trh)+blh+barsize;
+    case ExpandTopLeft|ExpandTopRight|ExpandBottomRight: return (options&FOURSPLITTER_VERTICAL)?FXMAX(tlh,trh+brh+barsize):FXMAX(tlh,trh)+brh+barsize;
+    case ExpandTopLeft|ExpandBottomLeft|ExpandBottomRight: return (options&FOURSPLITTER_VERTICAL)?FXMAX(tlh+blh+barsize,brh):tlh+FXMAX(blh,brh)+barsize;
+    case ExpandTopRight|ExpandBottomLeft|ExpandBottomRight: return (options&FOURSPLITTER_VERTICAL)?FXMAX(blh,trh+brh+barsize):trh+FXMAX(blh,brh)+barsize;
     }
-  return 0;
+
+  // Default is all expanded
+  return FXMAX(tlh,trh)+FXMAX(blh,brh)+barsize;
   }
 
 
 // Recompute layout
 void FX4Splitter::layout(){
-  FXWindow *tl=getTopLeft();
-  FXWindow *tr=getTopRight();
-  FXWindow *bl=getBottomLeft();
-  FXWindow *br=getBottomRight();
+  FXWindow *ptl=getTopLeft();
+  FXWindow *ptr=getTopRight();
+  FXWindow *pbl=getBottomLeft();
+  FXWindow *pbr=getBottomRight();
   FXuint set=getExpanded();
-  FXint tsx,bsx,osy;
+  FXint tsx,bsx,lsy,rsy;
 
   FXASSERT(0<=fhor && fhor<=10000);
   FXASSERT(0<=fver && fver<=10000);
@@ -247,36 +262,43 @@ void FX4Splitter::layout(){
   splitx=(fhor*(width-barsize))/10000;
   splity=(fver*(height-barsize))/10000;
 
+  // Default is all four expanded
   tsx=bsx=splitx;
-  osy=splity;
+  lsy=rsy=splity;
 
   switch(set){
-    case ExpandTopLeft: tsx=bsx=width; osy=height; break;
-    case ExpandTopRight: tsx=bsx=-barsize; osy=height; break;
-    case ExpandBottomRight: tsx=bsx=-barsize; osy=-barsize; break;
-    case ExpandBottomLeft: tsx=bsx=width; osy=-barsize; break;
 
-    case ExpandTopLeft|ExpandTopRight: tsx=bsx=splitx; osy=height; break;
-    case ExpandBottomLeft|ExpandBottomRight: tsx=bsx=splitx; osy=-barsize; break;
+    // None expanded
+    case ExpandNone: tsx=bsx=width; lsy=rsy=height; break;
 
-    case ExpandBottomLeft|ExpandTopLeft: tsx=bsx=width; osy=splity; break;
-    case ExpandBottomLeft|ExpandTopRight: tsx=-barsize; bsx=width; osy=splity; break;
-    case ExpandBottomRight|ExpandTopLeft: tsx=width; bsx=-barsize; osy=splity; break;
-    case ExpandBottomRight|ExpandTopRight: tsx=bsx=-barsize; osy=splity; break;
+    // Single panel expanded
+    case ExpandTopLeft: tsx=bsx=width; lsy=rsy=height; break;
+    case ExpandTopRight: tsx=bsx=-barsize; lsy=rsy=height; break;
+    case ExpandBottomLeft: tsx=bsx=width; lsy=rsy=-barsize; break;
+    case ExpandBottomRight: tsx=bsx=-barsize; lsy=rsy=-barsize; break;
 
-    case ExpandBottomLeft|ExpandTopLeft|ExpandTopRight: tsx=splitx; bsx=width; osy=splity; break;
-    case ExpandBottomRight|ExpandTopLeft|ExpandTopRight: tsx=splitx; bsx=-barsize; osy=splity; break;
-    case ExpandTopLeft|ExpandBottomLeft|ExpandBottomRight: tsx=width; bsx=splitx; osy=splity; break;
-    case ExpandTopRight|ExpandBottomLeft|ExpandBottomRight: tsx=-barsize; bsx=splitx; osy=splity; break;
+    // Two panels expanded on same row/column
+    case ExpandTopLeft|ExpandTopRight: lsy=rsy=height; break;
+    case ExpandBottomLeft|ExpandBottomRight: lsy=rsy=-barsize; break;
+    case ExpandTopLeft|ExpandBottomLeft: tsx=bsx=width; break;
+    case ExpandTopRight|ExpandBottomRight: tsx=bsx=-barsize; break;
 
-    case ExpandTopLeft|ExpandBottomLeft|ExpandTopRight|ExpandBottomRight: tsx=bsx=splitx; osy=splity; break;
+    // Diagonally opposite panels expanded
+    case ExpandTopLeft|ExpandBottomRight: if(options&FOURSPLITTER_VERTICAL){ lsy=height; rsy=-barsize; } else { tsx=width; bsx=-barsize; } break;
+    case ExpandTopRight|ExpandBottomLeft: if(options&FOURSPLITTER_VERTICAL){ lsy=-barsize; rsy=height; } else { tsx=-barsize; bsx=width; } break;
+
+    // Three panels expanded
+    case ExpandTopLeft|ExpandTopRight|ExpandBottomLeft: if(options&FOURSPLITTER_VERTICAL){ rsy=height; } else { bsx=width; } break;
+    case ExpandTopLeft|ExpandTopRight|ExpandBottomRight: if(options&FOURSPLITTER_VERTICAL){ lsy=height; } else { bsx=-barsize; } break;
+    case ExpandTopLeft|ExpandBottomLeft|ExpandBottomRight: if(options&FOURSPLITTER_VERTICAL){ rsy=-barsize; } else { tsx=width; } break;
+    case ExpandTopRight|ExpandBottomLeft|ExpandBottomRight: if(options&FOURSPLITTER_VERTICAL){ lsy=-barsize; } else { tsx=-barsize; } break;
     }
 
   // Arrange the kids
-  if(tl) tl->position(0,0,tsx,osy);
-  if(tr) tr->position(tsx+barsize,0,width-tsx-barsize,osy);
-  if(bl) bl->position(0,osy+barsize,bsx,height-osy-barsize);
-  if(br) br->position(bsx+barsize,osy+barsize,width-bsx-barsize,height-osy-barsize);
+  if(ptl) ptl->position(0,0,tsx,lsy);
+  if(ptr) ptr->position(tsx+barsize,0,width-tsx-barsize,rsy);
+  if(pbl) pbl->position(0,lsy+barsize,bsx,height-lsy-barsize);
+  if(pbr) pbr->position(bsx+barsize,rsy+barsize,width-bsx-barsize,height-rsy-barsize);
 
   // Layout ok now
   flags&=~FLAG_DIRTY;
@@ -285,7 +307,7 @@ void FX4Splitter::layout(){
 
 // Determine split mode
 FXuchar FX4Splitter::getMode(FXint x,FXint y){
-  register FXuchar mm=ONCENTER;
+  FXuchar mm=ONCENTER;
   if(x<splitx) mm&=~ONVERTICAL;
   if(y<splity) mm&=~ONHORIZONTAL;
   if(x>=splitx+barsize) mm&=~ONVERTICAL;
@@ -308,7 +330,7 @@ void FX4Splitter::moveSplit(FXint x,FXint y){
 // Draw the horizontal split
 void FX4Splitter::drawSplit(FXint x,FXint y,FXuint m){
   FXDCWindow dc(this);
-  dc.clipChildren(FALSE);
+  dc.clipChildren(false);
   dc.setFunction(BLT_NOT_DST);
   if(m&ONVERTICAL){
     dc.fillRectangle(x,0,barsize,height);
@@ -517,7 +539,7 @@ long FX4Splitter::onCmdExpand(FXObject*,FXSelector sel,void*){
 
 // Update show pane
 long FX4Splitter::onUpdExpand(FXObject* sender,FXSelector sel,void*){
-  register FXuint ex=FXSELID(sel)-ID_EXPAND_NONE;
+  FXuint ex=FXSELID(sel)-ID_EXPAND_NONE;
   sender->handle(this,(getExpanded()==ex)?FXSEL(SEL_COMMAND,ID_CHECK):FXSEL(SEL_COMMAND,ID_UNCHECK),NULL);
   return 1;
   }
@@ -578,29 +600,29 @@ void FX4Splitter::setSplitterStyle(FXuint style){
 
 // Expand one or all of the four panes
 void FX4Splitter::setExpanded(FXuint set){
-  FXWindow *tl=getTopLeft();
-  FXWindow *tr=getTopRight();
-  FXWindow *bl=getBottomLeft();
-  FXWindow *br=getBottomRight();
-  if(tl){ if(set&ExpandTopLeft) tl->show(); else tl->hide(); }
-  if(tr){ if(set&ExpandTopRight) tr->show(); else tr->hide(); }
-  if(bl){ if(set&ExpandBottomLeft) bl->show(); else bl->hide(); }
-  if(br){ if(set&ExpandBottomRight) br->show(); else br->hide(); }
+  FXWindow *ptl=getTopLeft();
+  FXWindow *ptr=getTopRight();
+  FXWindow *pbl=getBottomLeft();
+  FXWindow *pbr=getBottomRight();
+  if(ptl){ if(set&ExpandTopLeft) ptl->show(); else ptl->hide(); }
+  if(ptr){ if(set&ExpandTopRight) ptr->show(); else ptr->hide(); }
+  if(pbl){ if(set&ExpandBottomLeft) pbl->show(); else pbl->hide(); }
+  if(pbr){ if(set&ExpandBottomRight) pbr->show(); else pbr->hide(); }
   recalc();
   }
 
 
 // Get set of expanded children
 FXuint FX4Splitter::getExpanded() const {
-  FXWindow *tl=getTopLeft();
-  FXWindow *tr=getTopRight();
-  FXWindow *bl=getBottomLeft();
-  FXWindow *br=getBottomRight();
+  FXWindow *ptl=getTopLeft();
+  FXWindow *ptr=getTopRight();
+  FXWindow *pbl=getBottomLeft();
+  FXWindow *pbr=getBottomRight();
   FXuint set=0;
-  if(tl && tl->shown()) set|=ExpandTopLeft;
-  if(tr && tr->shown()) set|=ExpandTopRight;
-  if(bl && bl->shown()) set|=ExpandBottomLeft;
-  if(br && br->shown()) set|=ExpandBottomRight;
+  if(ptl && ptl->shown()) set|=ExpandTopLeft;
+  if(ptr && ptr->shown()) set|=ExpandTopRight;
+  if(pbl && pbl->shown()) set|=ExpandBottomLeft;
+  if(pbr && pbr->shown()) set|=ExpandBottomRight;
   return set;
   }
 

@@ -3,37 +3,40 @@
 *                      S w i t c h   P a n e l   C l a s s                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXSwitcher.cpp,v 1.35 2006/01/22 17:58:43 fox Exp $                      *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXSwitcher.h"
 
 
@@ -44,6 +47,7 @@
     the size to grow instead of shrinkwrap to the biggest child.
   - Thanks to Charles Warren for the suggestion for the collapse
     modes.
+  - The current panel number is adjusted if the number of panels changes.
 */
 
 
@@ -71,11 +75,13 @@ FXDEFMAP(FXSwitcher) FXSwitcherMap[]={
 FXIMPLEMENT(FXSwitcher,FXPacker,FXSwitcherMap,ARRAYNUMBER(FXSwitcherMap))
 
 
+// Serialization
+FXSwitcher::FXSwitcher():current(-1){
+  }
+
 
 // Make a switcher window
-FXSwitcher::FXSwitcher(FXComposite *p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,0,0){
-  current=0;
+FXSwitcher::FXSwitcher(FXComposite *p,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXPacker(p,opts,x,y,w,h,pl,pr,pt,pb,0,0),current(-1){
   }
 
 
@@ -113,7 +119,7 @@ long FXSwitcher::onCmdGetIntValue(FXObject*,FXSelector,void* ptr){
 
 // Bring nth to the top
 long FXSwitcher::onCmdOpen(FXObject*,FXSelector sel,void*){
-  setCurrent(FXSELID(sel)-ID_OPEN_FIRST,TRUE);
+  setCurrent(FXSELID(sel)-ID_OPEN_FIRST,true);
   return 1;
   }
 
@@ -127,8 +133,8 @@ long FXSwitcher::onUpdOpen(FXObject* sender,FXSelector sel,void* ptr){
 
 // Get maximum child width
 FXint FXSwitcher::getDefaultWidth(){
-  register FXWindow* child;
-  register FXint i,w,wmax=0,wcur=0;
+  FXWindow* child;
+  FXint i,w,wmax=0,wcur=0;
   for(i=0,child=getFirst(); child; child=child->getNext(),i++){
     if(i==current) wcur=child->getDefaultWidth();
     if(wmax<(w=child->getDefaultWidth())) wmax=w;
@@ -140,8 +146,8 @@ FXint FXSwitcher::getDefaultWidth(){
 
 // Get maximum child height
 FXint FXSwitcher::getDefaultHeight(){
-  register FXWindow* child;
-  register FXint i,h,hmax=0,hcur=0;
+  FXWindow* child;
+  FXint i,h,hmax=0,hcur=0;
   for(i=0,child=getFirst(); child; child=child->getNext(),i++){
     if(i==current) hcur=child->getDefaultHeight();
     if(hmax<(h=child->getDefaultHeight())) hmax=h;
@@ -153,13 +159,15 @@ FXint FXSwitcher::getDefaultHeight(){
 
 // Recalculate layout
 void FXSwitcher::layout(){
-  register FXWindow *child;
-  register FXint i,x,y,w,h;
+  FXWindow *child;
+  FXint i,x,y,w,h;
   x=border+padleft;
   y=border+padtop;
   w=width-padright-padleft-(border<<1);
   h=height-padtop-padbottom-(border<<1);
-  for(i=0,child=getFirst(); child; child=child->getNext(),i++){
+  if(current<0) current=0;
+  if(current>=numChildren()) current=numChildren()-1;
+  for(child=getFirst(),i=0; child; child=child->getNext(),i++){
     child->position(x,y,w,h);
     if(i==current){
       child->show();
@@ -174,7 +182,7 @@ void FXSwitcher::layout(){
 
 // Set current subwindow
 void FXSwitcher::setCurrent(FXint panel,FXbool notify){
-  if(0<=panel && panel<numChildren() && current!=panel){
+  if(current!=panel && 0<=panel && panel<numChildren()){
     current=panel;
     recalc();
     if(notify && target){ target->tryHandle(this,FXSEL(SEL_COMMAND,message),(void*)(FXival)current); }

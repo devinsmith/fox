@@ -1,40 +1,43 @@
 /********************************************************************************
 *                                                                               *
-*                       T o o l B a r G r i p   W i d g e t                     *
+*                    T o o l   B a r   G r i p   W i d g e t                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2006 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
-* This library is free software; you can redistribute it and/or                 *
-* modify it under the terms of the GNU Lesser General Public                    *
-* License as published by the Free Software Foundation; either                  *
-* version 2.1 of the License, or (at your option) any later version.            *
+* This library is free software; you can redistribute it and/or modify          *
+* it under the terms of the GNU Lesser General Public License as published by   *
+* the Free Software Foundation; either version 3 of the License, or             *
+* (at your option) any later version.                                           *
 *                                                                               *
 * This library is distributed in the hope that it will be useful,               *
 * but WITHOUT ANY WARRANTY; without even the implied warranty of                *
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU             *
-* Lesser General Public License for more details.                               *
+* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                 *
+* GNU Lesser General Public License for more details.                           *
 *                                                                               *
-* You should have received a copy of the GNU Lesser General Public              *
-* License along with this library; if not, write to the Free Software           *
-* Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA.    *
-*********************************************************************************
-* $Id: FXToolBarGrip.cpp,v 1.29 2006/01/22 17:58:47 fox Exp $                   *
+* You should have received a copy of the GNU Lesser General Public License      *
+* along with this program.  If not, see <http://www.gnu.org/licenses/>          *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
 #include "fxkeys.h"
+#include "fxmath.h"
+#include "FXArray.h"
 #include "FXHash.h"
-#include "FXThread.h"
+#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXStringDictionary.h"
+#include "FXSettings.h"
 #include "FXRegistry.h"
-#include "FXApp.h"
+#include "FXEvent.h"
+#include "FXWindow.h"
 #include "FXDCWindow.h"
+#include "FXApp.h"
 #include "FXToolBar.h"
 #include "FXToolBarGrip.h"
 
@@ -72,8 +75,6 @@ FXDEFMAP(FXToolBarGrip) FXToolBarGripMap[]={
   FXMAPFUNC(SEL_LEFTBUTTONRELEASE,0,FXToolBarGrip::onLeftBtnRelease),
   FXMAPFUNC(SEL_KEYPRESS,0,FXToolBarGrip::onKeyPress),
   FXMAPFUNC(SEL_KEYRELEASE,0,FXToolBarGrip::onKeyRelease),
-  FXMAPFUNC(SEL_QUERY_TIP,0,FXToolBarGrip::onQueryTip),
-  FXMAPFUNC(SEL_QUERY_HELP,0,FXToolBarGrip::onQueryHelp),
   FXMAPFUNC(SEL_COMMAND,FXToolBarGrip::ID_SETHELPSTRING,FXToolBarGrip::onCmdSetHelp),
   FXMAPFUNC(SEL_COMMAND,FXToolBarGrip::ID_GETHELPSTRING,FXToolBarGrip::onCmdGetHelp),
   FXMAPFUNC(SEL_COMMAND,FXToolBarGrip::ID_SETTIPSTRING,FXToolBarGrip::onCmdSetTip),
@@ -92,8 +93,7 @@ FXToolBarGrip::FXToolBarGrip(){
 
 
 // Construct and init
-FXToolBarGrip::FXToolBarGrip(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):
-  FXDockHandler(p,tgt,sel,opts,x,y,w,h,pl,pr,pt,pb){
+FXToolBarGrip::FXToolBarGrip(FXComposite* p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,FXint y,FXint w,FXint h,FXint pl,FXint pr,FXint pt,FXint pb):FXDockHandler(p,tgt,sel,opts,x,y,w,h,pl,pr,pt,pb){
   activeColor=FXRGB(0,0,255);
   }
 
@@ -112,7 +112,7 @@ FXint FXToolBarGrip::getDefaultHeight(){
 
 
 // Can have focus
-bool FXToolBarGrip::canFocus() const { return false; }
+FXbool FXToolBarGrip::canFocus() const { return false; }
 
 
 // Change toolbar orientation
@@ -125,7 +125,7 @@ void FXToolBarGrip::setDoubleBar(FXbool dbl){
   }
 
 
-// Return TRUE if toolbar grip is displayed as a double bar
+// Return true if toolbar grip is displayed as a double bar
 FXbool FXToolBarGrip::isDoubleBar() const {
   return (options&TOOLBARGRIP_DOUBLE)!=0;
   }
