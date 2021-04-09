@@ -58,6 +58,7 @@
     in ptr in callback.
 */
 
+#define TOPIC_KEYBOARD  1009
 
 #define LEADSPACE   22
 #define TRAILSPACE  16
@@ -181,7 +182,7 @@ long FXMenuCommand::onButtonRelease(FXObject*,FXSelector,void*){
 long FXMenuCommand::onKeyPress(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   if(isEnabled() && !(flags&FLAG_PRESSED)){
-    FXTRACE((200,"%s::onKeyPress %p keysym=0x%04x state=%04x\n",getClassName(),this,event->code,event->state));
+    FXTRACE((TOPIC_KEYBOARD,"%s::onKeyPress %p keysym=0x%04x state=%04x\n",getClassName(),this,event->code,event->state));
     if(event->code==KEY_space || event->code==KEY_KP_Space || event->code==KEY_Return || event->code==KEY_KP_Enter){
       flags|=FLAG_PRESSED;
       return 1;
@@ -195,7 +196,7 @@ long FXMenuCommand::onKeyPress(FXObject*,FXSelector,void* ptr){
 long FXMenuCommand::onKeyRelease(FXObject*,FXSelector,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   if(isEnabled() && (flags&FLAG_PRESSED)){
-    FXTRACE((200,"%s::onKeyRelease %p keysym=0x%04x state=%04x\n",getClassName(),this,event->code,event->state));
+    FXTRACE((TOPIC_KEYBOARD,"%s::onKeyRelease %p keysym=0x%04x state=%04x\n",getClassName(),this,event->code,event->state));
     if(event->code==KEY_space || event->code==KEY_KP_Space || event->code==KEY_Return || event->code==KEY_KP_Enter){
       flags&=~FLAG_PRESSED;
       getParent()->handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);

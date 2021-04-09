@@ -31,12 +31,9 @@
 
 using namespace FX;
 
-
-namespace FX {
-
-
 /*******************************************************************************/
 
+namespace FX {
 
 #if defined(WIN32)
 struct RWLOCK {
@@ -54,37 +51,35 @@ FXReadWriteLock::FXReadWriteLock(){
   // of sizeof(RWLOCK) is supposed to be on your
   // machine and mail it to: jeroen@fox-toolkit.com!!
   //FXTRACE((150,"sizeof(SRWLOCK)=%d\n",sizeof(SRWLOCK)));
-  FXASSERT(sizeof(data)>=sizeof(SRWLOCK));
+  FXASSERT_STATIC(sizeof(data)>=sizeof(SRWLOCK));
   InitializeSRWLock((SRWLOCK*)data);
 #elif defined(WIN32)
   // If this fails on your machine, determine what value
   // of sizeof(RWLOCK) is supposed to be on your
   // machine and mail it to: jeroen@fox-toolkit.com!!
   //FXTRACE((150,"sizeof(RWLOCK)=%d\n",sizeof(RWLOCK)));
-  FXASSERT(sizeof(data)>=sizeof(RWLOCK));
+  FXASSERT_STATIC(sizeof(data)>=sizeof(RWLOCK));
   InitializeCriticalSection(((RWLOCK*)data)->mutex);
   InitializeCriticalSection(((RWLOCK*)data)->access);
   ((RWLOCK*)data)->readers=0;
-#elif defined(__APPLE__)
+#elif (_XOPEN_SOURCE >= 500) || (_POSIX_C_SOURCE >= 200809L)
   // If this fails on your machine, determine what value
   // of sizeof(pthread_rwlock_t) is supposed to be on your
   // machine and mail it to: jeroen@fox-toolkit.com!!
   //FXTRACE((150,"sizeof(pthread_rwlock_t)=%d\n",sizeof(pthread_rwlock_t)));
-  FXASSERT(sizeof(data)>=sizeof(pthread_rwlock_t));
-  pthread_rwlock_init((pthread_rwlock_t*)data,NULL);
+  FXASSERT_STATIC(sizeof(data)>=sizeof(pthread_rwlock_t));
+  pthread_rwlockattr_t rwlockatt;
+  pthread_rwlockattr_init(&rwlockatt);
+  pthread_rwlockattr_setkind_np(&rwlockatt,PTHREAD_RWLOCK_PREFER_WRITER_NP);
+  pthread_rwlock_init((pthread_rwlock_t*)data,&rwlockatt);
+  pthread_rwlockattr_destroy(&rwlockatt);
 #else
   // If this fails on your machine, determine what value
   // of sizeof(pthread_rwlock_t) is supposed to be on your
   // machine and mail it to: jeroen@fox-toolkit.com!!
   //FXTRACE((150,"sizeof(pthread_rwlock_t)=%d\n",sizeof(pthread_rwlock_t)));
-  FXASSERT(sizeof(data)>=sizeof(pthread_rwlock_t));
-  pthread_rwlockattr_t rwlockatt;
-  pthread_rwlockattr_init(&rwlockatt);
-#if defined(__linux__)
-  pthread_rwlockattr_setkind_np(&rwlockatt,PTHREAD_RWLOCK_PREFER_WRITER_NP);
-#endif
+  FXASSERT_STATIC(sizeof(data)>=sizeof(pthread_rwlock_t));
   pthread_rwlock_init((pthread_rwlock_t*)data,&rwlockatt);
-  pthread_rwlockattr_destroy(&rwlockatt);
 #endif
   }
 

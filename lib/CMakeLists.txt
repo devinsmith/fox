@@ -410,6 +410,8 @@ set(SOURCES
   fxbmpio.cpp
   FXButton.cpp
   FXBZFileStream.cpp
+  FXCalendar.cpp
+  FXCalendarView.cpp
   FXCanvas.cpp
   FXCheckButton.cpp
   FXChoiceBox.cpp
@@ -429,6 +431,7 @@ set(SOURCES
   fxcompose.cpp
   FXComposite.cpp
   FXCondition.cpp
+  FXConsole.cpp
   FXCP1250Codec.cpp
   FXCP1251Codec.cpp
   FXCP1252Codec.cpp
@@ -486,7 +489,6 @@ set(SOURCES
   FXDragCorner.cpp
   FXDrawable.cpp
   FXDriveBox.cpp
-  fxescape.cpp
   FXEventDispatcher.cpp
   FXEventLoop.cpp
   FXException.cpp
@@ -509,6 +511,7 @@ set(SOURCES
   FXFontSelector.cpp
   FXFrame.cpp
   fxfsquantize.cpp
+  FXGauge.cpp
   fxgetticks.cpp
   FXGIFCursor.cpp
   FXGIFIcon.cpp
@@ -552,6 +555,7 @@ set(SOURCES
   FXJSONString.cpp
   fxkeyboard.cpp
   fxkeysym.cpp
+  FXKnob.cpp
   FXKOI8RCodec.cpp
   FXLabel.cpp
   fxleaps.cpp
@@ -562,6 +566,9 @@ set(SOURCES
   FXMainWindow.cpp
   fxmath.cpp
   FXMatrix.cpp
+  FXMDIButton.cpp
+  FXMDIChild.cpp
+  FXMDIClient.cpp
   FXMemMap.cpp
   FXMemoryStream.cpp
   FXMenuBar.cpp
@@ -710,6 +717,7 @@ set(SOURCES
   FXWEBPImage.cpp
   fxwebpio.cpp
   FXWindow.cpp
+  FXWizard.cpp
   FXWorker.cpp
   FXWSQueue.cpp
   fxwuquantize.cpp

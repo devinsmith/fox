@@ -199,9 +199,9 @@
   Grammar:
   ========
 
-      exp        ::= branch { "|" branch }*
+      exp        ::= branch ( "|" branch ) *
 
-      branch     ::= { piece }+
+      branch     ::= ( piece ) +
 
       piece      ::= atom [ rep ]
 
@@ -211,11 +211,11 @@
 
       atom       ::= "(" exp ")" | "[" [^] range "]" | characters
 
-      range      ::= { character | character "-" character } +
+      range      ::= ( character ( "-" character ) ? ) +
 
-      characters ::= { character }*
+      characters ::= ( character ) *
 
-      digits     ::= { digit }*
+      digits     ::= ( digit ) *
 
 
   Special Characters:
@@ -1203,6 +1203,8 @@ FXRex::Error FXCompile::expression(FXshort& flags,FXshort& smin,FXshort& smax){
 
     // Update flags for expression thus far
     if(!(flg&FLG_WIDTH)) flags&=~FLG_WIDTH;
+    
+    // Update size range
     if(smx>smax) smax=smx;
     if(smn<smin) smin=smn;
     }
@@ -1227,6 +1229,8 @@ FXRex::Error FXCompile::branch(FXshort& flags,FXshort& smin,FXshort& smax){
 
     // Update flags for branch based on pieces seen thus far
     if(flg&FLG_WIDTH) flags|=FLG_WIDTH;
+    
+    // Update size range
     smax=FXMIN(smax+smx,ONEINDIG);
     smin=smin+smn;
     }

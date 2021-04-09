@@ -26,14 +26,6 @@ namespace FX {
 class FXIODevice;
 
 
-/// Process handle
-#if defined(WIN32)
-typedef void* FXProcessID;
-#else
-typedef int   FXProcessID;
-#endif
-
-
 /// Executable process
 class FXAPI FXProcess {
 private:

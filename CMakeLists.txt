@@ -10,4 +10,5 @@ INCLUDE (CheckIncludeFiles)
 # Libraries
 add_subdirectory(utils)
 add_subdirectory(lib)
+add_subdirectory(tests)
 

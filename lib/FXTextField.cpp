@@ -77,6 +77,7 @@
   - Maybe also send SEL_SELECTED, SEL_DESELECTED?
 */
 
+#define TOPIC_KEYBOARD  1009
 
 #define JUSTIFY_MASK    (JUSTIFY_HZ_APART|JUSTIFY_VT_APART)
 #define TEXTFIELD_MASK  (TEXTFIELD_PASSWD|TEXTFIELD_INTEGER|TEXTFIELD_REAL|TEXTFIELD_READONLY|TEXTFIELD_ENTER_ONLY|TEXTFIELD_LIMITED|TEXTFIELD_OVERSTRIKE|TEXTFIELD_AUTOHIDE|TEXTFIELD_AUTOGRAY)
@@ -119,7 +120,6 @@ FXDEFMAP(FXTextField) FXTextFieldMap[]={
   FXMAPFUNC(SEL_UPDATE,FXTextField::ID_COPY_SEL,FXTextField::onUpdHaveSelection),
   FXMAPFUNC(SEL_UPDATE,FXTextField::ID_PASTE_SEL,FXTextField::onUpdIsEditable),
   FXMAPFUNC(SEL_UPDATE,FXTextField::ID_DELETE_SEL,FXTextField::onUpdHaveEditableSelection),
-  FXMAPFUNC(SEL_UPDATE,FXTextField::ID_REPLACE_SEL,FXTextField::onUpdHaveEditableSelection),
   FXMAPFUNC(SEL_COMMAND,FXTextField::ID_SETVALUE,FXTextField::onCmdSetValue),
   FXMAPFUNC(SEL_COMMAND,FXTextField::ID_SETINTVALUE,FXTextField::onCmdSetIntValue),
   FXMAPFUNC(SEL_COMMAND,FXTextField::ID_SETLONGVALUE,FXTextField::onCmdSetLongValue),
@@ -146,7 +146,6 @@ FXDEFMAP(FXTextField) FXTextFieldMap[]={
   FXMAPFUNC(SEL_COMMAND,FXTextField::ID_CUT_SEL,FXTextField::onCmdCutSel),
   FXMAPFUNC(SEL_COMMAND,FXTextField::ID_COPY_SEL,FXTextField::onCmdCopySel),
   FXMAPFUNC(SEL_COMMAND,FXTextField::ID_DELETE_SEL,FXTextField::onCmdDeleteSel),
-  FXMAPFUNC(SEL_COMMAND,FXTextField::ID_REPLACE_SEL,FXTextField::onCmdReplaceSel),
   FXMAPFUNC(SEL_COMMAND,FXTextField::ID_PASTE_SEL,FXTextField::onCmdPasteSel),
   FXMAPFUNC(SEL_COMMAND,FXTextField::ID_PASTE_MIDDLE,FXTextField::onCmdPasteMiddle),
   FXMAPFUNC(SEL_COMMAND,FXTextField::ID_INSERT_STRING,FXTextField::onCmdInsertString),
@@ -726,7 +725,7 @@ FXbool FXTextField::extendSelection(FXint pos){
   // Got a selection at all?
   if(anchor!=pos){
     if(!hasSelection()){
-      acquireSelection(types,4);
+      acquireSelection(types,ARRAYNUMBER(types));
       }
     }
   else{
@@ -792,19 +791,6 @@ FXbool FXTextField::deleteSelection(FXbool notify){
 // Delete pending selection
 FXbool FXTextField::deletePendingSelection(FXbool notify){
   return isPosSelected(cursor) && deleteSelection(notify);
-  }
-
-
-// Replace selection by other text
-FXbool FXTextField::replaceSelection(const FXString& text,FXbool notify){
-  if(hasSelection()){
-    FXint ss=FXMIN(anchor,cursor);
-    FXint se=FXMAX(anchor,cursor);
-    replaceText(ss,se-ss,text,notify);
-    moveCursor(ss+text.length());
-    return true;
-    }
-  return false;
   }
 
 
@@ -1701,7 +1687,7 @@ long FXTextField::onKeyPress(FXObject*,FXSelector,void* ptr){
   flags&=~FLAG_TIP;
   if(isEnabled()){
     FXEvent* event=(FXEvent*)ptr;
-    FXTRACE((200,"%s::onKeyPress keysym=0x%04x state=%04x\n",getClassName(),event->code,event->state));
+    FXTRACE((TOPIC_KEYBOARD,"%s::onKeyPress keysym=0x%04x state=%04x\n",getClassName(),event->code,event->state));
     if(target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr)) return 1;
     flags&=~FLAG_UPDATE;
     switch(event->code){
@@ -1850,7 +1836,7 @@ ins:    if((event->state&(CONTROLMASK|ALTMASK)) || ((FXuchar)event->text[0]<32))
 long FXTextField::onKeyRelease(FXObject*,FXSelector,void* ptr){
   if(isEnabled()){
     FXEvent* event=(FXEvent*)ptr;
-    FXTRACE((200,"%s::onKeyRelease keysym=0x%04x state=%04x\n",getClassName(),((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
+    FXTRACE((TOPIC_KEYBOARD,"%s::onKeyRelease keysym=0x%04x state=%04x\n",getClassName(),((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
     if(target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr)) return 1;
     switch(event->code){
       case KEY_Shift_L:
@@ -2032,14 +2018,6 @@ long FXTextField::onCmdPasteSel(FXObject*,FXSelector,void*){
 // Delete selection
 long FXTextField::onCmdDeleteSel(FXObject*,FXSelector,void*){
   if(isEditable() && deleteSelection(true)) return 1;
-  getApp()->beep();
-  return 1;
-  }
-
-
-// Replace selection
-long FXTextField::onCmdReplaceSel(FXObject*,FXSelector,void* ptr){
-  if(isEditable() && replaceSelection((const FXchar*)ptr,true)) return 1;
   getApp()->beep();
   return 1;
   }

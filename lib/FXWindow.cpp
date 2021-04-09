@@ -95,6 +95,7 @@
 
 #define TOPIC_CONSTRUCT 1000
 #define TOPIC_CREATION  1001
+#define TOPIC_KEYBOARD  1009
 
 #ifndef WIN32
 
@@ -771,14 +772,14 @@ long FXWindow::onMouseWheel(FXObject*,FXSelector,void* ptr){
 
 // Keyboard press
 long FXWindow::onKeyPress(FXObject*,FXSelector,void* ptr){
-  FXTRACE((200,"%s::onKeyPress %p keysym=0x%04x state=%04x\n",getClassName(),this,((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
+  FXTRACE((TOPIC_KEYBOARD,"%s::onKeyPress %p keysym=0x%04x state=%04x\n",getClassName(),this,((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
   return isEnabled() && target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr);
   }
 
 
 // Keyboard release
 long FXWindow::onKeyRelease(FXObject*,FXSelector,void* ptr){
-  FXTRACE((200,"%s::onKeyRelease %p keysym=0x%04x state=%04x\n",getClassName(),this,((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
+  FXTRACE((TOPIC_KEYBOARD,"%s::onKeyRelease %p keysym=0x%04x state=%04x\n",getClassName(),this,((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
   return isEnabled() && target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr);
   }
 
@@ -1452,20 +1453,20 @@ void FXWindow::attach(FXID w){
 
       XSetWindowAttributes wattr;
       unsigned long mask=(CWEventMask|CWDontPropagate);
-      
+
       // Set event mask
       wattr.event_mask=BASIC_EVENT_MASK;
       if(isEnabled()) wattr.event_mask|=ENABLED_EVENT_MASK;
-      
+
       // Events that should not propagate
       wattr.do_not_propagate_mask=NOT_PROPAGATE_MASK;
-      
+
       // Set cursor
       if(defaultCursor){
         wattr.cursor=defaultCursor->id();
         mask|=CWCursor;
         }
-        
+
       // Change window attributes
       XChangeWindowAttributes((Display*)getApp()->getDisplay(),xid,mask,&wattr);
 

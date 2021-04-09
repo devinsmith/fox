@@ -170,7 +170,9 @@ extern FXAPI FXfloat __strtof(const FXchar *beg,const FXchar** end=NULL,FXbool* 
 
 // Length of character string
 static inline FXint strlen(const FXchar *src){
-  return ::strlen(src);
+  FXint i=0;
+  while(src[i]) i++;
+  return i;
   }
 
 
@@ -845,7 +847,7 @@ FXival utf2ncs(FXnchar *dst,const FXchar* src,FXival dstlen){
 /*******************************************************************************/
 
 // Change the length of the string to len
-void FXString::length(FXint len){
+FXbool FXString::length(FXint len){
   if(__likely(len!=length())){
     FXchar *ptr;
     if(0<len){
@@ -855,9 +857,7 @@ void FXString::length(FXint len){
       else{
         ptr=(FXchar*)::realloc(str-sizeof(FXint),ROUNDUP(1+len)+sizeof(FXint));
         }
-      if(__unlikely(!ptr)){
-        throw FXMemoryException("FXString::length: out of memory\n");
-        }
+      if(__unlikely(!ptr)) return false;
       str=ptr+sizeof(FXint);
       str[len]=0;
       *(((FXint*)str)-1)=len;
@@ -867,6 +867,7 @@ void FXString::length(FXint len){
       str=EMPTY;
       }
     }
+  return true;
   }
 
 
@@ -877,20 +878,17 @@ FXString::FXString():str(EMPTY){
 
 // Construct copy of another string
 FXString::FXString(const FXString& s):str(EMPTY){
-  FXint n=s.length();
-  if(0<n){
-    length(n);
-    memcpy(str,s.str,n);
+  if(length(s.length())){
+    memcpy(str,s.text(),s.length());
     }
   }
 
 
 // Construct and initialize with string s
 FXString::FXString(const FXchar* s):str(EMPTY){
-  FXint m;
-  if(__likely(s && 0<(m=strlen(s)))){
-    length(m);
-    memcpy(str,s,m);
+  FXint n;
+  if(s && s[0] && length((n=strlen(s)))){
+    memcpy(str,s,n);
     }
   }
 
@@ -898,8 +896,7 @@ FXString::FXString(const FXchar* s):str(EMPTY){
 // Construct and init from narrow character string
 FXString::FXString(const FXnchar* s):str(EMPTY){
   FXint m;
-  if(__likely(s && 0<(m=ncs2utf(s)))){
-    length(m);
+  if(s && s[0] && length((m=ncs2utf(s)))){
     ncs2utf(str,s,m);
     }
   }
@@ -908,8 +905,7 @@ FXString::FXString(const FXnchar* s):str(EMPTY){
 // Construct and init from wide character string
 FXString::FXString(const FXwchar* s):str(EMPTY){
   FXint m;
-  if(__likely(s && 0<(m=wcs2utf(s)))){
-    length(m);
+  if(s && s[0] && length((m=wcs2utf(s)))){
     wcs2utf(str,s,m);
     }
   }
@@ -917,8 +913,7 @@ FXString::FXString(const FXwchar* s):str(EMPTY){
 
 // Construct and init with substring
 FXString::FXString(const FXchar* s,FXint n):str(EMPTY){
-  if(__likely(s && 0<n)){
-    length(n);
+  if(s && 0<n && length(n)){
     memcpy(str,s,n);
     }
   }
@@ -927,8 +922,7 @@ FXString::FXString(const FXchar* s,FXint n):str(EMPTY){
 // Construct and init with narrow character substring
 FXString::FXString(const FXnchar* s,FXint n):str(EMPTY){
   FXint m;
-  if(__likely(s && 0<(m=ncs2utf(s,n)))){
-    length(m);
+  if(s && 0<n && length((m=ncs2utf(s,n)))){
     ncs2utf(str,s,m,n);
     }
   }
@@ -937,8 +931,7 @@ FXString::FXString(const FXnchar* s,FXint n):str(EMPTY){
 // Construct and init with wide character substring
 FXString::FXString(const FXwchar* s,FXint n):str(EMPTY){
   FXint m;
-  if(__likely(s && 0<(m=wcs2utf(s,n)))){
-    length(m);
+  if(s && 0<n && length((m=wcs2utf(s,n)))){
     wcs2utf(str,s,m,n);
     }
   }
@@ -946,8 +939,7 @@ FXString::FXString(const FXwchar* s,FXint n):str(EMPTY){
 
 // Construct and fill with constant
 FXString::FXString(FXchar c,FXint n):str(EMPTY){
-  if(__likely(0<n)){
-    length(n);
+  if(0<n && length(n)){
     memset(str,c,n);
     }
   }
@@ -1111,16 +1103,18 @@ FXString& FXString::adopt(FXString& s){
 
 // Assign input character to this string
 FXString& FXString::assign(FXchar c){
-  length(1);
-  str[0]=c;
+  if(length(1)){
+    str[0]=c;
+    }
   return *this;
   }
 
 
 // Assign input n characters c to this string
 FXString& FXString::assign(FXchar c,FXint n){
-  length(n);
-  memset(str,c,n);
+  if(length(n)){
+    memset(str,c,n);
+    }
   return *this;
   }
 
@@ -1128,8 +1122,7 @@ FXString& FXString::assign(FXchar c,FXint n){
 // Assign input string to this string
 FXString& FXString::assign(const FXchar* s){
   FXint m;
-  if(__likely(s && 0<(m=strlen(s)))){
-    length(m);
+  if(s && s[0] && length((m=strlen(s)))){
     memmove(str,s,m);
     }
   else{
@@ -1142,8 +1135,7 @@ FXString& FXString::assign(const FXchar* s){
 // Assign narrow character string s to this string
 FXString& FXString::assign(const FXnchar* s){
   FXint m;
-  if(__likely(s && 0<(m=ncs2utf(s)))){
-    length(m);
+  if(s && s[0] && length((m=ncs2utf(s)))){
     ncs2utf(str,s,m);
     }
   else{
@@ -1156,8 +1148,7 @@ FXString& FXString::assign(const FXnchar* s){
 // Assign wide character string s to this string
 FXString& FXString::assign(const FXwchar* s){
   FXint m;
-  if(__likely(s && 0<(m=wcs2utf(s)))){
-    length(m);
+  if(s && s[0] && length((m=wcs2utf(s)))){
     wcs2utf(str,s,m);
     }
   else{
@@ -1169,8 +1160,7 @@ FXString& FXString::assign(const FXwchar* s){
 
 // Assign first n characters of input string to this string
 FXString& FXString::assign(const FXchar* s,FXint n){
-  if(__likely(s && 0<n)){
-    length(n);
+  if(s && 0<n && length(n)){
     memmove(str,s,n);
     }
   else{
@@ -1183,8 +1173,7 @@ FXString& FXString::assign(const FXchar* s,FXint n){
 // Assign first n characters of narrow character string s to this string
 FXString& FXString::assign(const FXnchar* s,FXint n){
   FXint m;
-  if(__likely(s && 0<(m=ncs2utf(s,n)))){
-    length(m);
+  if(s && 0<n && length((m=ncs2utf(s,n)))){
     ncs2utf(str,s,m,n);
     }
   else{
@@ -1197,8 +1186,7 @@ FXString& FXString::assign(const FXnchar* s,FXint n){
 // Assign first n characters of wide character string s to this string
 FXString& FXString::assign(const FXwchar* s,FXint n){
   FXint m;
-  if(__likely(s && 0<(m=wcs2utf(s,n)))){
-    length(m);
+  if(s && 0<n && length((m=wcs2utf(s,n)))){
     wcs2utf(str,s,m,n);
     }
   else{
@@ -1210,25 +1198,25 @@ FXString& FXString::assign(const FXwchar* s,FXint n){
 
 // Assign input string to this string
 FXString& FXString::assign(const FXString& s){
-  if(__likely(str!=s.str)){ assign(s.str,s.length()); }
-  return *this;
+  if(__likely(str!=s.text())){ assign(s.text(),s.length()); }
   }
 
 
 // Insert character at position
 FXString& FXString::insert(FXint pos,FXchar c){
   FXint len=length();
-  length(len+1);
-  if(pos<=0){
-    memmove(str+1,str,len);
-    str[0]=c;
-    }
-  else if(pos>=len){
-    str[len]=c;
-    }
-  else{
-    memmove(str+pos+1,str+pos,len-pos);
-    str[pos]=c;
+  if(length(len+1)){
+    if(pos<=0){
+      memmove(str+1,str,len);
+      str[0]=c;
+      }
+    else if(pos>=len){
+      str[len]=c;
+      }
+    else{
+      memmove(str+pos+1,str+pos,len-pos);
+      str[pos]=c;
+      }
     }
   return *this;
   }
@@ -1236,9 +1224,8 @@ FXString& FXString::insert(FXint pos,FXchar c){
 
 // Insert n characters c at specified position
 FXString& FXString::insert(FXint pos,FXchar c,FXint n){
-  if(__likely(0<n)){
-    FXint len=length();
-    length(len+n);
+  FXint len=length();
+  if(0<n && length(len+n)){
     if(pos<=0){
       memmove(str+n,str,len);
       memset(str,c,n);
@@ -1257,10 +1244,8 @@ FXString& FXString::insert(FXint pos,FXchar c,FXint n){
 
 // Insert string at position
 FXString& FXString::insert(FXint pos,const FXchar* s){
-  FXint m;
-  if(__likely(s && 0<(m=strlen(s)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && s[0] && length(len+(m=strlen(s)))){
     if(pos<=0){
       memmove(str+m,str,len);
       memcpy(str,s,m);
@@ -1279,10 +1264,8 @@ FXString& FXString::insert(FXint pos,const FXchar* s){
 
 // Insert narrow character string at position
 FXString& FXString::insert(FXint pos,const FXnchar* s){
-  FXint m;
-  if(__likely(s && 0<(m=ncs2utf(s)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && s[0] && length(len+(m=ncs2utf(s)))){
     if(pos<=0){
       memmove(str+m,str,len);
       ncs2utf(str,s,m);
@@ -1301,10 +1284,8 @@ FXString& FXString::insert(FXint pos,const FXnchar* s){
 
 // Insert wide character string at position
 FXString& FXString::insert(FXint pos,const FXwchar* s){
-  FXint m;
-  if(__likely(s && 0<(m=wcs2utf(s)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && s[0] && length(len+(m=wcs2utf(s)))){
     if(pos<=0){
       memmove(str+m,str,len);
       wcs2utf(str,s,m);
@@ -1324,9 +1305,8 @@ FXString& FXString::insert(FXint pos,const FXwchar* s){
 
 // Insert string at position
 FXString& FXString::insert(FXint pos,const FXchar* s,FXint n){
-  if(__likely(s && 0<n)){
-    FXint len=length();
-    length(len+n);
+  FXint len=length();
+  if(s && 0<n && length(len+n)){
     if(pos<=0){
       memmove(str+n,str,len);
       memcpy(str,s,n);
@@ -1345,10 +1325,8 @@ FXString& FXString::insert(FXint pos,const FXchar* s,FXint n){
 
 // Insert narrow character string at position
 FXString& FXString::insert(FXint pos,const FXnchar* s,FXint n){
-  FXint m;
-  if(__likely(s && 0<(m=ncs2utf(s,n)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && 0<n && length(len+(m=ncs2utf(s,n)))){
     if(pos<=0){
       memmove(str+m,str,len);
       ncs2utf(str,s,m,n);
@@ -1367,10 +1345,8 @@ FXString& FXString::insert(FXint pos,const FXnchar* s,FXint n){
 
 // Insert wide character string at position
 FXString& FXString::insert(FXint pos,const FXwchar* s,FXint n){
-  FXint m;
-  if(__likely(s && 0<(m=wcs2utf(s,n)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && 0<n && length(len+(m=wcs2utf(s,n)))){
     if(pos<=0){
       memmove(str+m,str,len);
       wcs2utf(str,s,m,n);
@@ -1389,25 +1365,25 @@ FXString& FXString::insert(FXint pos,const FXwchar* s,FXint n){
 
 // Insert string at position
 FXString& FXString::insert(FXint pos,const FXString& s){
-  return insert(pos,s.str,s.length());
+  return insert(pos,s.text(),s.length());
   }
 
 
 // Prepend character
 FXString& FXString::prepend(FXchar c){
   FXint len=length();
-  length(len+1);
-  memmove(str+1,str,len);
-  str[0]=c;
+  if(length(len+1)){
+    memmove(str+1,str,len);
+    str[0]=c;
+    }
   return *this;
   }
 
 
 // Prepend string with n characters c
 FXString& FXString::prepend(FXchar c,FXint n){
-  if(__likely(0<n)){
-    FXint len=length();
-    length(len+n);
+  FXint len=length();
+  if(0<n && length(len+n)){
     memmove(str+n,str,len);
     memset(str,c,n);
     }
@@ -1417,12 +1393,10 @@ FXString& FXString::prepend(FXchar c,FXint n){
 
 // Prepend string
 FXString& FXString::prepend(const FXchar* s){
-  FXint m;
-  if(__likely(s && 0<(m=strlen(s)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && s[0] && length(len+(m=strlen(s)))){
     memmove(str+m,str,len);
-    memcpy(str,s,m);
+    memmove(str,s,m);
     }
   return *this;
   }
@@ -1430,10 +1404,8 @@ FXString& FXString::prepend(const FXchar* s){
 
 // Prepend narrow character string
 FXString& FXString::prepend(const FXnchar* s){
-  FXint m;
-  if(__likely(s && 0<(m=ncs2utf(s)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && s[0] && length(len+(m=ncs2utf(s)))){
     memmove(str+m,str,len);
     ncs2utf(str,s,m);
     }
@@ -1443,10 +1415,8 @@ FXString& FXString::prepend(const FXnchar* s){
 
 // Prepend wide character string
 FXString& FXString::prepend(const FXwchar* s){
-  FXint m;
-  if(__likely(s && 0<(m=wcs2utf(s)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && s[0] && length(len+(m=wcs2utf(s)))){
     memmove(str+m,str,len);
     wcs2utf(str,s,m);
     }
@@ -1456,11 +1426,10 @@ FXString& FXString::prepend(const FXwchar* s){
 
 // Prepend string
 FXString& FXString::prepend(const FXchar* s,FXint n){
-  if(__likely(s && 0<n)){
-    FXint len=length();
-    length(len+n);
+  FXint len=length();
+  if(s && 0<n && length(len+n)){
     memmove(str+n,str,len);
-    memcpy(str,s,n);
+    memmove(str,s,n);
     }
   return *this;
   }
@@ -1468,10 +1437,8 @@ FXString& FXString::prepend(const FXchar* s,FXint n){
 
 // Prepend narrow character string
 FXString& FXString::prepend(const FXnchar* s,FXint n){
-  FXint m;
-  if(__likely(s && 0<(m=ncs2utf(s,n)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && 0<n && length(len+(m=ncs2utf(s,n)))){
     memmove(str+m,str,len);
     ncs2utf(str,s,m,n);
     }
@@ -1481,10 +1448,8 @@ FXString& FXString::prepend(const FXnchar* s,FXint n){
 
 // Prepend wide character string
 FXString& FXString::prepend(const FXwchar* s,FXint n){
-  FXint m;
-  if(__likely(s && 0<(m=wcs2utf(s,n)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && 0<n && length(len+(m=wcs2utf(s,n)))){
     memmove(str+m,str,len);
     wcs2utf(str,s,m,n);
     }
@@ -1494,24 +1459,24 @@ FXString& FXString::prepend(const FXwchar* s,FXint n){
 
 // Prepend string
 FXString& FXString::prepend(const FXString& s){
-  return prepend(s.str,s.length());
+  return prepend(s.text(),s.length());
   }
 
 
 // Append character c to this string
 FXString& FXString::append(FXchar c){
   FXint len=length();
-  length(len+1);
-  str[len]=c;
+  if(length(len+1)){
+    str[len]=c;
+    }
   return *this;
   }
 
 
 // Append n characters c to this string
 FXString& FXString::append(FXchar c,FXint n){
-  if(__likely(0<n)){
-    FXint len=length();
-    length(len+n);
+  FXint len=length();
+  if(0<n && length(len+n)){
     memset(str+len,c,n);
     }
   return *this;
@@ -1519,47 +1484,10 @@ FXString& FXString::append(FXchar c,FXint n){
 
 
 // Append string to this string
-FXString& FXString::append(const FXchar* s,FXint n){
-  if(__likely(s && 0<n)){
-    FXint len=length();
-    length(len+n);
-    memcpy(str+len,s,n);
-    }
-  return *this;
-  }
-
-
-// Append string to this string
-FXString& FXString::append(const FXnchar* s,FXint n){
-  FXint m;
-  if(__likely(s && 0<(m=ncs2utf(s,n)))){
-    FXint len=length();
-    length(len+m);
-    ncs2utf(str+len,s,m,n);
-    }
-  return *this;
-  }
-
-
-// Append string to this string
-FXString& FXString::append(const FXwchar* s,FXint n){
-  FXint m;
-  if(__likely(s && 0<(m=wcs2utf(s,n)))){
-    FXint len=length();
-    length(len+m);
-    wcs2utf(str+len,s,m,n);
-    }
-  return *this;
-  }
-
-
-// Append string to this string
 FXString& FXString::append(const FXchar* s){
-  FXint m;
-  if(__likely(s && 0<(m=strlen(s)))){
-    FXint len=length();
-    length(len+m);
-    memcpy(str+len,s,m);
+  FXint len=length(),m;
+  if(s && s[0] && length(len+(m=strlen(s)))){
+    memmove(str+len,s,m);
     }
   return *this;
   }
@@ -1567,10 +1495,8 @@ FXString& FXString::append(const FXchar* s){
 
 // Append string to this string
 FXString& FXString::append(const FXnchar* s){
-  FXint m;
-  if(__likely(s && 0<(m=ncs2utf(s)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && s[0] && length(len+(m=ncs2utf(s)))){
     ncs2utf(str+len,s,m);
     }
   return *this;
@@ -1579,10 +1505,8 @@ FXString& FXString::append(const FXnchar* s){
 
 // Append string to this string
 FXString& FXString::append(const FXwchar* s){
-  FXint m;
-  if(__likely(s && 0<(m=wcs2utf(s)))){
-    FXint len=length();
-    length(len+m);
+  FXint len=length(),m;
+  if(s && s[0] && length(len+(m=wcs2utf(s)))){
     wcs2utf(str+len,s,m);
     }
   return *this;
@@ -1590,8 +1514,38 @@ FXString& FXString::append(const FXwchar* s){
 
 
 // Append string to this string
+FXString& FXString::append(const FXchar* s,FXint n){
+  FXint len=length();
+  if(s && 0<n && length(len+n)){
+    memmove(str+len,s,n);
+    }
+  return *this;
+  }
+
+
+// Append string to this string
+FXString& FXString::append(const FXnchar* s,FXint n){
+  FXint len=length(),m;
+  if(s && 0<n && length(len+(m=ncs2utf(s,n)))){
+    ncs2utf(str+len,s,m,n);
+    }
+  return *this;
+  }
+
+
+// Append string to this string
+FXString& FXString::append(const FXwchar* s,FXint n){
+  FXint len=length(),m;
+  if(s && 0<n && length(len+(m=wcs2utf(s,n)))){
+    wcs2utf(str+len,s,m,n);
+    }
+  return *this;
+  }
+
+
+// Append string to this string
 FXString& FXString::append(const FXString& s){
-  return append(s.str,s.length());
+  return append(s.text(),s.length());
   }
 
 
@@ -1606,12 +1560,12 @@ FXString& FXString::replace(FXint pos,FXchar c){
 FXString& FXString::replace(FXint pos,FXint r,FXchar c,FXint n){
   FXint len=length();
   if(r<n){
-    length(len+n-r);
+    if(!length(len+n-r)) return *this;
     memmove(str+pos+n,str+pos+r,len-pos-r);
     }
   else if(r>n){
     memmove(str+pos+n,str+pos+r,len-pos-r);
-    length(len+n-r);
+    if(!length(len+n-r)) return *this;
     }
   memset(str+pos,c,n);
   return *this;
@@ -1620,7 +1574,7 @@ FXString& FXString::replace(FXint pos,FXint r,FXchar c,FXint n){
 
 // Replace the r characters at pos with string s
 FXString& FXString::replace(FXint pos,FXint r,const FXchar* s){
-  return replace(pos,r,s,strlen(s));
+  replace(pos,r,s,strlen(s));
   }
 
 
@@ -1640,12 +1594,12 @@ FXString& FXString::replace(FXint pos,FXint r,const FXwchar* s){
 FXString& FXString::replace(FXint pos,FXint r,const FXchar* s,FXint n){
   FXint len=length();
   if(r<n){
-    length(len+n-r);
+    if(!length(len+n-r)) return *this;
     memmove(str+pos+n,str+pos+r,len-pos-r);
     }
   else if(r>n){
     memmove(str+pos+n,str+pos+r,len-pos-r);
-    length(len+n-r);
+    if(!length(len+n-r)) return *this;
     }
   memcpy(str+pos,s,n);
   return *this;
@@ -1654,15 +1608,14 @@ FXString& FXString::replace(FXint pos,FXint r,const FXchar* s,FXint n){
 
 // Replaces the r characters at pos with first n characters of narrow character string s
 FXString& FXString::replace(FXint pos,FXint r,const FXnchar* s,FXint n){
-  FXint m=ncs2utf(s,n);
-  FXint len=length();
+  FXint len=length(),m=ncs2utf(s,n);
   if(r<m){
-    length(len+m-r);
+    if(!length(len+m-r)) return *this;
     memmove(str+pos+m,str+pos+r,len-pos-r);
     }
   else if(r>m){
     memmove(str+pos+m,str+pos+r,len-pos-r);
-    length(len+m-r);
+    if(!length(len+m-r)) return *this;
     }
   ncs2utf(str+pos,s,m,n);
   return *this;
@@ -1671,15 +1624,14 @@ FXString& FXString::replace(FXint pos,FXint r,const FXnchar* s,FXint n){
 
 // Replaces the r characters at pos with first n characters of wide character string s
 FXString& FXString::replace(FXint pos,FXint r,const FXwchar* s,FXint n){
-  FXint m=wcs2utf(s,n);
-  FXint len=length();
+  FXint len=length(),m=wcs2utf(s,n);
   if(r<m){
-    length(len+m-r);
+    if(!length(len+m-r)) return *this;
     memmove(str+pos+m,str+pos+r,len-pos-r);
     }
   else if(r>m){
     memmove(str+pos+m,str+pos+r,len-pos-r);
-    length(len+m-r);
+    if(!length(len+m-r)) return *this;
     }
   wcs2utf(str+pos,s,m,n);
   return *this;
@@ -1692,7 +1644,7 @@ FXString& FXString::replace(FXint pos,FXint r,const FXString& s){
   }
 
 
-// Move range of m characters from src position to dst position
+// Move range of n characters from src position to dst position
 FXString& FXString::move(FXint dst,FXint src,FXint n){
   FXint len=length();
   if(__likely(0<n && 0<=src && src+n<=len)){
@@ -1756,14 +1708,10 @@ FXString& FXString::clear(){
 // Return number of occurrences of ch in string
 FXint FXString::contains(FXchar ch) const {
   FXint len=length();
-  FXint c=ch;
   FXint m=0;
   FXint i=0;
   while(i<len){
-    if(str[i]==c){
-      m++;
-      }
-    i++;
+    m+=(str[i++]==ch);
     }
   return m;
   }
@@ -1876,9 +1824,7 @@ FXString& FXString::upper(){
 // Simplify whitespace in string
 FXString& FXString::simplify(){
   if(str!=EMPTY){
-    FXint s=0;
-    FXint d=0;
-    FXint e=length();
+    FXint e=length(),s=0,d=0;
     while(s<e && Ascii::isSpace(str[s])) s++;
     while(1){
       while(s<e && !Ascii::isSpace(str[s])) str[d++]=str[s++];
@@ -1895,12 +1841,11 @@ FXString& FXString::simplify(){
 // Remove leading and trailing whitespace
 FXString& FXString::trim(){
   if(str!=EMPTY){
-    FXint s=0;
-    FXint e=length();
-    while(0<e && Ascii::isSpace(str[e-1])) e--;
+    FXint e=length(),s=0,d=0;
     while(s<e && Ascii::isSpace(str[s])) s++;
-    memmove(str,&str[s],e-s);
-    length(e-s);
+    while(s<e && Ascii::isSpace(str[e-1])) e--;
+    while(s<e) str[d++]=str[s++];
+    length(d);
     }
   return *this;
   }
@@ -1909,11 +1854,10 @@ FXString& FXString::trim(){
 // Remove leading whitespace
 FXString& FXString::trimBegin(){
   if(str!=EMPTY){
-    FXint s=0;
-    FXint e=length();
+    FXint e=length(),s=0,d=0;
     while(s<e && Ascii::isSpace(str[s])) s++;
-    memmove(str,str+s,e-s);
-    length(e-s);
+    while(s<e) str[d++]=str[s++];
+    length(d);
     }
   return *this;
   }
@@ -2602,6 +2546,673 @@ FXuint FXString::hash() const {
 
 /*******************************************************************************/
 
+// Check if the string contains special characters or leading or trailing whitespace, or contains utf8 if flag!=0
+FXbool FXString::shouldEscape(const FXString& str,FXchar lquote,FXchar rquote,FXint flag){
+  if(0<str.length()){
+    FXint p=0; FXuchar c;
+    c=str.head();
+    if(c<=0x20) return true;
+    c=str.tail();
+    if(c<=0x20) return true;
+    while(p<str.length()){
+      c=str[p++];
+      if(c<=0x1F || 0xF8<=c || c==0x7F) return true;
+      if(c=='\\' || c==lquote || c==rquote) return true;
+      if(0x80<=c && flag) return true;
+      }
+    }
+  return false;
+  }
+
+
+// Escape special characters, and optionally enclose with left and right quotes
+// and escape utf8 as \xHH if flag=1, or as \uHHHH if flag=2.
+// UTF8 characters may be encoded as hex (in the form of: \xHH), or as Unicode
+// escape sequences (of the form \uHHHH).  Code points exceeding 16-bits will be
+// encoded as hex-encoded surrogate-pairs (\uHHHH\uHHHH) in Unicode escape mode.
+// UTF8 followers will be always escaped if not preceeded by UTF8 leaders, if
+// escaping is enabled.
+FXString FXString::escape(const FXString& str,FXchar lquote,FXchar rquote,FXint flag){
+  FXString result;
+  FXint p,q,w,v;
+  FXuchar c,cc;
+  p=q=0;
+  if(lquote) q++;                               // Opening quote
+  while(p<str.length()){                        // Measure length of converted string
+    c=str[p++];
+    switch(c){
+      case '\a':                                // Special control characters
+      case '\b':
+      case '\t':
+      case '\n':
+      case '\v':
+      case '\f':
+      case '\r':
+      case '\\':
+        q+=2;
+        continue;
+      case 0x00:                                // Non-special control characters
+      case 0x01:
+      case 0x02:
+      case 0x03:
+      case 0x04:
+      case 0x05:
+      case 0x06:
+      case 0x0E:
+      case 0x0F:
+      case 0x10:
+      case 0x11:
+      case 0x12:
+      case 0x13:
+      case 0x14:
+      case 0x15:
+      case 0x16:
+      case 0x17:
+      case 0x18:
+      case 0x19:
+      case 0x1A:
+      case 0x1B:
+      case 0x1C:
+      case 0x1D:
+      case 0x1E:
+      case 0x1F:
+      case 0x7F:                                // DEL
+      case 0xF8:                                // Bad UTF8 leaders
+      case 0xF9:
+      case 0xFA:
+      case 0xFB:
+      case 0xFC:
+      case 0xFD:
+      case 0xFF:
+hex1:   q+=4;                                   // Escape as \xHH
+        continue;
+      case 0x80:                                // UTF8 followers
+      case 0x81:
+      case 0x82:
+      case 0x83:
+      case 0x84:
+      case 0x85:
+      case 0x86:
+      case 0x87:
+      case 0x88:
+      case 0x89:
+      case 0x8A:
+      case 0x8B:
+      case 0x8C:
+      case 0x8D:
+      case 0x8E:
+      case 0x8F:
+      case 0x90:
+      case 0x91:
+      case 0x92:
+      case 0x93:
+      case 0x94:
+      case 0x95:
+      case 0x96:
+      case 0x97:
+      case 0x98:
+      case 0x99:
+      case 0x9A:
+      case 0x9B:
+      case 0x9C:
+      case 0x9D:
+      case 0x9E:
+      case 0x9F:
+      case 0xA0:
+      case 0xA1:
+      case 0xA2:
+      case 0xA3:
+      case 0xA4:
+      case 0xA5:
+      case 0xA6:
+      case 0xA7:
+      case 0xA8:
+      case 0xA9:
+      case 0xAA:
+      case 0xAB:
+      case 0xAC:
+      case 0xAD:
+      case 0xAE:
+      case 0xAF:
+      case 0xB0:
+      case 0xB1:
+      case 0xB2:
+      case 0xB3:
+      case 0xB4:
+      case 0xB5:
+      case 0xB6:
+      case 0xB7:
+      case 0xB8:
+      case 0xB9:
+      case 0xBA:
+      case 0xBB:
+      case 0xBC:
+      case 0xBD:
+      case 0xBE:
+      case 0xBF:
+        if(flag==0) goto nml1;                  // Pass UTF8 through
+        goto hex1;                              // Escape UTF8 follower not preceeded by UTF8 leader
+      case 0xC0:                                // 2-byte UTF8 sequences
+      case 0xC1:
+      case 0xC2:
+      case 0xC3:
+      case 0xC4:
+      case 0xC5:
+      case 0xC6:
+      case 0xC7:
+      case 0xC8:
+      case 0xC9:
+      case 0xCA:
+      case 0xCB:
+      case 0xCC:
+      case 0xCD:
+      case 0xCE:
+      case 0xCF:
+      case 0xD0:
+      case 0xD1:
+      case 0xD2:
+      case 0xD3:
+      case 0xD4:
+      case 0xD5:
+      case 0xD6:
+      case 0xD7:
+      case 0xD8:
+      case 0xD9:
+      case 0xDA:
+      case 0xDB:
+      case 0xDC:
+      case 0xDD:
+      case 0xDE:
+      case 0xDF:
+      case 0xE0:                                // 3-byte UTF8 sequences
+      case 0xE1:
+      case 0xE2:
+      case 0xE3:
+      case 0xE4:
+      case 0xE5:
+      case 0xE6:
+      case 0xE7:
+      case 0xE8:
+      case 0xE9:
+      case 0xEA:
+      case 0xEB:
+      case 0xEC:
+      case 0xED:
+      case 0xEE:
+      case 0xEF:
+      case 0xF0:                                // 4-byte UTF8 sequences
+      case 0xF1:
+      case 0xF2:
+      case 0xF3:
+      case 0xF4:
+      case 0xF5:
+      case 0xF6:
+      case 0xF7:
+        if(flag==0) goto nml1;                  // Pass UTF8 through
+        if(flag==1) goto hex1;                  // Simple hex escaping
+        cc=str[p];
+        if(!FXISFOLLOWUTF8(cc)) goto hex1;      // UTF8 follower?
+        w=(c<<6)^cc^0x3080;
+        if(0x800<=w){
+          cc=str[p+1];
+          if(!FXISFOLLOWUTF8(cc)) goto hex1;    // UTF8 follower?
+          w=(w<<6)^cc^0x20080;
+          if(0x10000<=w){                       // Surrogate pair needed
+            cc=str[p+2];
+            if(!FXISFOLLOWUTF8(cc)) goto hex1;  // UTF8 follower?
+            w=(w<<6)^cc^0x400080;
+            if(0x110000<=w) goto hex1;          // Beyond assigned code space?
+            q+=6;
+            p++;
+            }
+          p++;
+          }
+        q+=6;
+        p++;
+        continue;
+      default:
+        if(c==lquote && lquote){                // Escape opening quote if found in string
+          q+=2;
+          continue;
+          }
+        if(c==rquote && rquote){                // Escape closing quote if found in string
+          q+=2;
+          continue;
+          }
+nml1:   q+=1;                                   // Normal characters
+        continue;
+      }
+    }
+  if(rquote) q++;                               // Closing quote
+  result.length(q);
+  p=q=0;
+  if(lquote) result[q++]=lquote;                // Opening quote
+  while(p<str.length()){                        // Then convert the string
+    c=str[p++];
+    switch(c){
+      case '\a':                                // Special control characters
+        result[q++]='\\';
+        result[q++]='a';
+        continue;
+      case '\b':
+        result[q++]='\\';
+        result[q++]='b';
+        continue;
+      case '\t':
+        result[q++]='\\';
+        result[q++]='t';
+        continue;
+      case '\n':
+        result[q++]='\\';
+        result[q++]='n';
+        continue;
+      case '\v':
+        result[q++]='\\';
+        result[q++]='v';
+        continue;
+      case '\f':
+        result[q++]='\\';
+        result[q++]='f';
+        continue;
+      case '\r':
+        result[q++]='\\';
+        result[q++]='r';
+        continue;
+      case '\\':
+        result[q++]='\\';
+        result[q++]='\\';
+        continue;
+      case 0x00:                                // Non-special control characters
+      case 0x01:
+      case 0x02:
+      case 0x03:
+      case 0x04:
+      case 0x05:
+      case 0x06:
+      case 0x0E:
+      case 0x0F:
+      case 0x10:
+      case 0x11:
+      case 0x12:
+      case 0x13:
+      case 0x14:
+      case 0x15:
+      case 0x16:
+      case 0x17:
+      case 0x18:
+      case 0x19:
+      case 0x1A:
+      case 0x1B:
+      case 0x1C:
+      case 0x1D:
+      case 0x1E:
+      case 0x1F:
+      case 0x7F:                                // DEL
+      case 0xF8:                                // Bad UTF8 leaders
+      case 0xF9:
+      case 0xFA:
+      case 0xFB:
+      case 0xFC:
+      case 0xFD:
+      case 0xFF:
+hex2:   result[q++]='\\';                       // Escape as \xHH
+        result[q++]='x';
+        result[q++]=FXString::value2Digit[(c>>4)&15];
+        result[q++]=FXString::value2Digit[c&15];
+        continue;
+      case 0x80:                                // UTF8 followers
+      case 0x81:
+      case 0x82:
+      case 0x83:
+      case 0x84:
+      case 0x85:
+      case 0x86:
+      case 0x87:
+      case 0x88:
+      case 0x89:
+      case 0x8A:
+      case 0x8B:
+      case 0x8C:
+      case 0x8D:
+      case 0x8E:
+      case 0x8F:
+      case 0x90:
+      case 0x91:
+      case 0x92:
+      case 0x93:
+      case 0x94:
+      case 0x95:
+      case 0x96:
+      case 0x97:
+      case 0x98:
+      case 0x99:
+      case 0x9A:
+      case 0x9B:
+      case 0x9C:
+      case 0x9D:
+      case 0x9E:
+      case 0x9F:
+      case 0xA0:
+      case 0xA1:
+      case 0xA2:
+      case 0xA3:
+      case 0xA4:
+      case 0xA5:
+      case 0xA6:
+      case 0xA7:
+      case 0xA8:
+      case 0xA9:
+      case 0xAA:
+      case 0xAB:
+      case 0xAC:
+      case 0xAD:
+      case 0xAE:
+      case 0xAF:
+      case 0xB0:
+      case 0xB1:
+      case 0xB2:
+      case 0xB3:
+      case 0xB4:
+      case 0xB5:
+      case 0xB6:
+      case 0xB7:
+      case 0xB8:
+      case 0xB9:
+      case 0xBA:
+      case 0xBB:
+      case 0xBC:
+      case 0xBD:
+      case 0xBE:
+      case 0xBF:
+        if(flag==0) goto nml2;                  // Pass UTF8 through
+        goto hex2;                              // Escape UTF8 follower not preceeded by UTF8 leader
+      case 0xC0:                                // 2-byte UTF8 sequences
+      case 0xC1:
+      case 0xC2:
+      case 0xC3:
+      case 0xC4:
+      case 0xC5:
+      case 0xC6:
+      case 0xC7:
+      case 0xC8:
+      case 0xC9:
+      case 0xCA:
+      case 0xCB:
+      case 0xCC:
+      case 0xCD:
+      case 0xCE:
+      case 0xCF:
+      case 0xD0:
+      case 0xD1:
+      case 0xD2:
+      case 0xD3:
+      case 0xD4:
+      case 0xD5:
+      case 0xD6:
+      case 0xD7:
+      case 0xD8:
+      case 0xD9:
+      case 0xDA:
+      case 0xDB:
+      case 0xDC:
+      case 0xDD:
+      case 0xDE:
+      case 0xDF:
+      case 0xE0:                                // 3-byte UTF8 sequences
+      case 0xE1:
+      case 0xE2:
+      case 0xE3:
+      case 0xE4:
+      case 0xE5:
+      case 0xE6:
+      case 0xE7:
+      case 0xE8:
+      case 0xE9:
+      case 0xEA:
+      case 0xEB:
+      case 0xEC:
+      case 0xED:
+      case 0xEE:
+      case 0xEF:
+      case 0xF0:                                 // 4-byte UTF8 sequences
+      case 0xF1:
+      case 0xF2:
+      case 0xF3:
+      case 0xF4:
+      case 0xF5:
+      case 0xF6:
+      case 0xF7:
+        if(flag==0) goto nml2;                  // Pass UTF8 through
+        if(flag==1) goto hex2;                  // Simple hex escaping
+        cc=str[p];
+        if(!FXISFOLLOWUTF8(cc)) goto hex2;      // UTF8 follower?
+        w=(c<<6)^cc^0x3080;
+        if(0x800<=w){
+          cc=str[p+1];
+          if(!FXISFOLLOWUTF8(cc)) goto hex2;    // UTF8 follower?
+          w=(w<<6)^cc^0x20080;
+          if(0x10000<=w){                       // Surrogate pair needed
+            cc=str[p+2];
+            if(!FXISFOLLOWUTF8(cc)) goto hex2;  // UTF8 follower?
+            w=(w<<6)^cc^0x400080;
+            if(0x110000<=w) goto hex2;          // Beyond assigned code space?
+            v=LEAD_OFFSET+(w>>10);
+            w=TAIL_OFFSET+(w&0x3FF);
+            result[q++]='\\';                   // Escape as \uHHHH
+            result[q++]='u';
+            result[q++]=FXString::value2Digit[(v>>12)&15];
+            result[q++]=FXString::value2Digit[(v>>8)&15];
+            result[q++]=FXString::value2Digit[(v>>4)&15];
+            result[q++]=FXString::value2Digit[v&15];
+            p++;
+            }
+          p++;
+          }
+        result[q++]='\\';                       // Escape as \uHHHH
+        result[q++]='u';
+        result[q++]=FXString::value2Digit[(w>>12)&15];
+        result[q++]=FXString::value2Digit[(w>>8)&15];
+        result[q++]=FXString::value2Digit[(w>>4)&15];
+        result[q++]=FXString::value2Digit[w&15];
+        p++;
+        continue;
+      default:
+        if(__unlikely(c==lquote && lquote)){    // Escape opening quote if found in string
+          result[q++]='\\';
+          result[q++]=lquote;
+          continue;
+          }
+        if(__unlikely(c==rquote && rquote)){    // Escape closing quote if found in string
+          result[q++]='\\';
+          result[q++]=rquote;
+          continue;
+          }
+nml2:   result[q++]=c;                          // Normal characters
+        continue;
+      }
+    }
+  if(rquote) result[q++]=rquote;                // Closing quote
+  FXASSERT(q==result.length());
+  return result;
+  }
+
+/*******************************************************************************/
+
+// Unescape special characters in a string; optionally strip quote characters
+FXString FXString::unescape(const FXString& str,FXchar lquote,FXchar rquote){
+  FXString result;
+  FXint p,q,w,c;
+  p=q=c=0;
+  if(str[p]==lquote && lquote) p++;     // Opening quote
+  while(p<str.length()){                // Measure length of converted string
+    w=c;                                // Keep previous decoded character
+    c=str[p++];
+    if(c==rquote && rquote) break;      // Closing quote
+    if(c=='\\' && p<str.length()){      // Escape sequence
+      switch((c=str[p++])){
+        case 'u':                       // Unicode escape
+          c=0;
+          if(Ascii::isHexDigit(str[p])){
+            c=(c<<4)+Ascii::digitValue(str[p++]);
+            if(Ascii::isHexDigit(str[p])){
+              c=(c<<4)+Ascii::digitValue(str[p++]);
+              if(Ascii::isHexDigit(str[p])){
+                c=(c<<4)+Ascii::digitValue(str[p++]);
+                if(Ascii::isHexDigit(str[p])){
+                  c=(c<<4)+Ascii::digitValue(str[p++]);
+                  }
+                }
+              }
+            }
+          if(FXISLEADUTF16(c)) continue;
+          if(FXISFOLLOWUTF16(c)){
+            if(!FXISLEADUTF16(w)) continue;
+            c=SURROGATE_OFFSET+(w<<10)+c;
+            }
+          q+=wc2utf(c);
+          continue;
+        case 'x':                       // Hex escape
+          if(Ascii::isHexDigit(str[p])){
+            p++;
+            if(Ascii::isHexDigit(str[p])) p++;
+            }
+          q++;
+          continue;
+        case '\r':                      // End-of-line continuation
+          if(str[p]=='\n') p++;         // Eat both <CR> and <LF> of <CR><LF>
+          continue;
+        case '\n':                      // End-of-line continuation
+          continue;
+        case '0':                       // Octal escape
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+          if(Ascii::isOctDigit(str[p])){
+            p++;
+            if(Ascii::isOctDigit(str[p])) p++;
+            }
+          q++;
+          continue;
+        case 'n':                       // Special characters
+        case 'r':
+        case 'b':
+        case 'v':
+        case 'a':
+        case 'e':                       // Escape
+        case 'f':
+        case 't':
+        case '\\':
+        default:                        // Unneccessarily escaped character
+          q++;
+          continue;
+        }
+      }
+    q++;                                // Normal characters
+    }
+  result.length(q);                     // Resize result string
+  p=q=c=0;
+  if(str[p]==lquote && lquote) p++;     // Opening quote
+  while(p<str.length()){                // Then convert the string
+    w=c;                                // Keep previous decoded character
+    c=str[p++];
+    if(c==rquote && rquote) break;      // Closing quote
+    if(c=='\\' && p<str.length()){      // Escape sequence
+      switch((c=str[p++])){
+        case 'u':                       // Unicode escape
+          if(Ascii::isHexDigit(str[p])){
+            c=Ascii::digitValue(str[p++]);
+            if(Ascii::isHexDigit(str[p])){
+              c=(c<<4)+Ascii::digitValue(str[p++]);
+              if(Ascii::isHexDigit(str[p])){
+                c=(c<<4)+Ascii::digitValue(str[p++]);
+                if(Ascii::isHexDigit(str[p])){
+                  c=(c<<4)+Ascii::digitValue(str[p++]);
+                  }
+                }
+              }
+            }
+          if(FXISLEADUTF16(c)) continue;
+          if(FXISFOLLOWUTF16(c)){
+            if(!FXISLEADUTF16(w)) continue;
+            c=SURROGATE_OFFSET+(w<<10)+c;
+            }
+          q+=wc2utf(&result[q],c);
+          continue;
+        case 'x':                       // Hex escape
+          if(Ascii::isHexDigit(str[p])){
+            c=Ascii::digitValue(str[p++]);
+            if(Ascii::isHexDigit(str[p])){
+              c=(c<<4)+Ascii::digitValue(str[p++]);
+              }
+            }
+          result[q++]=c;
+          continue;
+        case '\r':                      // End-of-line continuation
+          if(str[p]=='\n') p++;         // Eat both <CR> and <LF> of <CR><LF>
+          continue;
+        case '\n':                      // End-of-line continuation
+          continue;
+        case '0':                       // Octal escape
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+          c=c-'0';
+          if(Ascii::isOctDigit(str[p])){
+            c=(c<<3)+str[p++]-'0';
+            if(Ascii::isOctDigit(str[p])){
+              c=(c<<3)+str[p++]-'0';
+              }
+            }
+          result[q++]=c;
+          continue;
+        case 'n':                       // Special characters
+          result[q++]='\n';
+          continue;
+        case 'r':
+          result[q++]='\r';
+          continue;
+        case 'b':
+          result[q++]='\b';
+          continue;
+        case 'v':
+          result[q++]='\v';
+          continue;
+        case 'a':
+          result[q++]='\a';
+          continue;
+        case 'e':                       // Escape
+          result[q++]='\033';
+          continue;
+        case 'f':
+          result[q++]='\f';
+          continue;
+        case 't':
+          result[q++]='\t';
+          continue;
+        case '\\':
+          result[q++]='\\';
+          continue;
+        default:                        // Unneccessarily escaped character
+          result[q++]=c;
+          continue;
+        }
+      }
+    result[q++]=c;                      // Normal characters
+    }
+  FXASSERT(q==result.length());
+  return result;
+  }
+
+/*******************************************************************************/
+
 // Save
 FXStream& operator<<(FXStream& store,const FXString& s){
   FXint len=s.length();
@@ -3037,28 +3648,32 @@ FXString operator+(FXchar c,const FXString& s){
 
 /*******************************************************************************/
 
-// Convert unix string to dos string
+// Convert unix string to dos string by replacing NL by CRNL
 FXString& unixToDos(FXString& str){
-  FXint f=0,t=0;
-  while(f<str.length() && str[f]){
-    if(str[f++]=='\n') t++;
+  FXint i=0,j=0,t=0,c;
+  while(j<str.length()){
+    str[i++]=c=str[j++];
+    if(c=='\n') t++;            // Add CR for every NL
+    if(c=='\r') i--;            // But don't double them
     t++;
     }
   str.length(t);
-  while(0<f){
-    if((str[--t]=str[--f])=='\n') str[--t]='\r';
+  while(0<t){
+    str[--t]=c=str[--i];
+    if(c=='\n') str[--t]='\r';
     }
   return str;
   }
 
 
-// Convert dos string to unix string
+// Convert dos string to unix string by replacing CRNL by CR
 FXString& dosToUnix(FXString& str){
-  FXint f=0,t=0,c;
-  while(f<str.length() && str[f]){
-    if((c=str[f++])!='\r') str[t++]=c;
+  FXint i=0,j=0,c;
+  while(j<str.length()){
+    str[i++]=c=str[j++];
+    if(c=='\r') i--;            // Remove CR
     }
-  str.length(t);
+  str.length(i);
   return str;
   }
 

@@ -165,7 +165,6 @@ public:
   long onCmdCopySel(FXObject*,FXSelector,void*);
   long onCmdPasteSel(FXObject*,FXSelector,void*);
   long onCmdDeleteSel(FXObject*,FXSelector,void*);
-  long onCmdReplaceSel(FXObject*,FXSelector,void*);
   long onCmdPasteMiddle(FXObject*,FXSelector,void*);
   long onCmdSelectAll(FXObject*,FXSelector,void*);
   long onCmdDeselectAll(FXObject*,FXSelector,void*);
@@ -209,7 +208,6 @@ public:
     ID_CUT_SEL,
     ID_COPY_SEL,
     ID_DELETE_SEL,
-    ID_REPLACE_SEL,
     ID_PASTE_SEL,
     ID_PASTE_MIDDLE,
     ID_INSERT_STRING,
@@ -315,9 +313,6 @@ public:
 
   /// Delete primary selection
   FXbool deleteSelection(FXbool notify=false);
-
-  /// Replace primary selection by other text
-  FXbool replaceSelection(const FXString& text,FXbool notify=false);
 
   /// Paste primary selection
   FXbool pasteSelection(FXbool notify=false);

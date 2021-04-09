@@ -31,11 +31,9 @@
 
 using namespace FX;
 
+/*******************************************************************************/
 
 namespace FX {
-
-
-/*******************************************************************************/
 
 // Initialize condition
 FXCondition::FXCondition(){
@@ -43,14 +41,14 @@ FXCondition::FXCondition(){
   // If this fails on your machine, determine what value
   // of sizeof(pthread_cond_t) is supposed to be on your
   // machine and mail it to: jeroen@fox-toolkit.com!!
-  FXASSERT(sizeof(data)>=sizeof(CONDITION_VARIABLE));
+  FXASSERT_STATIC(sizeof(data)>=sizeof(CONDITION_VARIABLE));
   InitializeConditionVariable((CONDITION_VARIABLE*)data);
 #elif defined(WIN32)
   // If this fails on your machine, determine what value
   // of sizeof(pthread_cond_t) is supposed to be on your
   // machine and mail it to: jeroen@fox-toolkit.com!!
   //FXTRACE((150,"sizeof(CRITICAL_SECTION)+sizeof(HANDLE)+sizeof(HANDLE)+sizeof(FXuval)=%d\n",sizeof(CRITICAL_SECTION)+sizeof(HANDLE)+sizeof(HANDLE)+sizeof(FXuval)));
-  FXASSERT(sizeof(data)>=sizeof(CRITICAL_SECTION)+sizeof(HANDLE)+sizeof(HANDLE)+sizeof(FXuval));
+  FXASSERT_STATIC(sizeof(data)>=sizeof(CRITICAL_SECTION)+sizeof(HANDLE)+sizeof(HANDLE)+sizeof(FXuval));
   data[0]=(FXuval)CreateEvent(NULL,0,0,NULL);                   // Wakes one, autoreset
   data[1]=(FXuval)CreateEvent(NULL,1,0,NULL);                   // Wakes all, manual reset
   data[2]=0;                                                    // Blocked count
@@ -60,7 +58,7 @@ FXCondition::FXCondition(){
   // of sizeof(pthread_cond_t) is supposed to be on your
   // machine and mail it to: jeroen@fox-toolkit.com!!
   //FXTRACE((150,"sizeof(pthread_cond_t)=%d\n",sizeof(pthread_cond_t)));
-  FXASSERT(sizeof(data)>=sizeof(pthread_cond_t));
+  FXASSERT_STATIC(sizeof(data)>=sizeof(pthread_cond_t));
   pthread_cond_init((pthread_cond_t*)data,NULL);
 #endif
   }

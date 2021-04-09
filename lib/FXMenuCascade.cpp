@@ -55,6 +55,7 @@
   - Look into SEL_FOCUS_SELF some more...
 */
 
+#define TOPIC_KEYBOARD  1009
 
 #define LEADSPACE   22
 #define TRAILSPACE  16
@@ -153,7 +154,7 @@ long FXMenuCascade::onButtonRelease(FXObject*,FXSelector,void* ptr){
 long FXMenuCascade::onKeyPress(FXObject*,FXSelector sel,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   if(!isEnabled()) return 0;
-  FXTRACE((200,"%s::onKeyPress %p keysym=0x%04x state=%04x\n",getClassName(),this,event->code,event->state));
+  FXTRACE((TOPIC_KEYBOARD,"%s::onKeyPress %p keysym=0x%04x state=%04x\n",getClassName(),this,event->code,event->state));
   if(pane && pane->shown() && pane->handle(pane,sel,ptr)) return 1;
   switch(event->code){
     case KEY_Right:
@@ -187,7 +188,7 @@ long FXMenuCascade::onKeyPress(FXObject*,FXSelector sel,void* ptr){
 long FXMenuCascade::onKeyRelease(FXObject*,FXSelector sel,void* ptr){
   FXEvent* event=(FXEvent*)ptr;
   if(!isEnabled()) return 0;
-  FXTRACE((200,"%s::onKeyRelease %p keysym=0x%04x state=%04x\n",getClassName(),this,event->code,event->state));
+  FXTRACE((TOPIC_KEYBOARD,"%s::onKeyRelease %p keysym=0x%04x state=%04x\n",getClassName(),this,event->code,event->state));
   if(pane && pane->shown() && pane->handle(pane,sel,ptr)) return 1;
   switch(event->code){
     case KEY_Right:

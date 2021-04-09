@@ -388,7 +388,6 @@ public:
   long onCmdPasteSel(FXObject*,FXSelector,void*);
   long onCmdPasteMiddle(FXObject*,FXSelector,void*);
   long onCmdDeleteSel(FXObject*,FXSelector,void*);
-  long onCmdReplaceSel(FXObject*,FXSelector,void*);
   long onCmdSelectChar(FXObject*,FXSelector,void*);
   long onCmdSelectWord(FXObject*,FXSelector,void*);
   long onCmdSelectLine(FXObject*,FXSelector,void*);
@@ -485,7 +484,6 @@ public:
     ID_CUT_SEL,
     ID_COPY_SEL,
     ID_DELETE_SEL,
-    ID_REPLACE_SEL,
     ID_PASTE_SEL,
     ID_PASTE_MIDDLE,
     ID_SELECT_CHAR,
@@ -801,7 +799,7 @@ public:
   /// Select all text
   virtual FXbool selectAll(FXbool notify=false);
 
-  /// Select len characters starting at given position pos
+  /// Select range of len characters starting at given position pos
   virtual FXbool setSelection(FXint pos,FXint len,FXbool notify=false);
 
   /// Extend the primary selection from the anchor to the given position
@@ -813,8 +811,8 @@ public:
   /// Extend primary selection from anchor to given row, column
   virtual FXbool extendBlockSelection(FXint row,FXint col,FXbool notify=false);
 
-  /// Get selected text
-  FXString getSelectedText() const;
+  /// Kill or deselect primary selection
+  virtual FXbool killSelection(FXbool notify=false);
 
   /// Return true if position pos is selected
   FXbool isPosSelected(FXint pos) const;
@@ -834,8 +832,8 @@ public:
   /// Return selection end column
   FXint getSelEndColumn() const { return select.endcol; }
 
-  /// Kill or deselect primary selection
-  virtual FXbool killSelection(FXbool notify=false);
+  /// Get selected text
+  FXString getSelectedText() const;
 
 
   /// Copy primary selection to clipboard
@@ -912,7 +910,6 @@ public:
 
   /// Return screen y-coordinate of unconstrained (row,col).
   FXint getYOfRowColumn(FXint row,FXint col) const;
-
 
   /// Set the cursor position
   virtual void setCursorPos(FXint pos,FXbool notify=false);

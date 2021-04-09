@@ -82,7 +82,7 @@ public:
   FXint length() const { return *(((FXint*)str)-1); }
 
   /// Change the length of the string to len
-  void length(FXint len);
+  FXbool length(FXint len);
 
   /// Return wide character starting at offset p
   FXwchar wc(FXint p) const;
@@ -318,7 +318,7 @@ public:
   /// Replace the r characters at pos with string s
   FXString& replace(FXint pos,FXint r,const FXString& s);
 
-  /// Move range of m characters from src position to dst position
+  /// Move range of n characters from src position to dst position
   FXString& move(FXint dst,FXint src,FXint n);
 
   /// Remove one character
@@ -583,6 +583,12 @@ public:
   static FXString vvalue(const FXchar* fmt,va_list args);
 
 
+  /// Compute hash value of string
+  FXuint hash() const;
+
+  /// Compute hash value of string
+  static FXuint hash(const FXchar* s);
+
   /**
   * Check if the string contains special characters or leading or trailing whitespace,
   * or contains UTF8 if flag!=0.
@@ -645,12 +651,6 @@ public:
   * decomposition.
   */
   static FXString compose(const FXString& s,FXbool canonical=true);
-
-  /// Compute hash value of string
-  FXuint hash() const;
-
-  /// Compute hash value of string
-  static FXuint hash(const FXchar* s);
 
   /// Swap two strings
   friend inline FXString& swap(FXString& dst,FXString& src);

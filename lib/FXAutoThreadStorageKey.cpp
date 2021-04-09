@@ -34,20 +34,17 @@
 
 using namespace FX;
 
-
-namespace FX {
-
-
 /*******************************************************************************/
 
+namespace FX {
 
 // Automatically acquire a thread-local storage key
 FXAutoThreadStorageKey::FXAutoThreadStorageKey(){
 #if defined(WIN32)
-  FXASSERT(sizeof(FXThreadStorageKey)>=sizeof(DWORD));
+  FXASSERT_STATIC(sizeof(FXThreadStorageKey)>=sizeof(DWORD));
   if((value=(FXThreadStorageKey)TlsAlloc())==TLS_OUT_OF_INDEXES){ throw FXMemoryException("FXAutoThreadStorageKey::FXAutoThreadStorageKey: out of memory\n"); }
 #else
-  FXASSERT(sizeof(FXThreadStorageKey)>=sizeof(pthread_key_t));
+  FXASSERT_STATIC(sizeof(FXThreadStorageKey)>=sizeof(pthread_key_t));
   pthread_key_t key;
   if(pthread_key_create(&key,NULL)!=0){ throw FXMemoryException("FXAutoThreadStorageKey::FXAutoThreadStorageKey: out of memory\n"); }
   value=(FXThreadStorageKey)key;
@@ -83,6 +80,5 @@ FXAutoThreadStorageKey::~FXAutoThreadStorageKey(){
   pthread_key_delete((pthread_key_t)value);
 #endif
   }
-
 
 }

@@ -57,6 +57,7 @@ namespace FX {
 // Initialize semaphore with given count
 FXSemaphore::FXSemaphore(FXint count){
 #if defined(WIN32)
+  FXASSERT_STATIC(sizeof(data)>=sizeof(HANDLE));
   data[0]=(FXuval)CreateSemaphore(NULL,count,0x7fffffff,NULL);
 #elif (defined(__APPLE__) || defined(__minix))
   // If this fails on your machine, determine what value of
@@ -64,8 +65,8 @@ FXSemaphore::FXSemaphore(FXint count){
   // supposed to be and mail it to: jeroen@fox-toolkit.com!!
   //FXTRACE((150,"sizeof(pthread_cond_t)=%d\n",sizeof(pthread_cond_t)));
   //FXTRACE((150,"sizeof(pthread_mutex_t)=%d\n",sizeof(pthread_mutex_t)));
-  FXASSERT(sizeof(FXuval)*9 >= sizeof(pthread_cond_t));
-  FXASSERT(sizeof(FXuval)*11 >= sizeof(pthread_mutex_t));
+  FXASSERT_STATIC(sizeof(FXuval)*9 >= sizeof(pthread_cond_t));
+  FXASSERT_STATIC(sizeof(FXuval)*11 >= sizeof(pthread_mutex_t));
   data[0]=count;
   pthread_cond_init((pthread_cond_t*)&data[1],NULL);
   pthread_mutex_init((pthread_mutex_t*)&data[10],NULL);
@@ -74,7 +75,7 @@ FXSemaphore::FXSemaphore(FXint count){
   // of sizeof(sem_t) is supposed to be on your
   // machine and mail it to: jeroen@fox-toolkit.com!!
   //FXTRACE((150,"sizeof(sem_t)=%d\n",sizeof(sem_t)));
-  FXASSERT(sizeof(data)>=sizeof(sem_t));
+  FXASSERT_STATIC(sizeof(data)>=sizeof(sem_t));
   sem_init((sem_t*)data,0,(unsigned int)count);
 #endif
   }

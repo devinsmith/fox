@@ -352,6 +352,13 @@ typedef void*                   FXInputHandle;
 typedef FXint                   FXInputHandle;
 #endif
 
+// Process handle
+#if defined(WIN32)
+typedef void*                   FXProcessID;
+#else
+typedef int                     FXProcessID;
+#endif
+
 // Thread ID type
 #if defined(WIN32)
 typedef void*                   FXThreadID;
@@ -548,7 +555,6 @@ const FXTime forever=FXLONG(9223372036854775807);
 
 #endif
 
-
 /**
 * FXASSERT() prints out a message when the expression fails,
 * and nothing otherwise.  Unlike assert(), FXASSERT() will not
@@ -574,6 +580,19 @@ const FXTime forever=FXLONG(9223372036854775807);
 #define FXVERIFY(exp) (__likely(exp)?((void)0):(void)FX::fxverify(#exp,__FILE__,__LINE__))
 #else
 #define FXVERIFY(exp) ((void)(exp))
+#endif
+
+
+/**
+* FXASSERT_STATIC performs a compile time assert (requires C++11 or newer). 
+* When assertion (which must be const expression) fails, a compile-time 
+* error message is generated.  Thus, there is no run-time overhead whatsoever.
+* In addition, the condition is checked even if code is never executed.
+*/
+#if (defined(__cplusplus) && (__cplusplus >= 201103L)) || (defined(_MSC_VER) && (_MSC_VER >= 1600))
+#define FXASSERT_STATIC(expr) static_assert(expr,#expr)
+#else
+#define FXASSERT_STATIC(expr) FXASSERT(exp)
 #endif
 
 

@@ -893,6 +893,7 @@ FXint FXJSON::next(){
       case 0xFB:
       case 0xFC:
       case 0xFD:
+      case 0xFE:
       case 0xFF:
         return ErrToken;                        // Bad token
       default:                                  // Normal characters
@@ -1136,6 +1137,7 @@ FXJSON::Error FXJSON::loadString(FXString& str){
       case 0xFB:
       case 0xFC:
       case 0xFD:
+      case 0xFE:
       case 0xFF:
         return ErrToken;                        // Bad token
       case '\\':                                // Escape next character

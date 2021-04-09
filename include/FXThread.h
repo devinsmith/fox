@@ -59,8 +59,8 @@ namespace FX {
 */
 class FXAPI FXThread : public FXRunnable {
 private:
-  volatile FXThreadID tid;
-  volatile FXbool     busy;
+  volatile FXThreadID tid;      // Handle to thread
+  volatile FXbool     busy;     // Thread is running
 private:
   static FXAutoThreadStorageKey selfKey;
 private:

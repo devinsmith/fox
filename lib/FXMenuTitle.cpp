@@ -58,7 +58,7 @@
     somehow does not allow keyboard navigation.
 */
 
-
+#define TOPIC_KEYBOARD  1009
 
 using namespace FX;
 
@@ -215,7 +215,7 @@ long FXMenuTitle::onLeftBtnRelease(FXObject*,FXSelector,void* ptr){
 // Keyboard press; forward to menu pane
 long FXMenuTitle::onKeyPress(FXObject*,FXSelector sel,void* ptr){
   if(isEnabled()){
-    FXTRACE((200,"%s::onKeyPress %p keysym=0x%04x state=%04x\n",getClassName(),this,((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
+    FXTRACE((TOPIC_KEYBOARD,"%s::onKeyPress %p keysym=0x%04x state=%04x\n",getClassName(),this,((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
     if(target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr)) return 1;
     if(pane && pane->shown() && pane->handle(pane,sel,ptr)) return 1;
     }
@@ -226,7 +226,7 @@ long FXMenuTitle::onKeyPress(FXObject*,FXSelector sel,void* ptr){
 // Keyboard release; forward to menu pane
 long FXMenuTitle::onKeyRelease(FXObject*,FXSelector sel,void* ptr){
   if(isEnabled()){
-    FXTRACE((200,"%s::onKeyRelease %p keysym=0x%04x state=%04x\n",getClassName(),this,((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
+    FXTRACE((TOPIC_KEYBOARD,"%s::onKeyRelease %p keysym=0x%04x state=%04x\n",getClassName(),this,((FXEvent*)ptr)->code,((FXEvent*)ptr)->state));
     if(target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr)) return 1;
     if(pane && pane->shown() && pane->handle(pane,sel,ptr)) return 1;
     }
@@ -236,7 +236,7 @@ long FXMenuTitle::onKeyRelease(FXObject*,FXSelector sel,void* ptr){
 
 // Hot key combination pressed
 long FXMenuTitle::onHotKeyPress(FXObject*,FXSelector,void* ptr){
-  FXTRACE((200,"%s::onHotKeyPress %p\n",getClassName(),this));
+  FXTRACE((TOPIC_KEYBOARD,"%s::onHotKeyPress %p\n",getClassName(),this));
   handle(this,FXSEL(SEL_FOCUS_SELF,0),ptr);
   return 1;
   }
@@ -244,7 +244,7 @@ long FXMenuTitle::onHotKeyPress(FXObject*,FXSelector,void* ptr){
 
 // Hot key combination released
 long FXMenuTitle::onHotKeyRelease(FXObject*,FXSelector,void*){
-  FXTRACE((200,"%s::onHotKeyRelease %p\n",getClassName(),this));
+  FXTRACE((TOPIC_KEYBOARD,"%s::onHotKeyRelease %p\n",getClassName(),this));
   if(isEnabled()){
     if(flags&FLAG_ACTIVE){
       handle(this,FXSEL(SEL_COMMAND,ID_UNPOST),NULL);
