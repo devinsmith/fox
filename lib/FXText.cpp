@@ -3,7 +3,7 @@
 *                   M u l t i - L i n e   T e x t   W i d g e t                 *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -3187,7 +3187,16 @@ FXString FXText::extractText(FXint pos,FXint num) const {
 // Grab range of style
 void FXText::extractText(FXString& text,FXint pos,FXint num) const {
   if(0<=pos && 0<=num && pos+num<=length && text.length(num)){
-    extractText(text.text(),pos,num);
+    if(pos+num<=gapstart){
+      copyElms(&text[0],buffer+pos,num);
+      }
+    else if(gapstart<=pos){
+      copyElms(&text[0],buffer+gapend-gapstart+pos,num);
+      }
+    else{
+      copyElms(&text[0],buffer+pos,gapstart-pos);
+      copyElms(&text[gapstart-pos],buffer+gapend,pos+num-gapstart);
+      }
     }
   }
 
@@ -3230,8 +3239,17 @@ FXString FXText::extractStyle(FXint pos,FXint num) const {
 
 // Grab range of style
 void FXText::extractStyle(FXString& style,FXint pos,FXint num) const {
-  if(0<=pos && 0<=num && pos+num<=length && style.length(num)){
-    extractStyle(style.text(),pos,num);
+  if(0<=pos && 0<=num && pos+num<=length && sbuffer && style.length(num)){
+    if(pos+num<=gapstart){
+      copyElms(&style[0],sbuffer+pos,num);
+      }
+    else if(gapstart<=pos){
+      copyElms(&style[0],sbuffer+gapend-gapstart+pos,num);
+      }
+    else{
+      copyElms(&style[0],sbuffer+pos,gapstart-pos);
+      copyElms(&style[gapstart-pos],sbuffer+gapend,pos+num-gapstart);
+      }
     }
   }
 
@@ -3647,19 +3665,25 @@ FXbool FXText::pasteSelection(FXbool notify){
 
     // Try UTF-8, then UTF-16, then 8859-1
     if(getDNDData(FROM_SELECTION,utf8Type,string) || getDNDData(FROM_SELECTION,utf16Type,string) || getDNDData(FROM_SELECTION,stringType,string)){
-      FXint start=cursorpos;
-      FXint end=cursorpos;
+      FXint pos=cursorpos;
+      FXint ins;
 
       // Overstrike mode, extent
       if(isOverstrike()){       // FIXME should overstrike always be block-mode?
-        end=overstruck(start,end,string.text(),string.length());
+        ins=overstruck(pos,pos,string.text(),string.length());
+        ins=replaceText(pos,ins-pos,string,notify);
+        makePositionVisible(pos+ins);
+        setCursorPos(pos+ins,notify);
+        setAnchorPos(pos+ins);
+        flashMatching();
+        return true;
         }
 
       // Replace text and move cursor
-      replaceText(start,end-start,string,notify);
-      makePositionVisible(cursorpos);
-      setCursorPos(cursorpos,notify);
-      setAnchorPos(cursorpos);
+      ins=insertText(pos,string,notify);
+      makePositionVisible(pos+ins);
+      setCursorPos(pos+ins,notify);
+      setAnchorPos(pos+ins);
       flashMatching();
       return true;
       }
@@ -3674,7 +3698,10 @@ FXbool FXText::pasteClipboard(FXbool notify){
 
   // Try UTF-8, then UTF-16, then 8859-1
   if(getDNDData(FROM_CLIPBOARD,utf8Type,string) || getDNDData(FROM_CLIPBOARD,utf16Type,string) || getDNDData(FROM_CLIPBOARD,stringType,string)){
-    FXint pos=cursorpos,ins;
+    FXint pos=cursorpos;
+    FXint ins;
+
+    // De-DOS
 #ifdef WIN32
     dosToUnix(string);
 #endif
@@ -4242,7 +4269,7 @@ void FXText::updateLines(FXint startpos,FXint endpos) const {
 
 // Repaint text range
 void FXText::updateRange(FXint startpos,FXint endpos) const {
-  FXint vx,vy,vw,b,e,tr,br,lx,rx,ty,by;
+  FXint b,e,vx,vy,vw,tr,br,lx,rx,ty,by;
   FXMINMAX(b,e,startpos,endpos);
   if(b<=visrows[nvisrows] && visrows[0]<e){
     if(b<visrows[0]) b=visrows[0];
@@ -5570,72 +5597,16 @@ long FXText::onCmdScrollCenter(FXObject*,FXSelector,void*){
   return 1;
   }
 
-#if 0
-// Insert a string
+
+// Insert a string as if typed
 long FXText::onCmdInsertString(FXObject*,FXSelector,void* ptr){
   if(isEditable()){
     FXchar* txt=(FXchar*)ptr;
     FXint len=strlen(txt);
     FXint beg=cursorpos;
     FXint end=cursorpos;
-    FXint row=cursorrow;
-    FXint col=cursorvcol;
-    FXint ins;
-
-    // If cursor position is in selection, then replace selection.
-    if(isPosSelected(cursorpos,cursorvcol)){            // FIXME empty block selection
-      beg=select.startpos;
-      end=select.endpos;
-      col=select.startcol;
-
-      // Replace block selection; also handle vertical column
-      if((select.startcol<=select.endcol) && (select.startpos<=select.endpos)){   // FIXME vertical cursor vs replace selection
-        FXint ncins=maxcolumns(txt,txt+len,tabcolumns);
-        FXint ncdel=select.endcol-select.startcol;
-        FXint nlines=countLines(beg,end);
-        FXString rep('\0',len*nlines+len+nlines);
-FXTRACE((TOPIC_TEXT,"len=%d\n",len));
-FXTRACE((TOPIC_TEXT,"nlines=%d\n",nlines));
-FXTRACE((TOPIC_TEXT,"ncins=%d\n",ncins));
-FXTRACE((TOPIC_TEXT,"ncdel=%d\n",ncdel));
-FXTRACE((TOPIC_TEXT,"col=%d\n",col));
-        replicatecolumns(&rep[0],&rep[rep.length()],txt,txt+len,(nlines+1));
-        ins=replaceTextBlock(beg,end,select.startcol,select.endcol,rep,true);
-        setCursorRowColumn(row,col+ncins,true);
-        return 1;
-        }
-
-      // Replace range selection
-      if((select.startcol>select.endcol) && (select.startpos<select.endpos)){
-        ins=replaceText(beg,end-beg,txt,len,true);
-        moveCursor(beg+ins,true);
-        return 1;
-        }
-      }
-
-    // Insert or overstrike
-    if(isOverstrike()){         // FIXME should overstrike always be block-mode?
-      end=overstruck(beg,end,txt,len);
-      }
-
-    // Replace range with incoming text
-    ins=replaceText(beg,end-beg,txt,len,true);
-    moveCursor(beg+ins,true);
-    return 1;
-    }
-  getApp()->beep();
-  return 1;
-  }
-#endif
-
-// Insert a string
-long FXText::onCmdInsertString(FXObject*,FXSelector,void* ptr){
-  if(isEditable()){
-    FXchar* txt=(FXchar*)ptr;
-    FXint len=strlen(txt);
-    FXint beg=cursorpos;
-    FXint end=cursorpos;
-    FXint cols,ins;
+    FXint rows,cols,ins;
+    FXString rep;
 
     // Position is selected
     if(isPosSelected(cursorpos,cursorvcol)){
@@ -5644,10 +5615,17 @@ long FXText::onCmdInsertString(FXObject*,FXSelector,void* ptr){
 
       // Block selection
       if(select.startcol<select.endcol){
+        rows=countLines(beg,end);
         cols=maxcolumns(txt,txt+len,tabcolumns);
-        ins=replaceTextBlock(select.startpos,select.endpos,select.startcol,select.endcol,txt,len,true);
-        beg=posFromColumn(lineStart(beg+ins),select.startcol);
-        setCursorPos(beg,true);
+        for(FXint i=0; i<rows; ++i){
+          rep.append(txt,len);
+          rep.append('\n');
+          }
+        rep.append(txt,len);
+//        ins=replaceTextBlock(select.startpos,select.endpos,select.startcol,select.endcol,txt,len,true);
+        ins=replaceTextBlock(select.startpos,select.endpos,select.startcol,select.endcol,rep,true);
+        beg=posFromColumn(lineStart(beg+ins),select.startcol+cols);
+        moveCursor(beg,true);
         return 1;
         }
 
@@ -5680,46 +5658,77 @@ long FXText::onCmdInsertString(FXObject*,FXSelector,void* ptr){
 
 // Insert newline with optional autoindent
 long FXText::onCmdInsertNewline(FXObject*,FXSelector,void*){
-  return handle(this,(options&TEXT_AUTOINDENT)?FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_INDENT):FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_ONLY),NULL);
+  if(options&TEXT_AUTOINDENT){
+    return onCmdInsertNewlineIndent(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_INDENT),NULL);
+    }
+  return onCmdInsertNewlineOnly(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_ONLY),NULL);
   }
 
 
 // Insert newline only
 long FXText::onCmdInsertNewlineOnly(FXObject*,FXSelector,void*){
-  return handle(this,FXSEL(SEL_COMMAND,ID_INSERT_STRING),(void*)"\n");
+  return onCmdInsertString(this,FXSEL(SEL_COMMAND,ID_INSERT_STRING),(void*)"\n");
   }
 
 
 // Insert a character
+// For block-select, just delete the block
 long FXText::onCmdInsertNewlineIndent(FXObject*,FXSelector,void*){
-  FXint pos=isPosSelected(cursorpos) ? select.startpos : cursorpos;
-  FXint start=lineStart(pos);
-  FXString string=extractText(start,pos-start);
-  FXint n=string.find_first_not_of(" \t\v");
-  if(0<=n) string.trunc(n);
-  string.prepend('\n');
-  return handle(this,FXSEL(SEL_COMMAND,ID_INSERT_STRING),(void*)string.text());
+  FXString string;
+  FXint start,n;
+  if(isPosSelected(cursorpos,cursorvcol)){
+    if(select.startcol>=select.endcol){
+      start=lineStart(select.startpos);
+      string="\n"+extractText(start,select.startpos-start);
+      n=string.find_first_not_of(" \t\v\n");
+      if(0<=n) string.trunc(n);
+      }
+    }
+  else{
+    start=lineStart(cursorpos);
+    string="\n"+extractText(start,cursorpos-start);
+    n=string.find_first_not_of(" \t\v\n");
+    if(0<=n) string.trunc(n);
+    }
+  return onCmdInsertString(this,FXSEL(SEL_COMMAND,ID_INSERT_STRING),(void*)string.text());
   }
 
 
 // Insert optional soft-tab
 long FXText::onCmdInsertTab(FXObject*,FXSelector,void*){
-  return handle(this,(options&TEXT_NO_TABS)?FXSEL(SEL_COMMAND,ID_INSERT_SOFTTAB):FXSEL(SEL_COMMAND,ID_INSERT_HARDTAB),NULL);
+  if(options&TEXT_NO_TABS){
+    return onCmdInsertSoftTab(this,FXSEL(SEL_COMMAND,ID_INSERT_SOFTTAB),NULL);
+    }
+  return onCmdInsertHardTab(this,FXSEL(SEL_COMMAND,ID_INSERT_HARDTAB),NULL);
   }
 
 
 // Insert hard-tab
 long FXText::onCmdInsertHardTab(FXObject*,FXSelector,void*){
-  return handle(this,FXSEL(SEL_COMMAND,ID_INSERT_STRING),(void*)"\t");
+  return onCmdInsertString(this,FXSEL(SEL_COMMAND,ID_INSERT_STRING),(void*)"\t");
   }
 
 
 // Insert soft-tab
+// The number of spaces to insert depends on the indentation level.
+//   No selection:      use indent at the cursor insert-position
+//   Range-selection:   use indent at the start of the selection
+//   Block-selection:   use the start column of the selection
 long FXText::onCmdInsertSoftTab(FXObject*,FXSelector,void*){
-  FXint pos=isPosSelected(cursorpos) ? select.startpos : cursorpos;
-  FXint indent=columnFromPos(lineStart(pos),pos);
+  FXint indent;
+  if(isPosSelected(cursorpos,cursorvcol)){
+    if(select.startcol<select.endcol){
+      indent=select.startcol;
+      }
+    else{
+      indent=columnFromPos(lineStart(select.startpos),select.startpos);
+      }
+    }
+  else{
+    indent=columnFromPos(lineStart(cursorpos),cursorpos);
+    }
   FXASSERT(0<tabcolumns && tabcolumns<MAXTABCOLUMNS);
-  return handle(this,FXSEL(SEL_COMMAND,ID_INSERT_STRING),(void*)(spaces+MAXTABCOLUMNS+indent%tabcolumns-tabcolumns));
+  return onCmdInsertString(this,FXSEL(SEL_COMMAND,ID_INSERT_STRING),(void*)(spaces+MAXTABCOLUMNS+indent%tabcolumns-tabcolumns));
   }
 
 /*******************************************************************************/

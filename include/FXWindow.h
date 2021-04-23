@@ -3,7 +3,7 @@
 *                            W i n d o w   O b j e c t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -164,9 +164,6 @@ public:
   static const FXDragType stringType;   // Clipboard text type (pre-registered)
   static const FXDragType imageType;    // Clipboard image type (pre-registered)
 protected:
-  FXWindow();
-  FXWindow(FXApp* a,FXVisual *vis);
-  FXWindow(FXApp* a,FXWindow* own,FXuint opts,FXint x,FXint y,FXint w,FXint h);
   virtual FXbool doesOverrideRedirect() const;
 protected:
 #ifdef WIN32
@@ -177,6 +174,10 @@ protected:
   void addColormapWindows();
   void remColormapWindows();
 #endif
+protected:
+  FXWindow();
+  FXWindow(FXApp* a,FXVisual *vis);
+  FXWindow(FXApp* a,FXWindow* own,FXuint opts,FXint x,FXint y,FXint w,FXint h);
 private:
   FXWindow(const FXWindow&);
   FXWindow& operator=(const FXWindow&);

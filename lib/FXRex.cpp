@@ -3,7 +3,7 @@
 *                 R e g u l a r   E x p r e s s i o n   C l a s s               *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -1119,7 +1119,7 @@ FXRex::Error FXCompile::compile(FXuchar *prog,FXchar* p,FXint m){
   FXshort  smax=0;
   FXuchar* at;
 
-  FXASSERT(OP_LAST<=256);
+  FXASSERT_STATIC(OP_LAST<=256);
 
   // Initialize parser data
   code=pc=at=prog;
@@ -1203,7 +1203,7 @@ FXRex::Error FXCompile::expression(FXshort& flags,FXshort& smin,FXshort& smax){
 
     // Update flags for expression thus far
     if(!(flg&FLG_WIDTH)) flags&=~FLG_WIDTH;
-    
+
     // Update size range
     if(smx>smax) smax=smx;
     if(smn<smin) smin=smn;
@@ -1229,7 +1229,7 @@ FXRex::Error FXCompile::branch(FXshort& flags,FXshort& smin,FXshort& smax){
 
     // Update flags for branch based on pieces seen thus far
     if(flg&FLG_WIDTH) flags|=FLG_WIDTH;
-    
+
     // Update size range
     smax=FXMIN(smax+smx,ONEINDIG);
     smin=smin+smn;

@@ -3,7 +3,7 @@
 *                          E v e n t   D i s p a t c h e r                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2019,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2019,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"

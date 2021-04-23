@@ -3,7 +3,7 @@
 *                     A p p l i c a t i o n   O b j e c t                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -336,7 +336,7 @@ FXApp* FXApp::app=NULL;
 
 
 // Copyright information
-const FXuchar FXApp::copyright[]="Copyright (C) 1997,2020 Jeroen van der Zijp. All Rights Reserved.";
+const FXuchar FXApp::copyright[]="Copyright (C) 1997,2021 Jeroen van der Zijp. All Rights Reserved.";
 
 
 // Conversion
@@ -4234,26 +4234,21 @@ void FXApp::init(int& argc,char** argv,FXbool connect){
   FXint i,j;
 
   // Verify implementation invariants
-  FXASSERT(sizeof(FXuchar)==1);
-  FXASSERT(sizeof(FXchar)==1);
-  FXASSERT(sizeof(FXushort)==2);
-  FXASSERT(sizeof(FXshort)==2);
-  FXASSERT(sizeof(FXuint)==4);
-  FXASSERT(sizeof(FXnchar)==2);
-  FXASSERT(sizeof(FXwchar)==4);
-  FXASSERT(sizeof(FXint)==4);
-  FXASSERT(sizeof(FXulong)==8);
-  FXASSERT(sizeof(FXlong)==8);
-  FXASSERT(sizeof(FXfloat)==4);
-  FXASSERT(sizeof(FXdouble)==8);
-  FXASSERT(sizeof(FXival)==sizeof(void*));
-  FXASSERT(sizeof(FXuval)==sizeof(void*));
-  FXASSERT(sizeof(FXString)==sizeof(void*));
-#ifdef WIN32
-  FXASSERT(sizeof(HWND)==sizeof(FXID));
-#else
-  FXASSERT(sizeof(Window)==sizeof(FXID));
-#endif
+  FXASSERT_STATIC(sizeof(FXuchar)==1);
+  FXASSERT_STATIC(sizeof(FXchar)==1);
+  FXASSERT_STATIC(sizeof(FXushort)==2);
+  FXASSERT_STATIC(sizeof(FXshort)==2);
+  FXASSERT_STATIC(sizeof(FXuint)==4);
+  FXASSERT_STATIC(sizeof(FXnchar)==2);
+  FXASSERT_STATIC(sizeof(FXwchar)==4);
+  FXASSERT_STATIC(sizeof(FXint)==4);
+  FXASSERT_STATIC(sizeof(FXulong)==8);
+  FXASSERT_STATIC(sizeof(FXlong)==8);
+  FXASSERT_STATIC(sizeof(FXfloat)==4);
+  FXASSERT_STATIC(sizeof(FXdouble)==8);
+  FXASSERT_STATIC(sizeof(FXival)==sizeof(void*));
+  FXASSERT_STATIC(sizeof(FXuval)==sizeof(void*));
+  FXASSERT_STATIC(sizeof(FXString)==sizeof(void*));
 
   // Check arguments
   if(argc<1 || argv==NULL || argv[0]==NULL){

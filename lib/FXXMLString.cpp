@@ -3,7 +3,7 @@
 *                             X M L   S t r i n g   I / O                       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2016,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2016,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"

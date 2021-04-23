@@ -3,7 +3,7 @@
 *                      C a l l b a c k   D i s p a t c h e r                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2006,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2006,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 ********************************************************************************/
 #ifndef DISPATCHER_H
 #define DISPATCHER_H

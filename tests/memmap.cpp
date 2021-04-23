@@ -3,7 +3,7 @@
 *                          M e m o r y   M a p   T e s t                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2004,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2004,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 ********************************************************************************/
 #include "fx.h"
 #include <stdio.h>

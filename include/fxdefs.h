@@ -3,7 +3,7 @@
 *                     FOX Definitions, Types, and Macros                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -584,8 +584,8 @@ const FXTime forever=FXLONG(9223372036854775807);
 
 
 /**
-* FXASSERT_STATIC performs a compile time assert (requires C++11 or newer). 
-* When assertion (which must be const expression) fails, a compile-time 
+* FXASSERT_STATIC performs a compile time assert (requires C++11 or newer).
+* When assertion (which must be const expression) fails, a compile-time
 * error message is generated.  Thus, there is no run-time overhead whatsoever.
 * In addition, the condition is checked even if code is never executed.
 */

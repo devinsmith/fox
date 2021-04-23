@@ -3,7 +3,7 @@
 *                  V a r a r g s   P r i n t f   R o u t i n e s                *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2002,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -345,44 +345,46 @@ static FXchar* cvt(FXchar* buffer,FXuval size,FXdouble value,FXint& decimal,FXin
   // decimal point is negative, there will be fewer digits generated,
   // and the decimal point will be adjusted accordingly.
   if(flags&FLG_FRACTION){
-    if(digits<-decimal) decimal=-digits;
+    if(decimal<-digits) decimal=-digits;
     digits+=decimal;
     }
 
-  // Don't exceed buffer space
-  digits=Math::imin(digits,size-1);
+  // Don't exceed buffer space; rounding may add 1 digit!
+  digits=Math::imin(digits,size-2);
 
-  // Move string to begin of buffer
-  while(0<digits && src<end){
-    *dst++=*src++;
-    digits--;
-    }
+  // Any digits left at all?
+  if(0<digits){
 
-  // Rounding result if using fewer digits than generated
-  if(src<end && '5'<=*src){
-    p=dst;
-    while(buffer<p){
-      if(++*--p<='9') goto n;
+    // Sweep carry, rounding forward to more significant digits.
+    // Add a leading '1' in front if the most significant digit
+    // was a '9' and we have to add to it; also add this digit
+    // to the total and shift the decimal one place to the left.
+    p=src+digits;
+    if(p<end && '5'<=*p){
       *p='0';
-      }
-    if(buffer==p){
-      *buffer='1';
-      if(flags&FLG_FRACTION){
-        if(buffer<dst) *dst='0';        // Extra zero at the end for normal mode
-        dst++;                          // Added a digit
+      while(src<p){
+        if(++*--p<='9') goto n;
+        *p='0';
         }
+      *--src='1';
       decimal++;
+      digits++;
+      }
+
+    // Copy digits to begin
+n:  while(0<digits && src<end){
+      *dst++=*src++;
+      digits--;
+      }
+
+    // And add some zeros if needed
+    while(0<digits){
+      *dst++='0';
       digits--;
       }
     }
 
-  // Need more digits
-n:while(digits>0){
-    *dst++='0';
-    digits--;
-    }
-
-  FXASSERT(dst<end);
+  FXASSERT(dst<buffer+size-1);
 
   // Terminate
   *dst='\0';

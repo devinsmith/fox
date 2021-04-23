@@ -3,7 +3,7 @@
 *                                 Test Console Widget                           *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2006,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2006,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 ********************************************************************************/
 #include "fx.h"
 #include <stdio.h>

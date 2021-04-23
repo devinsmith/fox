@@ -3,7 +3,7 @@
 *                    B i t m a p   V i e w e r   D e m o                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 ********************************************************************************/
 #include "fx.h"
 #include <stdio.h>

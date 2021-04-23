@@ -3,7 +3,7 @@
 *                         C u r s o r - O b j e c t                             *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -141,6 +141,8 @@ void FXCursor::create(){
       // Mapping to standard WIN32 cursors
       const LPCTSTR stock[]={IDC_ARROW,IDC_ARROW,IDC_ARROW,IDC_IBEAM,IDC_WAIT,IDC_CROSS,IDC_SIZENS,IDC_SIZEWE,IDC_SIZEALL};
 
+      FXASSERT_STATIC(sizeof(FXID)>=sizeof(HCURSOR));
+
       // Building stock cursor
       if(options&CURSOR_STOCK){
         FXTRACE((TOPIC_CREATION,"%s::create: stock cursor\n",getClassName()));
@@ -227,6 +229,8 @@ void FXCursor::create(){
 
       // Mapping to standard X11 cursors
       const FXuint stock[]={XC_left_ptr,XC_left_ptr,XC_right_ptr,XC_xterm,XC_watch,XC_crosshair,XC_sb_h_double_arrow,XC_sb_v_double_arrow,XC_fleur};
+
+      FXASSERT_STATIC(sizeof(FXID)>=sizeof(Cursor));
 
       // Building stock cursor
       if(options&CURSOR_STOCK){

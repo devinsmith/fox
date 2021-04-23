@@ -3,7 +3,7 @@
 *                           S p i n l o c k   C l a s s                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2004,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2004,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -99,8 +99,8 @@ public:
   /// Destroy and unlock associated spinlock
   ~FXScopedSpinLock(){ unlock(); }
   };
-  
-  
+
+
 /**
 * The reverse spin lock unlocks its associated FXSpinLock when entering
 * the scope, and automatically relocks it upon exiting the scope.

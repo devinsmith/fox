@@ -3,7 +3,7 @@
 *                  C o n v e r t   S t r i n g   T o   T i m e                  *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2019,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2019,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -266,7 +266,7 @@ static const FXchar *convertnanoseconds(FXint& result,const FXchar *string,FXint
   if('0'<=*string && *string<='9' && digs){     // Need at least 1 digit
     do{
       result+=(*string++-'0')*w;
-      w/=10;                                  
+      w/=10;
       }
     while('0'<=*string && *string<='9' && --digs);
     return string;
@@ -618,7 +618,7 @@ nxt:  ch=*format++;
           if(!string) return NULL;
           continue;
           }
-        if(ch=='u'){            // Microseconds 
+        if(ch=='u'){            // Microseconds
           string=convertnanoseconds(st.nano,string,6);
           if(!string) return NULL;
           continue;

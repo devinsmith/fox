@@ -3,7 +3,7 @@
 *                           O p e n G L   V i e w e r                           *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -133,6 +133,7 @@
   - Zoom centered on point at which you started the zoom operation.
 */
 
+#define TOPIC_KEYBOARD  1009
 
 // Size of pick buffer
 #define MAX_PICKBUF    1024
@@ -1923,12 +1924,12 @@ FXfloat curve(FXfloat x,FXfloat theta){
 
 // Space ball motion
 long FXGLViewer::onSpaceBallMotion(FXObject*,FXSelector,void* ptr){
-  FXEvent* event=(FXEvent*)ptr;
   const FXVec3f xaxis(1.0f,0.0f,0.0f);
   const FXVec3f yaxis(0.0f,1.0f,0.0f);
   const FXVec3f zaxis(0.0f,0.0f,1.0f);
-  FXTRACE((100,"onSpaceBallMotion Mask=%08x\n",event->state));
   if(isEnabled()){
+    FXEvent* event=(FXEvent*)ptr;
+    FXTRACE((100,"%s::onSpaceBallMotion Mask=%08x\n",getClassName(),event->state));
     if(target && target->tryHandle(this,FXSEL(SEL_SPACEBALLMOTION,message),ptr)) return 1;
     //FXTRACE((1,"values: %+3d %+3d %+3d %+3d %+3d %+3d\n",event->values[0],event->values[1],event->values[2],event->values[3],event->values[4],event->values[5]));
     FXQuatf q;
@@ -1958,9 +1959,10 @@ long FXGLViewer::onSpaceBallMotion(FXObject*,FXSelector,void* ptr){
 
 // Handle keyboard press/release
 long FXGLViewer::onKeyPress(FXObject*,FXSelector,void* ptr){
-  FXEvent* event=(FXEvent*)ptr;
   flags&=~FLAG_TIP;
   if(isEnabled()){
+    FXEvent* event=(FXEvent*)ptr;
+    FXTRACE((TOPIC_KEYBOARD,"%s::onKeyPress keysym=0x%04x state=%04x\n",getClassName(),event->code,event->state));
     if(target && target->tryHandle(this,FXSEL(SEL_KEYPRESS,message),ptr)) return 1;
     switch(event->code){
       case KEY_Shift_L:
@@ -1994,8 +1996,9 @@ long FXGLViewer::onKeyPress(FXObject*,FXSelector,void* ptr){
 
 // Key release
 long FXGLViewer::onKeyRelease(FXObject*,FXSelector,void* ptr){
-  FXEvent* event=(FXEvent*)ptr;
   if(isEnabled()){
+    FXEvent* event=(FXEvent*)ptr;
+    FXTRACE((TOPIC_KEYBOARD,"%s::onKeyRelease keysym=0x%04x state=%04x\n",getClassName(),event->code,event->state));
     if(target && target->tryHandle(this,FXSEL(SEL_KEYRELEASE,message),ptr)) return 1;
     switch(event->code){
       case KEY_Shift_L:

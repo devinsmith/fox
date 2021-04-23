@@ -3,7 +3,7 @@
 *                         F O X   E v e n t   L o o p                           *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2019,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2019,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -38,7 +38,7 @@
   - Manage nested event loops.
 
   - Exceptions will unroll through event loops.
-  
+
   - FIXME Active FXEventLoop is referenced by member variable FXEventDispatcher.
 
 */

@@ -3,7 +3,7 @@
 *                            W i n d o w   O b j e c t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -1277,6 +1277,8 @@ void FXWindow::create(){
         if(owner) hParent=(HWND)owner->id();
         }
 
+      FXASSERT_STATIC(sizeof(FXID)>=sizeof(HWND));
+
       // Create this window
       xid=CreateWindowEx(dwExStyle,(TCHAR*)GetClass(),NULL,dwStyle,xpos,ypos,FXMAX(width,1),FXMAX(height,1),hParent,NULL,(HINSTANCE)getApp()->getDisplay(),this);
 
@@ -1374,6 +1376,8 @@ void FXWindow::create(){
         wattr.cursor=defaultCursor->id();
         mask|=CWCursor;
         }
+
+      FXASSERT_STATIC(sizeof(FXID)>=sizeof(Window));
 
       // Finally, create the window
       xid=XCreateWindow((Display*)getApp()->getDisplay(),parent->id(),xpos,ypos,FXMAX(width,1),FXMAX(height,1),0,visual->depth,InputOutput,(Visual*)visual->visual,mask,&wattr);

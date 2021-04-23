@@ -3,7 +3,7 @@
 *                   V a r a r g s   S c a n f   R o u t i n e s                 *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2002,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *

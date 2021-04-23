@@ -3,7 +3,7 @@
 *                         F O X   E v e n t   L o o p                           *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2019,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2019,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -45,6 +45,9 @@ public:
     ModalForWindow=1,
     ModalForPopup=2
     };
+private:
+  FXEventLoop(const FXEventLoop&);
+  FXEventLoop& operator=(const FXEventLoop&);
 public:
 
   /// Initialize event loop
@@ -52,7 +55,7 @@ public:
 
   /// Set dispatcher
   void setDispatcher(FXEventDispatcher* disp){ dispatcher=disp; }
-  
+
   /// Get dispatcher
   FXEventDispatcher* getDispatcher() const { return dispatcher; }
 

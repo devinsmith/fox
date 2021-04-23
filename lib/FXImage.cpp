@@ -3,7 +3,7 @@
 *                             I m a g e    O b j e c t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -316,12 +316,16 @@ void FXImage::create(){
 
 #ifdef WIN32
 
+      FXASSERT_STATIC(sizeof(FXID)>=sizeof(HBITMAP));
+
       // Create a bitmap compatible with current display
       HDC hdc=::GetDC(GetDesktopWindow());
       xid=CreateCompatibleBitmap(hdc,FXMAX(width,1),FXMAX(height,1));
       ::ReleaseDC(GetDesktopWindow(),hdc);
 
 #else
+
+      FXASSERT_STATIC(sizeof(FXID)>=sizeof(Pixmap));
 
       // Make pixmap
       xid=XCreatePixmap(DISPLAY(getApp()),XDefaultRootWindow(DISPLAY(getApp())),FXMAX(width,1),FXMAX(height,1),visual->depth);

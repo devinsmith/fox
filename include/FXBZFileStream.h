@@ -3,7 +3,7 @@
 *                      B Z F i l e S t r e a m   C l a s s e s                  *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2020 by Lyle Johnson. All Rights Reserved.                 *
+* Copyright (C) 1999,2021 by Lyle Johnson. All Rights Reserved.                 *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -41,6 +41,9 @@ private:
 protected:
   virtual FXuval writeBuffer(FXuval count);
   virtual FXuval readBuffer(FXuval count);
+private:
+  FXBZFileStream(const FXBZFileStream&);
+  FXBZFileStream& operator=(const FXBZFileStream&);
 public:
 
   /// Create BZIP2 file stream

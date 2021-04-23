@@ -3,7 +3,7 @@
 *                          T h r e a d   S u p p o r t                          *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2004,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2004,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -61,18 +61,6 @@ class FXAPI FXThread : public FXRunnable {
 private:
   volatile FXThreadID tid;      // Handle to thread
   volatile FXbool     busy;     // Thread is running
-private:
-  static FXAutoThreadStorageKey selfKey;
-private:
-  FXThread(const FXThread&);
-  FXThread &operator=(const FXThread&);
-#if defined(WIN32)
-  static unsigned int CALLBACK function(void*);
-#else
-  static void* function(void*);
-#endif
-protected:
-  static void self(FXThread* t);
 public:
 
   /// Thread priority levels
@@ -94,6 +82,19 @@ public:
     PolicyRoundRobin 	/// Round-robin scheduling
     };
 
+private:
+  FXThread(const FXThread&);
+  FXThread &operator=(const FXThread&);
+private:
+  static void self(FXThread* t);
+private:
+  static FXAutoThreadStorageKey selfKey;
+private:
+#if defined(WIN32)
+  static unsigned int CALLBACK function(void*);
+#else
+  static void* function(void*);
+#endif
 public:
 
   /// Initialize thread object.

@@ -3,7 +3,7 @@
 *                  F i l e   S e l e c t i o n   W i d g e t                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2020 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -358,7 +358,7 @@ FXString FXFileSelector::decodeFilename(const FXString& string,FXint n){
   FXint p=0;
   while(p<string.length()){
     if(' '<string[p]){
-      FXint pp=p; 
+      FXint pp=p;
       FXint q=0;
 
       // Parse over enquoted file
@@ -384,7 +384,7 @@ FXString FXFileSelector::decodeFilename(const FXString& string,FXint n){
       // Found n-th filename encoding; decode it
       if(--n<0){
         result.length(q);
-        p=pp; 
+        p=pp;
         q=0;
 
         // Parse and decode file
