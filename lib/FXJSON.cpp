@@ -1418,7 +1418,6 @@ FXJSON::Error FXJSON::loadArray(FXVariant& var){
 // Load variant
 FXJSON::Error FXJSON::loadVariant(FXVariant& var){
   FXString value(rptr,sptr-rptr);
-  FXbool ok=false;
   Error err;
   switch(token){
   case TK_EOF:                                  // Unexpected end of file
@@ -1437,18 +1436,15 @@ FXJSON::Error FXJSON::loadVariant(FXVariant& var){
     token=next();
     return ErrOK;
   case TK_INT:
-    var=value.toLong(10,&ok);
-    if(!ok) return ErrNumber;                   // Numeric conversion error
+    var=value.toLong(10);
     token=next();
     return ErrOK;
   case TK_HEX:
-    var=value.toLong(16,&ok);
-    if(!ok) return ErrNumber;                   // Numeric conversion error
+    var=value.toLong(16);
     token=next();
     return ErrOK;
   case TK_REAL:
-    var=value.toDouble(&ok);
-    if(!ok) return ErrNumber;                   // Numeric conversion error
+    var=value.toDouble();
     token=next();
     return ErrOK;
   case TK_INF:                                  // To infinity...

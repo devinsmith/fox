@@ -132,7 +132,7 @@ void FXGLContext::create(){
       // I hope I didn't get this backward; the new context obviously has no
       // display lists yet, but the old one may have, as it has already been around
       // for a while.  If you see this fail and can't explain why, then that might
-      // be what's going on.  Report this to jeroen@fox-toolkit.com
+      // be what's going on.  Report this to jeroen@fox-toolkit.net
       if(shared && !wglShareLists((HGLRC)shared->id(),(HGLRC)xid)){
         throw FXWindowException("unable to share GL context.");
         }

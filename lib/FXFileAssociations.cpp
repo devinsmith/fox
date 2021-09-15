@@ -210,10 +210,12 @@ FXFileAssoc* FXFileAssociations::parse(const FXString& assoc){
       // Parse description
       result->extension=assoc.section(';',1);
 
-      // Get icon names
+      // Big icon closed and open
       string=assoc.section(';',2);
       bigname=string.section(':',0);
       bignameopen=string.section(':',1);
+
+      // Small icon closed and open
       string=assoc.section(';',3);
       mininame=string.section(':',0);
       mininameopen=string.section(':',1);

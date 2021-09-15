@@ -48,7 +48,7 @@ FXSpinLock::FXSpinLock(){
 #elif defined(__APPLE__)
   // If this fails on your machine, determine what value
   // of sizeof(pthread_mutex_t) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.com!!
+  // machine and mail it to: jeroen@fox-toolkit.net!!
   //FXTRACE((150,"sizeof(OSSpinLock)=%d\n",sizeof(OSSpinLock)));
   FXASSERT_STATIC(sizeof(data)>=sizeof(OSSpinLock));
   data[0]=data[1]=data[2]=data[3]=0;
@@ -56,7 +56,7 @@ FXSpinLock::FXSpinLock(){
 #else
   // If this fails on your machine, determine what value
   // of sizeof(pthread_spinlock_t) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.com!!
+  // machine and mail it to: jeroen@fox-toolkit.net!!
   //FXTRACE((150,"sizeof(pthread_spinlock_t)=%d\n",sizeof(pthread_spinlock_t)));
   FXASSERT_STATIC(sizeof(data)>=sizeof(pthread_spinlock_t));
   data[0]=data[1]=data[2]=data[3]=0;

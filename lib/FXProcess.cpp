@@ -116,6 +116,8 @@
     This means setting up some posix_spawn_file_actions and posix_spawnattr to
     deal with file descriptors, signal masks, process groups, etc.
     Need POSIX >= 2008 for this.
+
+  - Maybe pidfd_open() is useful to obtain waitable handle to process.
 */
 
 using namespace FX;

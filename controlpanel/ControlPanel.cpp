@@ -620,6 +620,17 @@ long FXDesktopSetup::onCmdSelectCommand(FXObject*,FXSelector,void*){
   if(!newcommand.empty()){
     filebinding.command=newcommand;
     }
+#if 0
+  FXString oldcommand=SUGGESTED_FOLDER;
+  FXString newcommand;
+  if(!filebinding.command.empty()){
+    oldcommand=FXPath::dequote(filebinding.command);
+    }
+  newcommand=FXFileDialog::getOpenFilename(this,tr("Select Command"),oldcommand,SUGGESTED_PATTERNS);
+  if(!newcommand.empty()){
+    filebinding.command=FXPath::enquote(newcommand);
+    }
+#endif
   return 1;
   }
 

@@ -90,10 +90,10 @@ namespace FXPath {
   * Perform tilde or environment variable expansion.
   * A prefix of the form ~ or ~user is expanded to the user's home directory.
   * Environment variables of the form $HOME or ${HOME} are expanded by
-  * substituting the value of the variable.
+  * substituting the value of the variable, recusively up to given level.
   * On Windows, only environment variables of the form %HOME% are expanded.
   */
-  extern FXAPI FXString expand(const FXString& file);
+  extern FXAPI FXString expand(const FXString& file,FXint level=4);
 
   /**
  * Convert a foreign path(s) or paths to local conventions,

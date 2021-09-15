@@ -62,7 +62,7 @@ FXSemaphore::FXSemaphore(FXint count){
 #elif (defined(__APPLE__) || defined(__minix))
   // If this fails on your machine, determine what value of
   // sizeof(pthread_cond_t) and sizeof(pthread_mutex_t) is
-  // supposed to be and mail it to: jeroen@fox-toolkit.com!!
+  // supposed to be and mail it to: jeroen@fox-toolkit.net!!
   //FXTRACE((150,"sizeof(pthread_cond_t)=%d\n",sizeof(pthread_cond_t)));
   //FXTRACE((150,"sizeof(pthread_mutex_t)=%d\n",sizeof(pthread_mutex_t)));
   FXASSERT_STATIC(sizeof(FXuval)*9 >= sizeof(pthread_cond_t));
@@ -73,7 +73,7 @@ FXSemaphore::FXSemaphore(FXint count){
 #else
   // If this fails on your machine, determine what value
   // of sizeof(sem_t) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.com!!
+  // machine and mail it to: jeroen@fox-toolkit.net!!
   //FXTRACE((150,"sizeof(sem_t)=%d\n",sizeof(sem_t)));
   FXASSERT_STATIC(sizeof(data)>=sizeof(sem_t));
   sem_init((sem_t*)data,0,(unsigned int)count);

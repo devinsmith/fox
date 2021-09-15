@@ -41,12 +41,16 @@
 */
 
 // Bitmap compression values
-#define BIH_RGB       0         // RGB mode
-#define BIH_RLE8      1         // 8-bit/pixel rle mode
-#define BIH_RLE4      2         // 4-bit/pixel rle mode
-#define BIH_BITFIELDS 3         // Bit field mode
-#define BIH_JPEG      4         // Not supported
-#define BIH_PNG       5         // Not supported
+#define BIH_RGB            0    // RGB mode
+#define BIH_RLE8           1    // 8-bit/pixel rle mode
+#define BIH_RLE4           2    // 4-bit/pixel rle mode
+#define BIH_BITFIELDS      3    // Bit field mode
+#define BIH_JPEG           4    // Not supported
+#define BIH_PNG            5    // Not supported
+#define BIH_ALPHABITFIELDS 6    // RGBA bit field masks
+#define BIH_CMYK           11   // none
+#define BIH_CMYKRLE8       12   // RLE-8
+#define BIH_CMYKRLE8       13   // RLE-4
 
 #define RLE_ESC       0         // RLE escape sequence
 #define RLE_LINE      0         // RLE end of line
@@ -525,7 +529,7 @@ FXbool fxloadBMP(FXStream& store,FXColor*& data,FXint& width,FXint& height){
     FXTRACE((100,"fxloadBMP: biSize=%d biWidth=%d biHeight=%d biPlanes=%d biBitCount=%d biCompression=%d biSizeImage=%u biClrUsed=%u biClrImportant=%u\n",bmi.biSize,bmi.biWidth,bmi.biHeight,bmi.biPlanes,bmi.biBitCount,bmi.biCompression,bmi.biSizeImage,bmi.biClrUsed,bmi.biClrImportant));
 
     // Check for sensible inputs
-    if(bmi.biPlanes==1 && 0<bmi.biWidth && 0<bmi.biHeight && bmi.biClrUsed<=256){
+    if(bmi.biPlanes==1 && 0<bmi.biWidth && 0<bmi.biHeight && bmi.biClrUsed<=256 && bmi.biCompression<=BIH_RLE4){
 
       // Width and height
       width=bmi.biWidth;
@@ -576,7 +580,7 @@ FXbool fxloadDIB(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   FXTRACE((100,"fxloadBMPStream: biSize=%d biWidth=%d biHeight=%d biPlanes=%d biBitCount=%d biCompression=%d biSizeImage=%u biClrUsed=%u biClrImportant=%u\n",bmi.biSize,bmi.biWidth,bmi.biHeight,bmi.biPlanes,bmi.biBitCount,bmi.biCompression,bmi.biSizeImage,bmi.biClrUsed,bmi.biClrImportant));
 
   // Check for sensible inputs
-  if(bmi.biPlanes==1 && 0<bmi.biWidth && 0<bmi.biHeight && bmi.biClrUsed<=256){
+  if(bmi.biPlanes==1 && 0<bmi.biWidth && 0<bmi.biHeight && bmi.biClrUsed<=256 && bmi.biCompression<=BIH_RLE4){
 
     // Width and height
     width=bmi.biWidth;
@@ -811,7 +815,7 @@ FXbool fxloadICOStream(FXStream& store,FXColor*& data,FXint& width,FXint& height
   FXTRACE((100,"fxloadICOStream: biSize=%d biWidth=%d biHeight=%d biBitCount=%d biCompression=%d biSizeImage=%d biClrUsed=%d\n",bmi.biSize,bmi.biWidth,bmi.biHeight,bmi.biBitCount,bmi.biCompression,bmi.biSizeImage,bmi.biClrUsed));
 
   // Check for sensible inputs
-  if(bmi.biPlanes==1 && 0<bmi.biWidth && 0<bmi.biHeight && bmi.biClrUsed<=256){
+  if(bmi.biPlanes==1 && 0<bmi.biWidth && 0<bmi.biHeight && bmi.biClrUsed<=256 && bmi.biCompression<=BIH_RLE4){
 
     // Width and height
     width=bmi.biWidth;

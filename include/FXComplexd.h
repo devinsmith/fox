@@ -128,7 +128,6 @@ inline FXComplexd exp(const FXComplexd& c){ return polar(Math::exp(c.real()),c.i
 inline FXComplexd log(const FXComplexd& c){ return FXComplexd(Math::log(abs(c)),arg(c)); }
 
 
-
 /// Equality between complex and real
 inline FXbool operator==(const FXComplexd& c,FXdouble r){ return c.real()==r && c.imag()==0.0; }
 inline FXbool operator!=(const FXComplexd& c,FXdouble r){ return c.real()!=r || c.imag()!=0.0; }

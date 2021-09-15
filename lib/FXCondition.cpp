@@ -40,13 +40,13 @@ FXCondition::FXCondition(){
 #if defined(WIN32) && (_WIN32_WINNT >= 0x0600)    // Vista or newer
   // If this fails on your machine, determine what value
   // of sizeof(pthread_cond_t) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.com!!
+  // machine and mail it to: jeroen@fox-toolkit.net!!
   FXASSERT_STATIC(sizeof(data)>=sizeof(CONDITION_VARIABLE));
   InitializeConditionVariable((CONDITION_VARIABLE*)data);
 #elif defined(WIN32)
   // If this fails on your machine, determine what value
   // of sizeof(pthread_cond_t) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.com!!
+  // machine and mail it to: jeroen@fox-toolkit.net!!
   //FXTRACE((150,"sizeof(CRITICAL_SECTION)+sizeof(HANDLE)+sizeof(HANDLE)+sizeof(FXuval)=%d\n",sizeof(CRITICAL_SECTION)+sizeof(HANDLE)+sizeof(HANDLE)+sizeof(FXuval)));
   FXASSERT_STATIC(sizeof(data)>=sizeof(CRITICAL_SECTION)+sizeof(HANDLE)+sizeof(HANDLE)+sizeof(FXuval));
   data[0]=(FXuval)CreateEvent(NULL,0,0,NULL);                   // Wakes one, autoreset
@@ -56,7 +56,7 @@ FXCondition::FXCondition(){
 #else
   // If this fails on your machine, determine what value
   // of sizeof(pthread_cond_t) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.com!!
+  // machine and mail it to: jeroen@fox-toolkit.net!!
   //FXTRACE((150,"sizeof(pthread_cond_t)=%d\n",sizeof(pthread_cond_t)));
   FXASSERT_STATIC(sizeof(data)>=sizeof(pthread_cond_t));
   pthread_cond_init((pthread_cond_t*)data,NULL);

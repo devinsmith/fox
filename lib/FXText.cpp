@@ -718,18 +718,19 @@ FXint FXText::wrap(FXint start) const {
 // otherwise, count rows from start of row containing position to the
 // first visible line, or from the last visible line to the position.
 FXint FXText::rowFromPos(FXint pos) const {
+  FXint maxrows=Math::imin(nrows-toprow-1,nvisrows);
   FXint row=0;
   if(pos<visrows[0]){                                                   // Above visible buffer
     if(pos<=0) return 0;
     return toprow-countRows(rowStart(pos),visrows[0]);
     }
-  if(visrows[nvisrows]<pos){                                            // Below visible buffer
+  if(visrows[maxrows]<=pos){                                            // Below visible buffer
     if(pos>=length) return nrows-1;
-    return toprow+nvisrows-1+countRows(visrows[nvisrows-1],rowStart(pos));
+    return toprow+maxrows+countRows(visrows[maxrows],rowStart(pos));
     }
-  while(row+1<nvisrows && visrows[row+1]<=pos && visrows[row]<visrows[row+1]) row++;
-  FXASSERT(0<=row && row<nvisrows);
-  FXASSERT(visrows[row]<=pos && pos<=visrows[row+1]);
+  while(row<maxrows && visrows[row+1]<=pos) row++;
+  FXASSERT(0<=row && row<=nvisrows);
+  FXASSERT(countRows(visrows[0],rowStart(pos))==row);
   return toprow+row;
   }
 
@@ -1773,7 +1774,8 @@ FXint FXText::getYOfRowColumn(FXint row,FXint) const {
 
 // Make line containing pos the top visible line
 void FXText::setTopLine(FXint pos){
-  setPosition(pos_x,-rowFromPos(pos)*font->getFontHeight());
+  FXint h=font->getFontHeight();
+  setPosition(pos_x,-rowFromPos(pos)*h);
   }
 
 
@@ -1785,7 +1787,8 @@ FXint FXText::getTopLine() const {
 
 // Make line containing pos the bottom visible line
 void FXText::setBottomLine(FXint pos){
-  setPosition(pos_x,getVisibleHeight()-marginbottom-margintop-font->getFontHeight()-rowFromPos(pos)*font->getFontHeight());
+  FXint h=font->getFontHeight();
+  setPosition(pos_x,getVisibleHeight()-marginbottom-margintop-h-rowFromPos(pos)*h);
   }
 
 
@@ -1797,7 +1800,8 @@ FXint FXText::getBottomLine() const {
 
 // Center line containing pos to center of the screen
 void FXText::setCenterLine(FXint pos){
-  setPosition(pos_x,((getVisibleHeight()-marginbottom-margintop)/2)-rowFromPos(pos)*font->getFontHeight());
+  FXint h=font->getFontHeight();
+  setPosition(pos_x,((getVisibleHeight()-marginbottom-margintop)/2)-rowFromPos(pos)*h);
   }
 
 
@@ -2289,13 +2293,6 @@ void FXText::replace(FXint pos,FXint del,const FXchar *text,FXint ins,FXint styl
   textHeight=textHeight+hins-hdel;
   textWidth=FXMAX(textWidth,wins);
 
-  // Reconcile scrollbars
-  placeScrollBars(width-barwidth,height);
-
-  // Fix selection ranges
-  adjustSelection(select,pos,del,ins);
-  adjustSelection(hilite,pos,del,ins);
-
   // Keep anchorpos at same place relative to its surrounding text.
   // When inside the changed region, move it to the end of the change.
   if(wbeg<=anchorpos){
@@ -2337,6 +2334,14 @@ void FXText::replace(FXint pos,FXint del,const FXchar *text,FXint ins,FXint styl
   // Hopefully it all still makes sense
   FXASSERT(0<=anchorpos && anchorpos<=length);
   FXASSERT(0<=cursorpos && cursorpos<=length);
+
+  // Fix selection ranges
+  adjustSelection(select,pos,del,ins);
+  adjustSelection(hilite,pos,del,ins);
+
+  // Reconcile scrollbars
+  // Must be done AFTER adjusting cursor location
+  placeScrollBars(width-barwidth,height);
 
   // Forget preferred column
   prefcol=-1;

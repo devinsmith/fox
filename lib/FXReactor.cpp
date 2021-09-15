@@ -105,6 +105,11 @@
     may be multiple FXReactors, each one handling a different, non-overlapping set of
     signals.
 
+  - Look into whether timerfd_create() may have some advantages for timers, as opposed
+    to falling out of epoll system call after a set time (less checking?).
+
+  - If using epoll() instead of select() or pselect(), we may want to raise
+    RLIMIT_NOFILE as we're able to go beyond FD_SETSIZE.
 */
 
 // Bad handle value

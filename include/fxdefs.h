@@ -592,7 +592,7 @@ const FXTime forever=FXLONG(9223372036854775807);
 #if (defined(__cplusplus) && (__cplusplus >= 201103L)) || (defined(_MSC_VER) && (_MSC_VER >= 1600))
 #define FXASSERT_STATIC(expr) static_assert(expr,#expr)
 #else
-#define FXASSERT_STATIC(expr) FXASSERT(exp)
+#define FXASSERT_STATIC(expr) FXASSERT(expr)
 #endif
 
 
