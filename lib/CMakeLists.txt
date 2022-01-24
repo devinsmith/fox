@@ -1174,10 +1174,8 @@ if(WITH_OPENJPEG)
 endif()
 
 if(WITH_OPENGL)
-  pkg_check_modules(EPOXY REQUIRED epoxy)
   target_compile_definitions(fox PUBLIC -DHAVE_GL_H)
-  list(APPEND LIBRARIES ${EPOXY_LIBRARIES})
-  add_definitions(-DHAVE_EPOXY)
+  #  list(APPEND LIBRARIES ${EPOXY_LIBRARIES})
 endif()
 
 if (OPENGL_GLU_FOUND)
