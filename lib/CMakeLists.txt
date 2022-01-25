@@ -1194,7 +1194,7 @@ endif()
 
 # Win32 specifics
 if (WIN32)
-  list(APPEND LIBRARIES winmm)
+  list(APPEND LIBRARIES winmm imm32)
 endif()
 
 target_include_directories(fox PUBLIC ${PROJECT_SOURCE_DIR}/include)
