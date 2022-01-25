@@ -1192,6 +1192,11 @@ if(NOT WITH_XIM)
   add_definitions(-DNO_XIM)
 endif()
 
+# Win32 specifics
+if (WIN32)
+  list(APPEND LIBRARIES winmm)
+endif()
+
 target_include_directories(fox PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(fox PRIVATE ${X11_LIBRARIES} ${LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 
