@@ -40,7 +40,7 @@ jobs:
             build_type: "Release",
             cc: "gcc",
             cxx: "g++",
-            generators: "Unix Makefiles",
+            generators: "Ninja",
             archiver: "7z a",
             artifact: "ubuntu_gcc.7z"
           }
