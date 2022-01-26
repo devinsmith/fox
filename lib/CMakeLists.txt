@@ -1199,7 +1199,7 @@ endif()
 
 if(MSVC)
   # Suggest compiling with intrinsics on.
-  target_compile_options(fox PRIVATE /Oi)
+  target_compile_options(fox PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS /DUNICODE)
 endif()
 
 target_include_directories(fox PUBLIC ${PROJECT_SOURCE_DIR}/include)
@@ -1217,12 +1217,11 @@ add_custom_command(
 set_target_properties(fox PROPERTIES VERSION ${fox-toolkit_VERSION} SOVERSION ${fox-toolkit_VERSION_PATCH})
 set_target_properties(fox PROPERTIES OUTPUT_NAME fox-${fox-toolkit_VERSION_MAJOR}.${fox-toolkit_VERSION_MINOR})
 
-# don't distribute for cfox
-# install(TARGETS cfox
-#        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#        )
-# install(FILES ${HEADERS} DESTINATION include/cfox-${cfox_VERSION_MAJOR}.${cfox_VERSION_MINOR})
+install(TARGETS fox
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        )
+install(FILES ${HEADERS} DESTINATION include/fox-${fox-toolkit_VERSION_MAJOR}.${fox-toolkit_VERSION_MINOR})
 
 
 
