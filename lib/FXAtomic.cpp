@@ -22,7 +22,11 @@
 #include "fxver.h"
 #include "fxdefs.h"
 #include "FXAtomic.h"
+#if defined(WIN32) && (_MSC_VER >= 1500)
+#include <intrin.h>
 
+#pragma intrinsic(_InterlockedAdd64)
+#endif
 /*
   Notes:
 

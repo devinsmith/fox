@@ -1194,7 +1194,12 @@ endif()
 
 # Win32 specifics
 if (WIN32)
-  list(APPEND LIBRARIES winmm imm32)
+  list(APPEND LIBRARIES winmm imm32 wsock32)
+endif()
+
+if(MSVC)
+  # Suggest compiling with intrinsics on.
+  target_compile_options(fox PRIVATE /Oi)
 endif()
 
 target_include_directories(fox PUBLIC ${PROJECT_SOURCE_DIR}/include)
