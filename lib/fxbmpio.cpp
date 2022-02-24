@@ -3,7 +3,7 @@
 *                          B M P   I n p u t / O u t p u t                      *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -475,7 +475,7 @@ FXbool fxloadBMP(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   FXushort ss;
 
   // Null out
-  data=NULL;
+  data=nullptr;
   width=0;
   height=0;
 
@@ -556,7 +556,7 @@ FXbool fxloadDIB(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   FXint colors;
 
   // Null out
-  data=NULL;
+  data=nullptr;
   width=0;
   height=0;
 
@@ -704,7 +704,7 @@ FXbool fxloadICO(FXStream& store,FXColor*& data,FXint& width,FXint& height,FXint
   FXint colors;
 
   // Null out
-  data=NULL;
+  data=nullptr;
   width=0;
   height=0;
   xspot=-1;
@@ -788,7 +788,7 @@ FXbool fxloadICOStream(FXStream& store,FXColor*& data,FXint& width,FXint& height
   FXint colors;
 
   // Null out
-  data=NULL;
+  data=nullptr;
   width=0;
   height=0;
 

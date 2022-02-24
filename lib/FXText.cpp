@@ -3,7 +3,7 @@
 *                   M u l t i - L i n e   T e x t   W i d g e t                 *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -319,9 +319,9 @@ static const FXchar spaces[MAXTABCOLUMNS+1]="                                ";
 // For deserialization
 FXText::FXText(){
   flags|=FLAG_ENABLED|FLAG_DROPTARGET;
-  buffer=NULL;
-  sbuffer=NULL;
-  visrows=NULL;
+  buffer=nullptr;
+  sbuffer=nullptr;
+  visrows=nullptr;
   length=0;
   nvisrows=0;
   nrows=1;
@@ -357,7 +357,7 @@ FXText::FXText(){
   tabcolumns=8;
   barwidth=0;
   barcolumns=0;
-  font=NULL;
+  font=nullptr;
   textColor=0;
   selbackColor=0;
   seltextColor=0;
@@ -372,7 +372,7 @@ FXText::FXText(){
   delimiters=textDelimiters;
   vrows=0;
   vcols=0;
-  hilitestyles=NULL;
+  hilitestyles=nullptr;
   blink=FLAG_CARET;
   matchtime=0;
   grabx=0;
@@ -388,7 +388,7 @@ FXText::FXText(FXComposite *p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,F
   target=tgt;
   message=sel;
   callocElms(buffer,MINSIZE);
-  sbuffer=NULL;
+  sbuffer=nullptr;
   callocElms(visrows,NVISROWS+1);
   length=0;
   nrows=1;
@@ -426,7 +426,7 @@ FXText::FXText(FXComposite *p,FXObject* tgt,FXSelector sel,FXuint opts,FXint x,F
   barwidth=0;
   barcolumns=0;
   font=getApp()->getNormalFont();
-  hilitestyles=NULL;
+  hilitestyles=nullptr;
   blink=FLAG_CARET;
   defaultCursor=getApp()->getDefaultCursor(DEF_TEXT_CURSOR);
   dragCursor=getApp()->getDefaultCursor(DEF_TEXT_CURSOR);
@@ -546,9 +546,9 @@ FXbool FXText::isdelimiter(FXwchar w) const {
   FXchar wcs[5]={'\0','\0','\0','\0','\0'};
   if(__unlikely(128<=w)){
     wc2utf(wcs,w);
-    return (strstr(delimiters,wcs)!=NULL);
+    return (strstr(delimiters,wcs)!=nullptr);
     }
-  return (strchr(delimiters,w)!=NULL);
+  return (strchr(delimiters,w)!=nullptr);
   }
 
 /*******************************************************************************/
@@ -3112,7 +3112,7 @@ FXint FXText::removeText(FXint pos,FXint num,FXbool notify){
     textchange.ins=(FXchar*)"";
     allocElms(textchange.del,num);
     extractText(textchange.del,pos,num);
-    replace(pos,num,NULL,0,0);
+    replace(pos,num,nullptr,0,0);
     if(notify && target){
       target->tryHandle(this,FXSEL(SEL_DELETED,message),(void*)&textchange);
       target->tryHandle(this,FXSEL(SEL_CHANGED,message),(void*)(FXival)cursorpos);
@@ -4454,21 +4454,21 @@ long FXText::onQueryHelp(FXObject* sender,FXSelector sel,void* ptr){
 
 // Update somebody who wants to change the text
 long FXText::onUpdIsEditable(FXObject* sender,FXSelector,void*){
-  sender->handle(this,isEditable()?FXSEL(SEL_COMMAND,ID_ENABLE):FXSEL(SEL_COMMAND,ID_DISABLE),NULL);
+  sender->handle(this,isEditable()?FXSEL(SEL_COMMAND,ID_ENABLE):FXSEL(SEL_COMMAND,ID_DISABLE),nullptr);
   return 1;
   }
 
 
 // Update somebody who works on the selection
 long FXText::onUpdHaveSelection(FXObject* sender,FXSelector,void*){
-  sender->handle(this,(select.startpos<=select.endpos)?FXSEL(SEL_COMMAND,ID_ENABLE):FXSEL(SEL_COMMAND,ID_DISABLE),NULL);
+  sender->handle(this,(select.startpos<=select.endpos)?FXSEL(SEL_COMMAND,ID_ENABLE):FXSEL(SEL_COMMAND,ID_DISABLE),nullptr);
   return 1;
   }
 
 
 // Update somebody who works on the selection and change the text
 long FXText::onUpdHaveEditableSelection(FXObject* sender,FXSelector,void*){
-  sender->handle(this,isEditable() && (select.startpos<=select.endpos)?FXSEL(SEL_COMMAND,ID_ENABLE):FXSEL(SEL_COMMAND,ID_DISABLE),NULL);
+  sender->handle(this,isEditable() && (select.startpos<=select.endpos)?FXSEL(SEL_COMMAND,ID_ENABLE):FXSEL(SEL_COMMAND,ID_DISABLE),nullptr);
   return 1;
   }
 
@@ -4918,7 +4918,7 @@ long FXText::onMiddleBtnRelease(FXObject*,FXSelector,void* ptr){
       handle(this,FXSEL(SEL_ENDDRAG,0),ptr);
       }
     else{
-      handle(this,FXSEL(SEL_COMMAND,ID_PASTE_MIDDLE),NULL);
+      handle(this,FXSEL(SEL_COMMAND,ID_PASTE_MIDDLE),nullptr);
       }
     return 1;
     }
@@ -5103,52 +5103,52 @@ long FXText::onKeyPress(FXObject*,FXSelector,void* ptr){
       case KEY_Up:
       case KEY_KP_Up:
         if(event->state&CONTROLMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_SCROLL_UP),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_SCROLL_UP),nullptr);
           }
         else if(event->state&SHIFTMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_UP),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_UP),nullptr);
           }
         else if(event->state&ALTMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_ALT_UP),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_ALT_UP),nullptr);
           }
         else{
-          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_UP),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_UP),nullptr);
           }
         break;
       case KEY_Down:
       case KEY_KP_Down:
         if(event->state&CONTROLMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_SCROLL_DOWN),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_SCROLL_DOWN),nullptr);
           }
         else if(event->state&SHIFTMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_DOWN),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_DOWN),nullptr);
           }
         else if(event->state&ALTMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_ALT_DOWN),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_ALT_DOWN),nullptr);
           }
         else{
-          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_DOWN),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_DOWN),nullptr);
           }
         break;
       case KEY_Left:
       case KEY_KP_Left:
         if(event->state&CONTROLMASK){
           if(event->state&SHIFTMASK){
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_WORD_LEFT),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_WORD_LEFT),nullptr);
             }
           else{
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_WORD_LEFT),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_WORD_LEFT),nullptr);
             }
           }
         else{
           if(event->state&SHIFTMASK){
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_LEFT),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_LEFT),nullptr);
             }
           else if(event->state&ALTMASK){
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_ALT_LEFT),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_ALT_LEFT),nullptr);
             }
           else{
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_LEFT),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_LEFT),nullptr);
             }
           }
         break;
@@ -5156,21 +5156,21 @@ long FXText::onKeyPress(FXObject*,FXSelector,void* ptr){
       case KEY_KP_Right:
         if(event->state&CONTROLMASK){
           if(event->state&SHIFTMASK){
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_WORD_RIGHT),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_WORD_RIGHT),nullptr);
             }
           else{
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_WORD_RIGHT),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_WORD_RIGHT),nullptr);
             }
           }
         else{
           if(event->state&SHIFTMASK){
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_RIGHT),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_RIGHT),nullptr);
             }
           else if(event->state&ALTMASK){
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_ALT_RIGHT),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_ALT_RIGHT),nullptr);
             }
           else{
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_RIGHT),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_RIGHT),nullptr);
             }
           }
         break;
@@ -5178,18 +5178,18 @@ long FXText::onKeyPress(FXObject*,FXSelector,void* ptr){
       case KEY_KP_Home:
         if(event->state&CONTROLMASK){
           if(event->state&SHIFTMASK){
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_TOP),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_TOP),nullptr);
             }
           else{
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_TOP),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_TOP),nullptr);
             }
           }
         else{
           if(event->state&SHIFTMASK){
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_HOME),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_HOME),nullptr);
             }
           else{
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_HOME),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_HOME),nullptr);
             }
           }
         break;
@@ -5197,121 +5197,121 @@ long FXText::onKeyPress(FXObject*,FXSelector,void* ptr){
       case KEY_KP_End:
         if(event->state&CONTROLMASK){
           if(event->state&SHIFTMASK){
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_BOTTOM),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_BOTTOM),nullptr);
             }
           else{
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_BOTTOM),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_BOTTOM),nullptr);
             }
           }
         else{
           if(event->state&SHIFTMASK){
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_END),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_END),nullptr);
             }
           else{
-            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_END),NULL);
+            handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_END),nullptr);
             }
           }
         break;
       case KEY_Page_Up:
       case KEY_KP_Page_Up:
         if(event->state&SHIFTMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_PAGEUP),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_PAGEUP),nullptr);
           }
         else{
-          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_PAGEUP),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_PAGEUP),nullptr);
           }
         break;
       case KEY_Page_Down:
       case KEY_KP_Page_Down:
         if(event->state&SHIFTMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_PAGEDOWN),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_SHIFT_PAGEDOWN),nullptr);
           }
         else{
-          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_PAGEDOWN),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_CURSOR_PAGEDOWN),nullptr);
           }
         break;
       case KEY_Insert:
       case KEY_KP_Insert:
         if(event->state&CONTROLMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_COPY_SEL),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_COPY_SEL),nullptr);
           }
         else if(event->state&SHIFTMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_PASTE_SEL),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_PASTE_SEL),nullptr);
           }
         else{
-          handle(this,FXSEL(SEL_COMMAND,ID_TOGGLE_OVERSTRIKE),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_TOGGLE_OVERSTRIKE),nullptr);
           }
         break;
       case KEY_Delete:
       case KEY_KP_Delete:
         if(event->state&CONTROLMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_DELETE_WORD),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_DELETE_WORD),nullptr);
           }
         else if(event->state&SHIFTMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_DELETE_EOL),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_DELETE_EOL),nullptr);
           }
         else{
-          handle(this,FXSEL(SEL_COMMAND,ID_DELETE_CHAR),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_DELETE_CHAR),nullptr);
           }
         break;
       case KEY_BackSpace:
         if(event->state&CONTROLMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_BACKSPACE_WORD),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_BACKSPACE_WORD),nullptr);
           }
         else if(event->state&SHIFTMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_BACKSPACE_BOL),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_BACKSPACE_BOL),nullptr);
           }
         else{
-          handle(this,FXSEL(SEL_COMMAND,ID_BACKSPACE_CHAR),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_BACKSPACE_CHAR),nullptr);
           }
         break;
       case KEY_Return:
       case KEY_KP_Enter:
         if(event->state&CONTROLMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_ONLY),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_ONLY),nullptr);
           }
         else if(event->state&SHIFTMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_INDENT),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_INDENT),nullptr);
           }
         else{
-          handle(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE),nullptr);
           }
         break;
       case KEY_Tab:
       case KEY_KP_Tab:
         if(event->state&CONTROLMASK){
-          handle(this,FXSEL(SEL_COMMAND,ID_INSERT_HARDTAB),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_INSERT_HARDTAB),nullptr);
           }
         else{
-          handle(this,FXSEL(SEL_COMMAND,ID_INSERT_TAB),NULL);
+          handle(this,FXSEL(SEL_COMMAND,ID_INSERT_TAB),nullptr);
           }
         break;
       case KEY_a:
         if(!(event->state&CONTROLMASK)) goto ins;
-        handle(this,FXSEL(SEL_COMMAND,ID_SELECT_ALL),NULL);
+        handle(this,FXSEL(SEL_COMMAND,ID_SELECT_ALL),nullptr);
         break;
       case KEY_x:
         if(!(event->state&CONTROLMASK)) goto ins;
       case KEY_F20:                               // Sun Cut key
-        handle(this,FXSEL(SEL_COMMAND,ID_CUT_SEL),NULL);
+        handle(this,FXSEL(SEL_COMMAND,ID_CUT_SEL),nullptr);
         break;
       case KEY_c:
         if(!(event->state&CONTROLMASK)) goto ins;
       case KEY_F16:                               // Sun Copy key
-        handle(this,FXSEL(SEL_COMMAND,ID_COPY_SEL),NULL);
+        handle(this,FXSEL(SEL_COMMAND,ID_COPY_SEL),nullptr);
         break;
       case KEY_v:
         if(!(event->state&CONTROLMASK)) goto ins;
       case KEY_F18:                               // Sun Paste key
-        handle(this,FXSEL(SEL_COMMAND,ID_PASTE_SEL),NULL);
+        handle(this,FXSEL(SEL_COMMAND,ID_PASTE_SEL),nullptr);
         break;
       case KEY_k:
         if(!(event->state&CONTROLMASK)) goto ins;
-        handle(this,FXSEL(SEL_COMMAND,ID_DELETE_LINE),NULL);
+        handle(this,FXSEL(SEL_COMMAND,ID_DELETE_LINE),nullptr);
         break;
       case KEY_j:
         if(!(event->state&CONTROLMASK)) goto ins;
-        handle(this,FXSEL(SEL_COMMAND,ID_JOIN_LINES),NULL);
+        handle(this,FXSEL(SEL_COMMAND,ID_JOIN_LINES),nullptr);
         break;
       default:
 ins:    if((event->state&(CONTROLMASK|ALTMASK)) || ((FXuchar)event->text[0]<32)) return 0;
@@ -5664,9 +5664,9 @@ long FXText::onCmdInsertString(FXObject*,FXSelector,void* ptr){
 // Insert newline with optional autoindent
 long FXText::onCmdInsertNewline(FXObject*,FXSelector,void*){
   if(options&TEXT_AUTOINDENT){
-    return onCmdInsertNewlineIndent(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_INDENT),NULL);
+    return onCmdInsertNewlineIndent(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_INDENT),nullptr);
     }
-  return onCmdInsertNewlineOnly(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_ONLY),NULL);
+  return onCmdInsertNewlineOnly(this,FXSEL(SEL_COMMAND,ID_INSERT_NEWLINE_ONLY),nullptr);
   }
 
 
@@ -5702,9 +5702,9 @@ long FXText::onCmdInsertNewlineIndent(FXObject*,FXSelector,void*){
 // Insert optional soft-tab
 long FXText::onCmdInsertTab(FXObject*,FXSelector,void*){
   if(options&TEXT_NO_TABS){
-    return onCmdInsertSoftTab(this,FXSEL(SEL_COMMAND,ID_INSERT_SOFTTAB),NULL);
+    return onCmdInsertSoftTab(this,FXSEL(SEL_COMMAND,ID_INSERT_SOFTTAB),nullptr);
     }
-  return onCmdInsertHardTab(this,FXSEL(SEL_COMMAND,ID_INSERT_HARDTAB),NULL);
+  return onCmdInsertHardTab(this,FXSEL(SEL_COMMAND,ID_INSERT_HARDTAB),nullptr);
   }
 
 
@@ -6264,9 +6264,9 @@ long FXText::onCmdToggleEditable(FXObject*,FXSelector,void*){
 
 // Update editable toggle
 long FXText::onUpdToggleEditable(FXObject* sender,FXSelector,void*){
-  sender->handle(this,isEditable()?FXSEL(SEL_COMMAND,ID_CHECK):FXSEL(SEL_COMMAND,ID_UNCHECK),NULL);
-  sender->handle(this,FXSEL(SEL_COMMAND,ID_SHOW),NULL);
-  sender->handle(this,FXSEL(SEL_COMMAND,ID_ENABLE),NULL);
+  sender->handle(this,isEditable()?FXSEL(SEL_COMMAND,ID_CHECK):FXSEL(SEL_COMMAND,ID_UNCHECK),nullptr);
+  sender->handle(this,FXSEL(SEL_COMMAND,ID_SHOW),nullptr);
+  sender->handle(this,FXSEL(SEL_COMMAND,ID_ENABLE),nullptr);
   return 1;
   }
 
@@ -6280,9 +6280,9 @@ long FXText::onCmdToggleOverstrike(FXObject*,FXSelector,void*){
 
 // Update overstrike toggle
 long FXText::onUpdToggleOverstrike(FXObject* sender,FXSelector,void*){
-  sender->handle(this,isOverstrike()?FXSEL(SEL_COMMAND,ID_CHECK):FXSEL(SEL_COMMAND,ID_UNCHECK),NULL);
-  sender->handle(this,FXSEL(SEL_COMMAND,ID_SHOW),NULL);
-  sender->handle(this,FXSEL(SEL_COMMAND,ID_ENABLE),NULL);
+  sender->handle(this,isOverstrike()?FXSEL(SEL_COMMAND,ID_CHECK):FXSEL(SEL_COMMAND,ID_UNCHECK),nullptr);
+  sender->handle(this,FXSEL(SEL_COMMAND,ID_SHOW),nullptr);
+  sender->handle(this,FXSEL(SEL_COMMAND,ID_ENABLE),nullptr);
   return 1;
   }
 

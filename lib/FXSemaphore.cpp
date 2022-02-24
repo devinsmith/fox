@@ -3,7 +3,7 @@
 *                          S e m a p h o r e   C l a s s                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2004,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2004,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -58,7 +58,7 @@ namespace FX {
 FXSemaphore::FXSemaphore(FXint count){
 #if defined(WIN32)
   FXASSERT_STATIC(sizeof(data)>=sizeof(HANDLE));
-  data[0]=(FXuval)CreateSemaphore(NULL,count,0x7fffffff,NULL);
+  data[0]=(FXuval)CreateSemaphore(nullptr,count,0x7fffffff,nullptr);
 #elif (defined(__APPLE__) || defined(__minix))
   // If this fails on your machine, determine what value of
   // sizeof(pthread_cond_t) and sizeof(pthread_mutex_t) is
@@ -68,8 +68,8 @@ FXSemaphore::FXSemaphore(FXint count){
   FXASSERT_STATIC(sizeof(FXuval)*9 >= sizeof(pthread_cond_t));
   FXASSERT_STATIC(sizeof(FXuval)*11 >= sizeof(pthread_mutex_t));
   data[0]=count;
-  pthread_cond_init((pthread_cond_t*)&data[1],NULL);
-  pthread_mutex_init((pthread_mutex_t*)&data[10],NULL);
+  pthread_cond_init((pthread_cond_t*)&data[1],nullptr);
+  pthread_mutex_init((pthread_mutex_t*)&data[10],nullptr);
 #else
   // If this fails on your machine, determine what value
   // of sizeof(sem_t) is supposed to be on your
@@ -123,7 +123,7 @@ FXbool FXSemaphore::wait(FXTime nsec){
 #else
         struct timespec ts;
         struct timeval tv;
-        gettimeofday(&tv,NULL);
+        gettimeofday(&tv,nullptr);
         tv.tv_usec*=1000;
         ts.tv_sec=tv.tv_sec+(tv.tv_usec+nsec)/1000000000;
         ts.tv_nsec=(tv.tv_usec+nsec)%1000000000;
@@ -152,7 +152,7 @@ x:  pthread_mutex_unlock((pthread_mutex_t*)&data[10]);
 #else
       struct timespec ts;
       struct timeval tv;
-      gettimeofday(&tv,NULL);
+      gettimeofday(&tv,nullptr);
       tv.tv_usec*=1000;
       ts.tv_sec=tv.tv_sec+(tv.tv_usec+nsec)/1000000000;
       ts.tv_nsec=(tv.tv_usec+nsec)%1000000000;
@@ -188,7 +188,7 @@ FXbool FXSemaphore::trywait(){
 // Increment semaphore
 void FXSemaphore::post(){
 #if defined(WIN32)
-  ReleaseSemaphore((HANDLE)data[0],1,NULL);
+  ReleaseSemaphore((HANDLE)data[0],1,nullptr);
 #elif (defined(__APPLE__) || defined(__minix))
   pthread_mutex_lock((pthread_mutex_t*)&data[10]);
   data[0]+=1;

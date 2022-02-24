@@ -177,7 +177,7 @@ language "Julia"
 
   # Operators
   rule "Operator"
-    pattern     "(\[|\]|\+=|\+|-=|-|\*=|\*|/=|//=|//|/|\\|%=|%|\^=|\^|!=|!|&&|&=|&|\|\||\|=|\||~=|~|>>>=|>>>|>>=|>>|<<=|<<|==|=|\.^|<=|<|>=|>|::|:|\.\.|\.|\>|<\||\?)"
+    pattern     "(\[|\]|\+=|\+|-=|-|\*=|\*|/=|//=|//|/|\\|%=|%|\^=|\^|!=|!|&&|&=|&|\|\||\|=|\||~=|~|>>>=|>>>|>>=|>>|<<=|<<|==|=>|=|\.^|<=|<:|<|>=|>|::|:|\.\.|\.|\>|<\||\?|,)"
     style       "red"
   end
 
@@ -1166,11 +1166,21 @@ language "JavaScript"
     closepattern  "^>>>>>>>.*?\n"
   end
 
-  # C style comment
+  # C style comment (but we can nest)
   rule "CComment"
     openpattern   "/\*"
     closepattern  "\*/"
     style         "darkgreen"
+    rule "CComment"
+      openpattern   "/\*"
+      closepattern  "\*/"
+      style         "darkgreen"
+      rule "CComment"
+        openpattern   "/\*"
+        closepattern  "\*/"
+        style         "darkgreen"
+      end
+    end
   end
 
   # C++ style comment

@@ -3,7 +3,7 @@
 *                  P a t h   N a m e   M a n i p u l a t i o n                  *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2021 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -1502,7 +1502,7 @@ FXString FXPath::dequote(const FXString& file){
 // N backslashes          : N backslashes
 //
 FXint FXPath::parseArgs(FXchar**& argv,const FXchar* command){
-  argv=NULL;
+  argv=nullptr;
   if(command){
     const FXchar *p=command;
     FXint token=0;
@@ -1634,7 +1634,7 @@ FXint FXPath::parseArgs(FXchar**& argv,const FXchar* command){
           }
 
         // Argv closeout
-        *ptr=NULL;
+        *ptr=nullptr;
         return count;
         }
       }
@@ -1654,7 +1654,7 @@ FXint FXPath::parseArgs(FXchar**& argv,const FXchar* command){
 // '......'     : No characters can be escaped inside single-quoted text
 //
 FXint FXPath::parseArgs(FXchar**& argv,const FXchar* command){
-  argv=NULL;
+  argv=nullptr;
   if(command){
     const FXchar *p=command;
     FXint token=0;
@@ -1803,7 +1803,7 @@ FXint FXPath::parseArgs(FXchar**& argv,const FXchar* command){
           }
 
         // Argv closeout
-        *ptr=NULL;
+        *ptr=nullptr;
         return count;
         }
       }
@@ -2133,7 +2133,7 @@ static const char *fxstrcasestr(const FXchar *haystack,const FXchar *needle){
       if(!*b) return haystack;
       }
     }
-  return NULL;
+  return nullptr;
   }
 
 
@@ -2142,10 +2142,10 @@ FXbool FXPath::isReservedName(const FXString& file){
   static const FXchar reserved3[]="CON\nPRN\nAUX\nNUL\n";
   static const FXchar reserved4[]="COM1\nCOM2\nCOM3\nCOM4\nCOM5\nCOM6\nCOM7\nCOM8\nCOM9\nLPT1\nLPT2\nLPT3\nLPT4\nLPT5\nLPT6\nLPT7\nLPT8\nLPT9\n";
   if(file.length()==3){
-    return (fxstrcasestr(reserved3,file.text())!=NULL);
+    return (fxstrcasestr(reserved3,file.text())!=nullptr);
     }
   if(file.length()==4){
-    return (fxstrcasestr(reserved4,file.text())!=NULL);
+    return (fxstrcasestr(reserved4,file.text())!=nullptr);
     }
   return false;
   }

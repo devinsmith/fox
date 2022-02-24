@@ -1,4 +1,4 @@
-/*********** Generated on 2021/09/15 14:48:54 by reswrap version 6.0.0 *********/
+/*********** Generated on 2022/01/24 15:46:50 by reswrap version 6.0.0 *********/
 
 /* Created by reswrap from file bigcalc.gif */
 extern const unsigned char bigcalc[];
