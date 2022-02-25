@@ -1199,7 +1199,7 @@ endif()
 
 if(MSVC)
   # Suggest compiling with intrinsics on.
-  target_compile_options(fox PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS /DUNICODE)
+  target_compile_options(fox PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS /DUNICODE /Oi /EHsc)
 endif()
 
 target_include_directories(fox PUBLIC ${PROJECT_SOURCE_DIR}/include)
