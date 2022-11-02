@@ -37,3 +37,6 @@ cmake-build-*/
 
 # Jetbrains IDEs
 .idea/
+
+Makefile.in
+Makefile.am
