@@ -265,8 +265,7 @@ FXlong atomicSet(volatile FXlong* ptr,FXlong v){
 // Atomically add v to variable at ptr, and return its old contents
 FXlong atomicAdd(volatile FXlong* ptr,FXlong v){
 #if defined(WIN32) && (_MSC_VER >= 1800)
-  _InterlockedExchangeAdd64(ptr,v);
-  return *ptr;
+  return _InterlockedAdd64(ptr,v);
 #elif defined(HAVE_BUILTIN_ATOMIC)
   return __atomic_fetch_add(ptr,v,__ATOMIC_SEQ_CST);
 #elif defined(HAVE_BUILTIN_SYNC)
@@ -425,8 +424,7 @@ FXulong atomicSet(volatile FXulong* ptr,FXulong v){
 // Atomically add v to variable at ptr, and return its old contents
 FXulong atomicAdd(volatile FXulong* ptr,FXulong v){
 #if defined(WIN32) && (_MSC_VER >= 1800)
-  _InterlockedExchangeAdd64(reinterpret_cast<volatile FXlong*>(ptr),v);
-  return *ptr;
+  return _InterlockedAdd64(reinterpret_cast<volatile FXlong*>(ptr),v);
 #elif defined(HAVE_BUILTIN_ATOMIC)
   return __atomic_fetch_add(ptr,v,__ATOMIC_SEQ_CST);
 #elif defined(HAVE_BUILTIN_SYNC)
