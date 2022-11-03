@@ -59,6 +59,7 @@ set(HEADERS
   ../include/FXCalendarView.h
   ../include/FXCallback.h
   ../include/FXCanvas.h
+  ../include/fxchar.h
   ../include/FXCheckButton.h
   ../include/FXChoiceBox.h
   ../include/FXColorBar.h
@@ -241,6 +242,7 @@ set(HEADERS
   ../include/FXOptionMenu.h
   ../include/FXPacker.h
   ../include/FXParallel.h
+  ../include/FXParseBuffer.h
   ../include/FXPath.h
   ../include/FXPCXIcon.h
   ../include/FXPCXImage.h
@@ -413,6 +415,7 @@ set(SOURCES
   FXCalendar.cpp
   FXCalendarView.cpp
   FXCanvas.cpp
+  fxchar.cpp
   FXCheckButton.cpp
   FXChoiceBox.cpp
   FXColorBar.cpp
@@ -589,7 +592,9 @@ set(SOURCES
   FXObject.cpp
   FXObjectList.cpp
   FXOptionMenu.cpp
+  fxosver.cpp
   FXPacker.cpp
+  FXParseBuffer.cpp
   fxparsegeometry.cpp
   FXPath.cpp
   FXPCXIcon.cpp
