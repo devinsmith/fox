@@ -40,3 +40,20 @@ cmake-build-*/
 
 Makefile.in
 Makefile.am
+
+# Generated files
+adie/help.cpp
+adie/help.h
+adie/icons.h
+adie/icons.cpp
+calculator/icons.cpp
+calculator/icons.h
+chart/icons.cpp
+chart/icons.h
+controlpanel/icons.cpp
+controlpanel/icons.h
+pathfinder/icons.cpp
+pathfinder/icons.h
+shutterbug/icons.cpp
+shutterbug/icons.h
+
