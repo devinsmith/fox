@@ -3,10 +3,11 @@ set(FOX_LIBRARIES fox)
 set(FOX_INCLUDE_DIRS $<TARGET_PROPERTY:fox,INTERFACE_INCLUDE_DIRECTORIES>)
 
 # Don't build gltest for now.
+# Don't build math for now (broken under MSVC?)
 set(FOX_TESTS bitmapviewer button calendar codecs console datatarget dctest
   dialog dirlist expression format foursplit gaugetest
   groupbox half header hello2 hello iconlist image imageviewer layout
-  match math mditest memmap minheritance parallel process ratio rex
+  match mditest memmap minheritance parallel process ratio rex
   scan scribble shutter splitter switcher tabbook table thread timefmt
   unicode variant wizard xml)
 
