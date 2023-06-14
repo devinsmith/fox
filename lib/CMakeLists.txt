@@ -224,7 +224,6 @@ set(HEADERS
   ../include/FXMDIButton.h
   ../include/FXMDIChild.h
   ../include/FXMDIClient.h
-  ../include/FXMemMap.h
   ../include/FXMemoryStream.h
   ../include/FXMenuBar.h
   ../include/FXMenuButton.h
@@ -578,7 +577,6 @@ set(SOURCES
   FXMDIButton.cpp
   FXMDIChild.cpp
   FXMDIClient.cpp
-  FXMemMap.cpp
   FXMemoryStream.cpp
   FXMenuBar.cpp
   FXMenuButton.cpp
