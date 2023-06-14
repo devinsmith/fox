@@ -1,6 +1,6 @@
 
-set(FOX_LIBRARIES fox)
-set(FOX_INCLUDE_DIRS $<TARGET_PROPERTY:fox,INTERFACE_INCLUDE_DIRECTORIES>)
+set(FOX_LIBRARIES FOX)
+set(FOX_INCLUDE_DIRS $<TARGET_PROPERTY:FOX,INTERFACE_INCLUDE_DIRECTORIES>)
 
 set(TARGET_NAME glviewer)
 set(SOURCES FXGLCone.cpp FXGLCube.cpp FXGLCylinder.cpp FXGLLine.cpp
@@ -10,5 +10,5 @@ set(HEADERS FXGLCone.h FXGLCube.h FXGLCylinder.h FXGLLine.h FXGLPoint.h FXGLShap
 
 add_executable(${TARGET_NAME} ${SOURCES} ${HEADERS})
 target_include_directories(${TARGET_NAME} PRIVATE ${FOX_INCLUDE_DIRS})
-target_link_libraries(${TARGET_NAME} PUBLIC fox)
+target_link_libraries(${TARGET_NAME} PUBLIC FOX)
 
