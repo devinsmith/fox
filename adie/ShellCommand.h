@@ -3,7 +3,7 @@
 *                             S h e l l - C o m m a n d                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2014,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2014,2023 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This program is free software: you can redistribute it and/or modify          *
 * it under the terms of the GNU General Public License as published by          *
@@ -22,24 +22,26 @@
 #define SHELLCOMMAND_H
 
 
-class TextWindow;
-
 
 // Shell Command
 class ShellCommand : public FXObject {
   FXDECLARE(ShellCommand)
 private:
-  FXApp      *app;              // Application
-  FXObject   *target;           // Target to notify
   FXProcess   process;          // Child process
-  FXPipe      ipipe;            // Input to child
-  FXPipe      opipe;            // Output from child
-  FXPipe      epipe;            // Errors from child
-  FXString    input;            // Input to child process
+  TextWindow *window;           // Window to send messages to
   FXSelector  selin;            // Message sent for input
   FXSelector  selout;           // Message sent for output
   FXSelector  selerr;           // Message sent for errors
   FXSelector  seldone;          // Message sent when done
+  FXString    directory;        // Directory where to start
+  FXString    input;            // Input to child process
+  FXString    output;           // Output from child process
+  FXival      ninput;           // Number of inputs sent to child
+  FXival      noutput;          // Number of outputs received from child
+  FXPipe      ipipe;            // Pipe input to child
+  FXPipe      opipe;            // Pipe output from child
+  FXPipe      epipe;            // Pipe errors from child
+  FXuint      flags;            // Flags
 private:
   ShellCommand(){}
   ShellCommand(const ShellCommand&);
@@ -54,14 +56,30 @@ public:
     ID_OUTPUT,
     ID_ERROR
     };
+  enum {
+    STREAM=0,
+    COLLECT=1
+    };
 public:
 
   // Construct shell command
-  ShellCommand(FXApp* a,FXObject* tgt=nullptr,FXSelector so=0,FXSelector se=0,FXSelector sd=0);
+  ShellCommand(TextWindow* win,FXSelector so=0,FXSelector se=0,FXSelector sd=0,FXuint flg=STREAM);
 
-  // Access target
-  void setTarget(FXObject* tgt){ target=tgt; }
-  FXObject* getTarget() const { return target; }
+  // Set directory
+  void setDirectory(const FXString& dir){ directory=dir; }
+
+  // Return directory
+  const FXString& getDirectory() const { return directory; }
+
+  // Set command input
+  void setInput(FXString& in);
+
+  // Get command output
+  void getOutput(FXString& out);
+
+  // Access window
+  void setWindow(TextWindow* win){ window=win; }
+  TextWindow* getWindow() const { return window; }
 
   // Access input message
   void setInputMessage(FXSelector sel){ selin=sel; }
@@ -78,12 +96,6 @@ public:
   // Access done message
   void setDoneMessage(FXSelector sel){ seldone=sel; }
   FXSelector getDoneMessage() const { return seldone; }
-
-  // Set string as command input
-  void setInput(const FXString& str);
-
-  // Return input
-  const FXString& getInput() const { return input; }
 
   // Start command
   virtual FXbool start(const FXString& command);

@@ -3,7 +3,7 @@
 *                             String Format I/O Test                            *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2007,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2007,2023 by Jeroen van der Zijp.   All Rights Reserved.        *
 ********************************************************************************/
 #include "fx.h"
 //#include <locale.h>
@@ -114,13 +114,6 @@ static const union{ FXulong u; FXdouble f; } doublesmall={
   };
 
 
-// Use a trick to get a nan
-//const FXulong doublenan[1]={FXULONG(0x7fffffffffffffff)};
-//const FXulong doubleinf[1]={FXULONG(0x7ff0000000000000)};
-
-// Small double
-//const FXulong doublesmall[1]={FXULONG(0x0000000000002788)};
-
 const FXchar *intformat[]={
   "%d",
   "%0d",
@@ -139,7 +132,7 @@ const FXchar *intformat[]={
   "%#08x",
   "%o",
   "%#o",
-  "%.32b"
+  "%.32b",
   };
 
 const FXint intnumbers[]={
@@ -195,6 +188,7 @@ int main(int argc,char* argv[]){
   fxmessage("clz32(0x00000123) = %d\n",clz32(0x00000123));      // 23
   fxmessage("clz32(0x00000012) = %d\n",clz32(0x00000012));      // 27
   fxmessage("clz32(0x00000001) = %d\n",clz32(0x00000001));      // 31
+  fxmessage("\n");
 
   fxmessage("clz64(0x123456789ABCDEF0) = %lld\n",clz64(FXULONG(0x123456789ABCDEF0)));    // 3
   fxmessage("clz64(0x0123456789ABCDEF) = %lld\n",clz64(FXULONG(0x0123456789ABCDEF)));    // 7
@@ -212,6 +206,7 @@ int main(int argc,char* argv[]){
   fxmessage("clz64(0x0000000000000123) = %lld\n",clz64(FXULONG(0x0000000000000123)));    // 55
   fxmessage("clz64(0x0000000000000012) = %lld\n",clz64(FXULONG(0x0000000000000012)));    // 59
   fxmessage("clz64(0x0000000000000001) = %lld\n",clz64(FXULONG(0x0000000000000001)));    // 63
+  fxmessage("\n");
 
   fxmessage("ctz32(0x87654321) = %d\n",ctz32(0x87654321));      // 0
   fxmessage("ctz32(0x87654320) = %d\n",ctz32(0x87654320));      // 5
@@ -221,6 +216,7 @@ int main(int argc,char* argv[]){
   fxmessage("ctz32(0x87600000) = %d\n",ctz32(0x87600000));      // 21
   fxmessage("ctz32(0x87000000) = %d\n",ctz32(0x87000000));      // 24
   fxmessage("ctz32(0x80000000) = %d\n",ctz32(0x80000000));      // 31
+  fxmessage("\n");
 
   fxmessage("ctz64(0x8FEDCBA987654321) = %lld\n",ctz64(FXULONG(0x8FEDCBA987654321)));      // 0
   fxmessage("ctz64(0x8FEDCBA987654320) = %lld\n",ctz64(FXULONG(0x8FEDCBA987654320)));      // 5
@@ -238,9 +234,11 @@ int main(int argc,char* argv[]){
   fxmessage("ctz64(0x8FE0000000000000) = %lld\n",ctz64(FXULONG(0x8FE0000000000000)));      // 53
   fxmessage("ctz64(0x8F00000000000000) = %lld\n",ctz64(FXULONG(0x8F00000000000000)));      // 56
   fxmessage("ctz64(0x8000000000000000) = %lld\n",ctz64(FXULONG(0x8000000000000000)));      // 63
+  fxmessage("\n");
 
   fxmessage("pop32(0x12345678) = %d\n", pop32(0x12345678));                // 13
   fxmessage("ctz64(0x123456789ABCDEF0) = %lld\n", pop64(FXULONG(0x123456789ABCDEF0)));      // 32
+  fxmessage("\n");
 
   //setlocale(LC_ALL,"");
   if(3<=argc){
@@ -273,6 +271,10 @@ int main(int argc,char* argv[]){
     }
 
   fprintf(stdout,"\n");
+
+  // 33 is the Magic Number
+  __snprintf(buffer,sizeof(buffer),"%0*d",6,33);
+  fprintf(stdout,"format=\"%s\" output=\"%s\"\n","%0*d",buffer);
 
   // Testing double formats
   for(x=0; x<ARRAYNUMBER(floatformat); x++){

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 set(CMAKE_VERBOSE_MAKEFILE TRUE)
 
-project(fox-toolkit VERSION 1.7.81)
+project(fox-toolkit VERSION 1.7.83)
 
 include(CheckCXXCompilerFlag)
 INCLUDE (CheckIncludeFiles)

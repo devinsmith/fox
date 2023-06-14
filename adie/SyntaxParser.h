@@ -3,7 +3,7 @@
 *                         S y n t a x   P a r s e r                             *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2023 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This program is free software: you can redistribute it and/or modify          *
 * it under the terms of the GNU General Public License as published by          *
@@ -30,13 +30,13 @@ private:
   const FXchar *tail;           // End of token+1
   FXuint        token;          // Token type
   FXint         line;           // Line number
-public:
+private:
   FXuint gettok();
   FXbool parseString(FXString& value);
   FXbool parseRule(Syntax *syntax,FXint parent);
   FXbool parseLanguage(SyntaxList& syntaxes);
   FXbool parse(SyntaxList& syntaxes);
-public:
+protected:
   enum {
     TK_ERROR=0U,
     TK_EOF=1U,

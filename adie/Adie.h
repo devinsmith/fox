@@ -3,7 +3,7 @@
 *                     T h e   A d i e   T e x t   E d i t o r                   *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2023 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This program is free software: you can redistribute it and/or modify          *
 * it under the terms of the GNU General Public License as published by          *
@@ -48,12 +48,16 @@ protected:
   FXIcon             *bigicon;                  // Big application icon
   FXIcon             *smallicon;                // Small application icon
   FXIcon             *newicon;
+  FXIcon             *newfileicon;
   FXIcon             *reloadicon;
   FXIcon             *openicon;
+  FXIcon             *closeicon;
   FXIcon             *saveicon;
   FXIcon             *saveasicon;
   FXIcon             *savetoicon;
   FXIcon             *printicon;
+  FXIcon             *importicon;
+  FXIcon             *exporticon;
   FXIcon             *cuticon;
   FXIcon             *copyicon;
   FXIcon             *pasteicon;
@@ -65,12 +69,23 @@ protected:
   FXIcon             *quiticon;
   FXIcon             *searchicon;
   FXIcon             *replaceicon;
+  FXIcon             *expressicon;
+  FXIcon             *searchfilesicon;
   FXIcon             *searchnexticon;
   FXIcon             *searchprevicon;
+  FXIcon             *searchrexicon;
+  FXIcon             *searchnorexicon;
+  FXIcon             *searchcaseicon;
+  FXIcon             *searchnocaseicon;
+  FXIcon             *searchwordicon;
+  FXIcon             *searchnowordicon;
+  FXIcon             *searchupicon;
+  FXIcon             *searchdnicon;
   FXIcon             *bookseticon;
   FXIcon             *booknexticon;
   FXIcon             *bookprevicon;
   FXIcon             *bookdelicon;
+  FXIcon             *bookclricon;
   FXIcon             *shiftlefticon;
   FXIcon             *shiftrighticon;
   FXIcon             *configicon;
@@ -84,6 +99,15 @@ protected:
   FXIcon             *forwardicon;
   FXIcon             *shownicon;
   FXIcon             *hiddenicon;
+  FXIcon             *wordwrapicon;
+  FXIcon             *nowrapicon;
+  FXIcon             *filtericon;
+  FXIcon             *commandicon;
+  FXIcon             *scripticon;
+  FXIcon             *switchicon;
+  FXIcon             *openselicon;
+  FXIcon             *docsicon;
+  FXIcon             *pointicon;
 private:
   Adie(){}
   Adie(const Adie&);
@@ -108,23 +132,35 @@ public:
   // Run the application
   FXint start(int argc,char** argv);
 
-  // Set syntax paths
-  void setSyntaxPaths(const FXString& paths){ syntaxpaths=paths; }
+  // Get number of windows
+  FXint numWindows() const { return windowlist.no(); }
 
-  // Get syntax paths
-  const FXString& getSyntaxPaths() const { return syntaxpaths; }
+  // Get text window i
+  TextWindow* getWindow(FXint i) const { return windowlist[i]; }
+
+  // Append window
+  void appendWindow(TextWindow* w){ windowlist.append(w); }
+
+  // Remove window
+  void removeWindow(TextWindow* w){ windowlist.remove(w); }
 
   // Find an as yet untitled, unedited window
   TextWindow* findUnused() const;
-
-  // Generate unique name from given path
-  FXString unique(const FXString& path) const;
 
   // Find window, if any, currently editing the given file
   TextWindow* findWindow(const FXString& file) const;
 
   // Open window on file, creating new one if not already open
   TextWindow* openFileWindow(const FXString& file,FXbool edit=true);
+
+  // Get file associations
+  FXFileAssociations* getFileAssociations() const { return associations; }
+
+  // Get number of syntaxes
+  FXint numSyntaxes() const { return syntaxes.no(); }
+
+  // Get syntax i
+  Syntax* getSyntax(FXint i) const { return syntaxes[i]; }
 
   // Get syntax for language name
   Syntax* getSyntaxByName(const FXString& lang);
@@ -137,6 +173,15 @@ public:
 
   // Get syntax by contents
   Syntax* getSyntaxByContents(const FXString& contents);
+
+  // Generate unique name from given path
+  FXString unique(const FXString& path) const;
+
+  // Set syntax paths
+  void setSyntaxPaths(const FXString& paths){ syntaxpaths=paths; }
+
+  // Get syntax paths
+  const FXString& getSyntaxPaths() const { return syntaxpaths; }
 
   // Delete application object
   virtual ~Adie();

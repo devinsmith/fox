@@ -79,6 +79,8 @@ namespace FX {
 */
 class FXAPI FXJSON : public FXParseBuffer {
 public:
+
+  /// JSON deserializer error codes
   enum Error {
     ErrOK,              /// No errors
     ErrSave,            /// Unable to save
@@ -91,17 +93,43 @@ public:
     ErrQuotes,          /// Expected closing quotes
     ErrQuote,           /// Expected closing quote
     ErrNumber,          /// Numeric conversion
+    ErrIdent,           /// Unexpected identifier
     ErrEnd              /// Unexpected end of file
     };
+
+  /// JSON serializer flow modes
   enum Flow {
     Stream,             /// Stream-of-consciousness output
     Compact,            /// Compact, human readable output (default)
     Pretty              /// Pretty printed, indented output
     };
 protected:
+  enum Token {
+    TK_ERROR,
+    TK_EOF,
+    TK_COMMA,
+    TK_COLON,
+    TK_IDENT,
+    TK_NAN,
+    TK_INF,
+    TK_NULL,
+    TK_FALSE,
+    TK_TRUE,
+    TK_STRING,
+    TK_PLUS,
+    TK_MINUS,
+    TK_INT,
+    TK_HEX,
+    TK_REAL,
+    TK_LBRACK,
+    TK_LBRACE,
+    TK_RBRACK,
+    TK_RBRACE
+    };
+protected:
   FXString  value;      // Token value
   FXlong    offset;     // Position from start
-  FXint     token;      // Token
+  Token     token;      // Token
   FXint     column;     // Column number
   FXint     indent;     // Indent level
   FXint     line;       // Line number
@@ -113,11 +141,13 @@ protected:
   FXuchar   esc;        // Escape mode
   FXuchar   dent;       // Indentation amount
   FXuchar   ver;        // Version
-private:
-  FXint next();
-  FXint ident();
-  FXint string();
-  FXint number();
+protected:
+  static const FXchar *const errors[];
+protected:
+  virtual Token next();
+  Token ident();
+  Token string();
+  static Token identoken(const FXString& str);
   Error loadMap(FXVariant& var);
   Error loadArray(FXVariant& var);
   Error loadVariant(FXVariant& var);
@@ -127,37 +157,26 @@ private:
   Error saveArray(const FXVariant& var);
   Error saveVariant(const FXVariant& var);
 private:
-  static const FXchar *const errors[];
-private:
   FXJSON(const FXJSON&);
   FXJSON &operator=(const FXJSON&);
 public:
 
   /**
-  * Initialize JSON serializer with no buffer.
+  * Initialize JSON serializer.
   */
   FXJSON();
 
   /**
-  * Construct JSON serializer with given buffer of size, and open it for
-  * direction d.
+  * Initialize JSON serializer with buffer of size and direction.
+  * Text location (column, line number, byte offset) is reset.
   */
   FXJSON(FXchar* buffer,FXuval sz=8192,Direction d=Load);
 
   /**
-  * Open JSON parse buffer with size and direction.
+  * Open JSON parse buffer with given size and direction.
+  * Text location (column, line number, byte offset) is reset.
   */
   FXbool open(FXchar* buffer=nullptr,FXuval sz=8192,Direction d=Load);
-
-  /**
-  * Return direction in effect.
-  */
-  Direction direction() const { return dir; }
-
-  /**
-  * Return size of parse buffer
-  */
-  FXuval size() const { return endptr-begptr; }
 
   /**
   * Return current line number.
@@ -178,15 +197,17 @@ public:
   * Load a variant from JSON stream.
   * Return false if stream wasn't opened for loading, or syntax error.
   */
-  Error load(FXVariant& variant);
+  virtual Error load(FXVariant& variant);
 
   /**
   * Save a variant to JSON stream.
   * Return false if stream wasn't opened for saving, or disk was full.
   */
-  Error save(const FXVariant& variant);
+  virtual Error save(const FXVariant& variant);
 
-  /// Returns error code for given error
+  /**
+  * Returns error for given error code.
+  */
   static const FXchar* getError(Error err){ return errors[err]; }
 
   /**
@@ -262,6 +283,7 @@ public:
 
   /**
   * Close stream and delete buffer, if owned.
+  * To permit diagnostics, text location not reset.
   */
   FXbool close();
 

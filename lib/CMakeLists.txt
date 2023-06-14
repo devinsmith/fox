@@ -190,6 +190,8 @@ set(HEADERS
   ../include/FXImageFrame.h
   ../include/FXImage.h
   ../include/FXImageView.h
+  ../include/FXINI.h
+  ../include/FXINIFile.h
   ../include/FXInputDialog.h
   ../include/FXIOBuffer.h
   ../include/FXIODevice.h
@@ -210,6 +212,7 @@ set(HEADERS
   ../include/FXList.h
   ../include/FXLocale.h
   ../include/FXMainWindow.h
+  ../include/FXMappedFile.h
   ../include/FXMat2d.h
   ../include/FXMat2f.h
   ../include/FXMat3d.h
@@ -221,7 +224,6 @@ set(HEADERS
   ../include/FXMDIButton.h
   ../include/FXMDIChild.h
   ../include/FXMDIClient.h
-  ../include/FXMemMap.h
   ../include/FXMemoryStream.h
   ../include/FXMenuBar.h
   ../include/FXMenuButton.h
@@ -543,6 +545,8 @@ set(SOURCES
   FXImage.cpp
   FXImageFrame.cpp
   FXImageView.cpp
+  FXINI.cpp
+  FXINIFile.cpp
   FXInputDialog.cpp
   FXIOBuffer.cpp
   FXIO.cpp
@@ -567,12 +571,12 @@ set(SOURCES
   FXList.cpp
   FXLocale.cpp
   FXMainWindow.cpp
+  FXMappedFile.cpp
   fxmath.cpp
   FXMatrix.cpp
   FXMDIButton.cpp
   FXMDIChild.cpp
   FXMDIClient.cpp
-  FXMemMap.cpp
   FXMemoryStream.cpp
   FXMenuBar.cpp
   FXMenuButton.cpp
@@ -753,14 +757,14 @@ bigfolderopen.gif
 bigharddisk.gif
 bignetdrive.gif
 bignethood.gif
-bookset.gif
-bookclr.gif
-bookadd.bmp
-bookdel.bmp
+bookclr_gif.gif
+bookdel_gif.gif
+bookmrk_gif.gif
+bookset_gif.gif
 clearentry.gif
 cmymode.gif
 dialmode.gif
-dirupicon.gif
+dirup_gif.gif
 deleteicon.gif
 docktop.gif
 dockbottom.gif
@@ -783,6 +787,7 @@ fileshown.gif
 foldernew.gif
 gotohome.gif
 gotowork.gif
+hammer_gif.gif
 hsvmode.gif
 infoicon.gif
 landscape.gif
@@ -804,6 +809,7 @@ minizipdrive.gif
 newfolder.bmp
 portrait.gif
 questionicon.gif
+redo_gif.gif
 rgbmode.gif
 searchicon.gif
 showbigicons.gif
@@ -817,7 +823,9 @@ winmaximize.gif
 winminimize.gif
 winrestore.gif)
 
-add_library(fox ${SOURCES})
+# Building a shared library on Windows requires GL libraries
+#add_library(FOX SHARED ${SOURCES})
+add_library(FOX ${SOURCES})
 
 find_package(PkgConfig)
 find_package(Threads)
@@ -1179,7 +1187,7 @@ if(WITH_OPENJPEG)
 endif()
 
 if(WITH_OPENGL)
-  target_compile_definitions(fox PUBLIC -DHAVE_GL_H)
+  target_compile_definitions(FOX PUBLIC -DHAVE_GL_H)
   #  list(APPEND LIBRARIES ${EPOXY_LIBRARIES})
 endif()
 
@@ -1189,8 +1197,8 @@ if (OPENGL_GLU_FOUND)
 endif()
 
 if (OpenGL_GLX_FOUND)
-   target_compile_definitions(fox PUBLIC -DHAVE_GLX_H)
-   list(APPEND LIBRARIES ${OPENGL_glx_LIBRARY})
+  target_compile_definitions(FOX PUBLIC -DHAVE_GLX_H)
+  list(APPEND LIBRARIES ${OPENGL_glx_LIBRARY})
 endif()
 
 if(NOT WITH_XIM)
@@ -1204,11 +1212,11 @@ endif()
 
 if(MSVC)
   # Suggest compiling with intrinsics on.
-  target_compile_options(fox PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS /DUNICODE /Oi /EHsc)
+  target_compile_options(FOX PRIVATE /W4 /D_CRT_SECURE_NO_WARNINGS /DUNICODE)
 endif()
 
-target_include_directories(fox PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(fox PRIVATE ${X11_LIBRARIES} ${LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
+target_include_directories(FOX PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(FOX PRIVATE ${X11_LIBRARIES} ${LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/icons.cpp ${CMAKE_CURRENT_SOURCE_DIR}/icons.h
@@ -1219,10 +1227,10 @@ add_custom_command(
   VERBATIM
   )
 
-set_target_properties(fox PROPERTIES VERSION ${fox-toolkit_VERSION} SOVERSION ${fox-toolkit_VERSION_PATCH})
-set_target_properties(fox PROPERTIES OUTPUT_NAME fox-${fox-toolkit_VERSION_MAJOR}.${fox-toolkit_VERSION_MINOR})
+set_target_properties(FOX PROPERTIES VERSION ${fox-toolkit_VERSION} SOVERSION ${fox-toolkit_VERSION_PATCH})
+set_target_properties(FOX PROPERTIES OUTPUT_NAME FOX-${fox-toolkit_VERSION_MAJOR}.${fox-toolkit_VERSION_MINOR})
 
-install(TARGETS fox
+install(TARGETS FOX
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         )

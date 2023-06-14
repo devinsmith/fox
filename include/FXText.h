@@ -61,11 +61,11 @@ struct FXHiliteStyle {
 * syntax highlighting.
 */
 struct FXTextChange {
-  FXint   pos;          /// Position in buffer
-  FXint   ndel;         /// Number characters deleted at position
-  FXint   nins;         /// Number characters inserted at position
-  FXchar *ins;          /// Text inserted at position
-  FXchar *del;          /// Text deleted at position
+  FXint         pos;          /// Position in buffer
+  FXint         ndel;         /// Number characters deleted at position
+  FXint         nins;         /// Number characters inserted at position
+  const FXchar *del;          /// Text deleted at position
+  const FXchar *ins;          /// Text inserted at position
   };
 
 
@@ -400,6 +400,8 @@ public:
   long onCmdBlockBeg(FXObject*,FXSelector,void*);
   long onCmdBlockEnd(FXObject*,FXSelector,void*);
   long onCmdGotoMatching(FXObject*,FXSelector,void*);
+  long onCmdCursorPos(FXObject*,FXSelector,void*);
+  long onUpdCursorPos(FXObject*,FXSelector,void*);
   long onCmdCursorRow(FXObject*,FXSelector,void*);
   long onUpdCursorRow(FXObject*,FXSelector,void*);
   long onCmdCursorColumn(FXObject*,FXSelector,void*);
@@ -408,6 +410,8 @@ public:
   long onUpdToggleEditable(FXObject*,FXSelector,void*);
   long onCmdToggleOverstrike(FXObject*,FXSelector,void*);
   long onUpdToggleOverstrike(FXObject*,FXSelector,void*);
+  long onUpdTextRows(FXObject*,FXSelector,void*);
+  long onUpdTextSize(FXObject*,FXSelector,void*);
 public:
 
   /// Internal style flags
@@ -507,6 +511,7 @@ public:
     ID_DELETE_LINE,
     ID_TOGGLE_EDITABLE,
     ID_TOGGLE_OVERSTRIKE,
+    ID_CURSOR_POS,
     ID_CURSOR_ROW,
     ID_CURSOR_COLUMN,
     ID_JOIN_LINES,
@@ -531,6 +536,8 @@ public:
     ID_RIGHT_ANG,
     ID_BLINK,
     ID_FLASH,
+    ID_TEXT_ROWS,
+    ID_TEXT_SIZE,
     ID_LAST
     };
 public:
