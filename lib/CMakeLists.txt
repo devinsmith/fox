@@ -757,14 +757,14 @@ bigfolderopen.gif
 bigharddisk.gif
 bignetdrive.gif
 bignethood.gif
-bookset.gif
-bookclr.gif
-bookadd.bmp
-bookdel.bmp
+bookclr_gif.gif
+bookdel_gif.gif
+bookmrk_gif.gif
+bookset_gif.gif
 clearentry.gif
 cmymode.gif
 dialmode.gif
-dirupicon.gif
+dirup_gif.gif
 deleteicon.gif
 docktop.gif
 dockbottom.gif
@@ -787,6 +787,7 @@ fileshown.gif
 foldernew.gif
 gotohome.gif
 gotowork.gif
+hammer_gif.gif
 hsvmode.gif
 infoicon.gif
 landscape.gif
@@ -808,6 +809,7 @@ minizipdrive.gif
 newfolder.bmp
 portrait.gif
 questionicon.gif
+redo_gif.gif
 rgbmode.gif
 searchicon.gif
 showbigicons.gif
@@ -821,6 +823,8 @@ winmaximize.gif
 winminimize.gif
 winrestore.gif)
 
+# Building a shared library on Windows requires GL libraries
+#add_library(FOX SHARED ${SOURCES})
 add_library(FOX ${SOURCES})
 
 find_package(PkgConfig)
@@ -1224,7 +1228,7 @@ add_custom_command(
   )
 
 set_target_properties(FOX PROPERTIES VERSION ${fox-toolkit_VERSION} SOVERSION ${fox-toolkit_VERSION_PATCH})
-set_target_properties(FOX PROPERTIES OUTPUT_NAME fox-${fox-toolkit_VERSION_MAJOR}.${fox-toolkit_VERSION_MINOR})
+set_target_properties(FOX PROPERTIES OUTPUT_NAME FOX-${fox-toolkit_VERSION_MAJOR}.${fox-toolkit_VERSION_MINOR})
 
 install(TARGETS FOX
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
