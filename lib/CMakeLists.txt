@@ -1207,7 +1207,7 @@ endif()
 
 # Win32 specifics
 if (WIN32)
-  list(APPEND LIBRARIES msimg32 winmm imm32 wsock32)
+  list(APPEND LIBRARIES msimg32 winmm imm32 wsock32 gdi32)
 endif()
 
 if(MSVC)
