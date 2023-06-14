@@ -757,14 +757,14 @@ bigfolderopen.gif
 bigharddisk.gif
 bignetdrive.gif
 bignethood.gif
-bookset.gif
-bookclr.gif
-bookadd.bmp
-bookdel.bmp
+bookclr_gif.gif
+bookdel_gif.gif
+bookmrk_gif.gif
+bookset_gif.gif
 clearentry.gif
 cmymode.gif
 dialmode.gif
-dirupicon.gif
+dirup_gif.gif
 deleteicon.gif
 docktop.gif
 dockbottom.gif
@@ -787,6 +787,7 @@ fileshown.gif
 foldernew.gif
 gotohome.gif
 gotowork.gif
+hammer_gif.gif
 hsvmode.gif
 infoicon.gif
 landscape.gif
@@ -808,6 +809,7 @@ minizipdrive.gif
 newfolder.bmp
 portrait.gif
 questionicon.gif
+redo_gif.gif
 rgbmode.gif
 searchicon.gif
 showbigicons.gif
@@ -821,7 +823,7 @@ winmaximize.gif
 winminimize.gif
 winrestore.gif)
 
-add_library(FOX ${SOURCES})
+add_library(FOX SHARED ${SOURCES})
 
 find_package(PkgConfig)
 find_package(Threads)

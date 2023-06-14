@@ -11,54 +11,59 @@ set(TARGET_NAME pathfinder)
 set(SOURCES CopyDialog.cpp icons.cpp PathFinder.cpp Preferences.cpp PropertyDialog.cpp)
 set(HEADERS CopyDialog.h icons.h PathFinder.h Preferences.h PropertyDialog.h)
 
-set(ICONS addbook.bmp
-  bigicons.bmp
+set(ICONS
+  bigicons.bmpa
+  blocks_gif.gif
+  bookdel_gif.gif
+  booknxt_gif.gif
+  bookprv_gif.gif
+  bookclr_gif.gif
+  bookset_gif.gif
+  bookmrk_gif.gif
   closepanel.gif
-  clrbook.gif
-  copy.bmp
+  copy_gif.gif
   config_gif.gif
-  copyit.gif
-  cut.bmp
-  delbook.bmp
-  deleteit.bmp
+  cut_gif.gif
+  delete_gif.gif
   desktop.bmp
   details.bmp
-  dirup.bmp
+  dirup_gif.gif
   enter.gif
-  execute.bmp
   file_gif.gif
   fileshown.gif
   filehidden.gif
-  foldernew.gif
+  foldernew_gif.gif
   foxbig.gif
   foxmini.gif
-  goback.bmp
-  goforw.bmp
+  goup_gif.gif
+  godown_gif.gif
+  goback_gif.gif
+  goforw_gif.gif
   gotodir.bmp
-  home.gif
+  home_gif.gif
   hosts.bmp
   iconpath.gif
-  linkit.bmp
+  link_gif.gif
   location.gif
   maphost.bmp
   miscellaneous_gif.gif
-  moveit.gif
-  paste.bmp
+  move_gif.gif
+  paste.gif
   pattern_gif.gif
-  properties.bmp
+  property_gif.gif
   quit_gif.gif
   newfolder.bmp
-  renameit.gif
+  rename_gif.gif
   rotateleft.gif
   rotateright.gif
   run_bmp.bmp
-  setbook.gif
+  search.gif
   setdir.gif
   sorting.bmp
   smallicons.bmp
   unmaphost.bmp
   warningicon_gif.gif
-  work.gif)
+  work_gif.gif)
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/icons.cpp ${CMAKE_CURRENT_SOURCE_DIR}/icons.h
