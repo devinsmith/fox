@@ -4,10 +4,10 @@ set(FOX_INCLUDE_DIRS $<TARGET_PROPERTY:fox,INTERFACE_INCLUDE_DIRECTORIES>)
 
 set(TARGET_NAME adie)
 set(SOURCES Adie.cpp Commands.cpp FindInFiles.cpp help.cpp HelpWindow.cpp
-  icons.cpp main.cpp Modeline.cpp Preferences.cpp ShellCommand.cpp Syntax.cpp
-  SyntaxParser.cpp TextWindow.cpp)
+  icons.cpp main.cpp Modeline.cpp Preferences.cpp ShellCommand.cpp ShellDialog.cpp
+	Syntax.cpp SyntaxParser.cpp TextWindow.cpp)
 set(HEADERS Adie.h Commands.h FindInFiles.h help.h HelpWindow.h icons.h
-  Modeline.h Preferences.h ShellCommand.h Syntax.h SyntaxParser.h TextWindow.h)
+  Modeline.h Preferences.h ShellCommand.h ShellDialog.h Syntax.h SyntaxParser.h TextWindow.h)
 
 set(ICONS adie_gif.gif
   backward_gif.gif
@@ -18,6 +18,7 @@ set(ICONS adie_gif.gif
   bookset_gif.gif
   browser.gif
   capitalize.gif
+	command_bmp.bmp
   close_gif.gif
   colors_gif.gif
   config_gif.gif
