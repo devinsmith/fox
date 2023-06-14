@@ -12,7 +12,7 @@ set(SOURCES CopyDialog.cpp icons.cpp PathFinder.cpp Preferences.cpp PropertyDial
 set(HEADERS CopyDialog.h icons.h PathFinder.h Preferences.h PropertyDialog.h)
 
 set(ICONS
-  bigicons.bmpa
+  bigicons.bmp
   blocks_gif.gif
   bookdel_gif.gif
   booknxt_gif.gif
