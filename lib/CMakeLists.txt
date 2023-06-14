@@ -823,7 +823,9 @@ winmaximize.gif
 winminimize.gif
 winrestore.gif)
 
-add_library(FOX SHARED ${SOURCES})
+# Building a shared library on Windows requires GL libraries
+#add_library(FOX SHARED ${SOURCES})
+add_library(FOX ${SOURCES})
 
 find_package(PkgConfig)
 find_package(Threads)
@@ -1226,7 +1228,7 @@ add_custom_command(
   )
 
 set_target_properties(FOX PROPERTIES VERSION ${fox-toolkit_VERSION} SOVERSION ${fox-toolkit_VERSION_PATCH})
-set_target_properties(FOX PROPERTIES OUTPUT_NAME fox-${fox-toolkit_VERSION_MAJOR}.${fox-toolkit_VERSION_MINOR})
+set_target_properties(FOX PROPERTIES OUTPUT_NAME FOX-${fox-toolkit_VERSION_MAJOR}.${fox-toolkit_VERSION_MINOR})
 
 install(TARGETS FOX
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
