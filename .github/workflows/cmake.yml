@@ -44,18 +44,16 @@ jobs:
             archiver: "tar czf",
             artifact: "ubuntu_gcc.tar.gz"
           }
-#
-#         MacOS disabled because I have no idea where GL/gl.h is.
-#        - {
-#            name: "MacOS Latest Clang",
-#            os: "macos-latest",
-#            build_type: "Release",
-#            cc: "clang",
-#            cxx: "clang++",
-#            generators: "Unix Makefiles",
-#            archiver: "7za a",
-#            artifact: "macos_clang.7z"
-#          }
+        - {
+            name: "MacOS Latest Clang",
+            os: "macos-latest",
+            build_type: "Release",
+            cc: "clang",
+            cxx: "clang++",
+            generators: "Ninja",
+            archiver: "7za a",
+            artifact: "macos_clang.7z"
+          }
 
     steps:
       - uses: actions/checkout@v2
