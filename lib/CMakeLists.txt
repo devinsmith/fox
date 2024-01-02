@@ -717,7 +717,6 @@ set(SOURCES
   fxbase85.cpp
   fxchar.cpp
   fxcpuid.cpp
-  fxgetticks.cpp
   fxbmpio.cpp
   fxcompose.cpp
   fxddsio.cpp
