@@ -1196,7 +1196,7 @@ if(WITH_OPENJPEG)
 endif()
 
 if(WITH_OPENGL)
-  find_package(OpenGL)
+  find_package(OpenGL REQUIRED)
   target_compile_definitions(FOX PUBLIC -DHAVE_GL_H)
   list(APPEND LIBRARIES OpenGL::GL)
   if(OPENGL_GLU_FOUND)
