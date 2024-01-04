@@ -1,7 +1,3 @@
-if (POLICY CMP0072)
-   cmake_policy (SET CMP0072 OLD)
-endif(POLICY CMP0072)
-
 include(CheckIncludeFileCXX)
 include(CheckCXXSourceCompiles)
 include(CheckCXXSymbolExists)
@@ -379,14 +375,6 @@ set(HEADERS
   ../include/xincs.h)
 
 set(SOURCES
-  FX4Splitter.cpp
-  FX7Segment.cpp
-  FX885910Codec.cpp
-  FX885911Codec.cpp
-  FX885913Codec.cpp
-  FX885914Codec.cpp
-  FX885915Codec.cpp
-  FX885916Codec.cpp
   FX88591Codec.cpp
   FX88592Codec.cpp
   FX88593Codec.cpp
@@ -396,56 +384,12 @@ set(SOURCES
   FX88597Codec.cpp
   FX88598Codec.cpp
   FX88599Codec.cpp
-  FXAccelTable.cpp
-  FXApp.cpp
-  FXArray.cpp
-  FXArrowButton.cpp
-  fxascii.cpp
-  FXAtomic.cpp
-  FXAutoThreadStorageKey.cpp
-  FXBarrier.cpp
-  fxbase64.cpp
-  fxbase85.cpp
-  FXBitmap.cpp
-  FXBitmapFrame.cpp
-  FXBitmapView.cpp
-  FXBMPIcon.cpp
-  FXBMPImage.cpp
-  fxbmpio.cpp
-  FXButton.cpp
-  FXBZFileStream.cpp
-  FXCalendar.cpp
-  FXCalendarView.cpp
-  FXCanvas.cpp
-  fxchar.cpp
-  FXCheckButton.cpp
-  FXChoiceBox.cpp
-  FXColorBar.cpp
-  FXColorDialog.cpp
-  FXColorList.cpp
-  FXColorRing.cpp
-  FXColors.cpp
-  FXColorSelector.cpp
-  FXColorWell.cpp
-  FXColorWheel.cpp
-  FXComboBox.cpp
-  FXCompletion.cpp
-  FXComplexd.cpp
-  FXComplexf.cpp
-  FXComposeContext.cpp
-  fxcompose.cpp
-  FXComposite.cpp
-  FXCondition.cpp
-  FXConsole.cpp
-  FXCP1250Codec.cpp
-  FXCP1251Codec.cpp
-  FXCP1252Codec.cpp
-  FXCP1253Codec.cpp
-  FXCP1254Codec.cpp
-  FXCP1255Codec.cpp
-  FXCP1256Codec.cpp
-  FXCP1257Codec.cpp
-  FXCP1258Codec.cpp
+  FX885910Codec.cpp
+  FX885911Codec.cpp
+  FX885913Codec.cpp
+  FX885914Codec.cpp
+  FX885915Codec.cpp
+  FX885916Codec.cpp
   FXCP437Codec.cpp
   FXCP850Codec.cpp
   FXCP852Codec.cpp
@@ -461,8 +405,57 @@ set(SOURCES
   FXCP866Codec.cpp
   FXCP869Codec.cpp
   FXCP874Codec.cpp
-  fxcpuid.cpp
+  FXCP1250Codec.cpp
+  FXCP1251Codec.cpp
+  FXCP1252Codec.cpp
+  FXCP1253Codec.cpp
+  FXCP1254Codec.cpp
+  FXCP1255Codec.cpp
+  FXCP1256Codec.cpp
+  FXCP1257Codec.cpp
+  FXCP1258Codec.cpp
+  FXKOI8RCodec.cpp
+  FXUTF8Codec.cpp
+  FXUTF16Codec.cpp
+  FXUTF32Codec.cpp
+  FX4Splitter.cpp
+  FX7Segment.cpp
+  FXAccelTable.cpp
+  FXApp.cpp
+  FXArray.cpp
+  FXArrowButton.cpp
+  FXAtomic.cpp
+  FXAutoThreadStorageKey.cpp
+  FXBarrier.cpp
+  FXBMPIcon.cpp
+  FXBMPImage.cpp
+  FXBitmap.cpp
+  FXBitmapFrame.cpp
+  FXBitmapView.cpp
+  FXButton.cpp
+  FXBZFileStream.cpp
   FXCURCursor.cpp
+  FXCalendar.cpp
+  FXCalendarView.cpp
+  FXCanvas.cpp
+  FXCheckButton.cpp
+  FXChoiceBox.cpp
+  FXColorBar.cpp
+  FXColorDialog.cpp
+  FXColorList.cpp
+  FXColorRing.cpp
+  FXColors.cpp
+  FXColorSelector.cpp
+  FXColorWell.cpp
+  FXColorWheel.cpp
+  FXComboBox.cpp
+  FXCompletion.cpp
+  FXComplexf.cpp
+  FXComplexd.cpp
+  FXComposeContext.cpp
+  FXComposite.cpp
+  FXCondition.cpp
+  FXConsole.cpp
   FXCursor.cpp
   FXDataTarget.cpp
   FXDate.cpp
@@ -471,14 +464,14 @@ set(SOURCES
   FXDCWindow.cpp
   FXDDSIcon.cpp
   FXDDSImage.cpp
-  fxddsio.cpp
+  FXDLL.cpp
   FXDebugTarget.cpp
   FXDelegator.cpp
   FXDial.cpp
   FXDialogBox.cpp
   FXDictionary.cpp
-  FXDirBox.cpp
   FXDir.cpp
+  FXDirBox.cpp
   FXDirDialog.cpp
   FXDirList.cpp
   FXDirSelector.cpp
@@ -486,10 +479,10 @@ set(SOURCES
   FXDirWatch.cpp
   FXDispatcher.cpp
   FXDisplay.cpp
-  FXDLL.cpp
   FXDockBar.cpp
-  FXDockHandler.cpp
   FXDockSite.cpp
+  FXDockHandler.cpp
+  FXDockTitle.cpp
   FXDocument.cpp
   FXDragCorner.cpp
   FXDrawable.cpp
@@ -499,15 +492,14 @@ set(SOURCES
   FXException.cpp
   FXEXEIcon.cpp
   FXEXEImage.cpp
-  fxexeio.cpp
   FXExpression.cpp
   FXExtentd.cpp
   FXExtentf.cpp
-  fxezquantize.cpp
-  FXFileAssociations.cpp
   FXFile.cpp
+  FXFileAssociations.cpp
   FXFileDialog.cpp
   FXFileList.cpp
+  FXFileProgressDialog.cpp
   FXFileSelector.cpp
   FXFileStream.cpp
   FXFoldingList.cpp
@@ -515,16 +507,15 @@ set(SOURCES
   FXFontDialog.cpp
   FXFontSelector.cpp
   FXFrame.cpp
-  fxfsquantize.cpp
-  FXGauge.cpp
-  fxgetticks.cpp
   FXGIFCursor.cpp
   FXGIFIcon.cpp
   FXGIFImage.cpp
-  fxgifio.cpp
   FXGLCanvas.cpp
   FXGLContext.cpp
+  FXGLObject.cpp
+  FXGLViewer.cpp
   FXGLVisual.cpp
+  FXGauge.cpp
   FXGradientBar.cpp
   FXGroupBox.cpp
   FXGZFileStream.cpp
@@ -534,102 +525,96 @@ set(SOURCES
   FXHorizontalFrame.cpp
   FXICOIcon.cpp
   FXICOImage.cpp
-  FXIconCache.cpp
+  FXIFFIcon.cpp
+  FXIFFImage.cpp
   FXIcon.cpp
+  FXIconCache.cpp
   FXIconList.cpp
   FXIconSource.cpp
   FXId.cpp
-  FXIFFIcon.cpp
-  FXIFFImage.cpp
-  fxiffio.cpp
   FXImage.cpp
   FXImageFrame.cpp
   FXImageView.cpp
+  FXInputDialog.cpp
   FXINI.cpp
   FXINIFile.cpp
-  FXInputDialog.cpp
-  FXIOBuffer.cpp
   FXIO.cpp
+  FXIOBuffer.cpp
   FXIODevice.cpp
   FXJP2Icon.cpp
   FXJP2Image.cpp
-  fxjp2io.cpp
-  fxjpegio.cpp
   FXJPGIcon.cpp
   FXJPGImage.cpp
   FXJSON.cpp
   FXJSONFile.cpp
   FXJSONString.cpp
-  fxkeyboard.cpp
-  fxkeysym.cpp
   FXKnob.cpp
-  FXKOI8RCodec.cpp
   FXLabel.cpp
-  fxleaps.cpp
   FXLFQueue.cpp
-  FXListBox.cpp
   FXList.cpp
+  FXListBox.cpp
   FXLocale.cpp
-  FXMainWindow.cpp
-  FXMappedFile.cpp
-  fxmath.cpp
-  FXMatrix.cpp
   FXMDIButton.cpp
   FXMDIChild.cpp
   FXMDIClient.cpp
+  FXMainWindow.cpp
+  FXMappedFile.cpp
+  FXMat2d.cpp
+  FXMat2f.cpp
+  FXMat3d.cpp
+  FXMat3f.cpp
+  FXMat4d.cpp
+  FXMat4f.cpp
+  FXMatrix.cpp
   FXMemoryStream.cpp
   FXMenuBar.cpp
   FXMenuButton.cpp
   FXMenuCaption.cpp
   FXMenuCascade.cpp
   FXMenuCheck.cpp
+  FXMenuRadio.cpp
   FXMenuCommand.cpp
   FXMenuPane.cpp
-  FXMenuRadio.cpp
   FXMenuSeparator.cpp
   FXMenuTitle.cpp
   FXMessageBox.cpp
   FXMessageChannel.cpp
   FXMetaClass.cpp
   FXMutex.cpp
-  fxntp.cpp
   FXObject.cpp
   FXObjectList.cpp
   FXOptionMenu.cpp
-  fxosver.cpp
-  FXPacker.cpp
-  FXParseBuffer.cpp
-  fxparsegeometry.cpp
-  FXPath.cpp
   FXPCXIcon.cpp
   FXPCXImage.cpp
-  fxpcxio.cpp
-  FXPicker.cpp
-  FXPipe.cpp
   FXPNGIcon.cpp
   FXPNGImage.cpp
-  fxpngio.cpp
-  FXPoint.cpp
-  FXPopup.cpp
   FXPPMIcon.cpp
   FXPPMImage.cpp
-  fxppmio.cpp
+  FXPacker.cpp
+  FXParseBuffer.cpp
+  FXPath.cpp
+  FXPicker.cpp
+  FXPipe.cpp
+  FXPopup.cpp
+  FXPoint.cpp
   FXPrintDialog.cpp
-  fxprintf.cpp
-  fxpriv.cpp
   FXProcess.cpp
   FXProgressBar.cpp
   FXProgressDialog.cpp
-  fxpsio.cpp
   FXPtrList.cpp
   FXPtrQueue.cpp
-  FXReactor.cpp
-  FXRadioButton.cpp
-  FXRandom.cpp
-  FXRangeSlider.cpp
+  FXQuatd.cpp
+  FXQuatf.cpp
   FXRASIcon.cpp
   FXRASImage.cpp
-  fxrasio.cpp
+  FXRGBIcon.cpp
+  FXRGBImage.cpp
+  FXRadioButton.cpp
+  FXRandom.cpp
+  FXRangef.cpp
+  FXRanged.cpp
+  FXRangeSlider.cpp
+  FXReactor.cpp
   FXReadWriteLock.cpp
   FXRealSlider.cpp
   FXRealSpinner.cpp
@@ -640,13 +625,9 @@ set(SOURCES
   FXReplaceDialog.cpp
   FXReverseDictionary.cpp
   FXRex.cpp
-  FXRGBIcon.cpp
-  FXRGBImage.cpp
-  fxrgbio.cpp
   FXRootWindow.cpp
   FXRuler.cpp
   FXRulerView.cpp
-  fxscanf.cpp
   FXScopedThread.cpp
   FXScrollArea.cpp
   FXScrollBar.cpp
@@ -661,8 +642,11 @@ set(SOURCES
   FXShutter.cpp
   FXSize.cpp
   FXSlider.cpp
-  FXSpinLock.cpp
+  FXSocket.cpp
   FXSpinner.cpp
+  FXSpinLock.cpp
+  FXSpheref.cpp
+  FXSphered.cpp
   FXSplashWindow.cpp
   FXSplitter.cpp
   FXSpring.cpp
@@ -672,31 +656,25 @@ set(SOURCES
   FXStream.cpp
   FXString.cpp
   FXStringDictionary.cpp
-  fxstrtod.cpp
-  fxstrtoll.cpp
-  fxstrtoull.cpp
   FXSwitcher.cpp
   FXSystem.cpp
   FXSystemTime.cpp
   FXSystemTimeFormat.cpp
   FXSystemTimeParse.cpp
-  fxtabbify.cpp
+  FXTGAIcon.cpp
+  FXTGAImage.cpp
+  FXTIFIcon.cpp
+  FXTIFImage.cpp
   FXTabBar.cpp
   FXTabBook.cpp
   FXTabItem.cpp
   FXTable.cpp
-  fxtargaio.cpp
   FXTaskGroup.cpp
-  FXTextCodec.cpp
   FXText.cpp
+  FXTextCodec.cpp
   FXTextField.cpp
-  FXTGAIcon.cpp
-  FXTGAImage.cpp
   FXThread.cpp
   FXThreadPool.cpp
-  FXTIFIcon.cpp
-  FXTIFImage.cpp
-  fxtifio.cpp
   FXToggleButton.cpp
   FXToolBar.cpp
   FXToolBarGrip.cpp
@@ -705,39 +683,77 @@ set(SOURCES
   FXToolTip.cpp
   FXTopWindow.cpp
   FXTranslator.cpp
-  FXTreeListBox.cpp
   FXTreeList.cpp
+  FXTreeListBox.cpp
   FXTriStateButton.cpp
   FXUndoList.cpp
-  fxunicode.cpp
   FXURL.cpp
-  FXUTF16Codec.cpp
-  FXUTF32Codec.cpp
-  FXUTF8Codec.cpp
-  fxutils.cpp
-  FXVariantArray.cpp
   FXVariant.cpp
+  FXVariantArray.cpp
   FXVariantMap.cpp
+  FXVec2d.cpp
+  FXVec2f.cpp
+  FXVec3d.cpp
   FXVec3f.cpp
+  FXVec4d.cpp
   FXVec4f.cpp
   FXVerticalFrame.cpp
   FXVisual.cpp
   FXWEBPIcon.cpp
   FXWEBPImage.cpp
-  fxwebpio.cpp
   FXWindow.cpp
   FXWizard.cpp
   FXWorker.cpp
   FXWSQueue.cpp
-  fxwuquantize.cpp
-  FXXBMIcon.cpp
-  FXXBMImage.cpp
-  fxxbmio.cpp
   FXXML.cpp
   FXXMLFile.cpp
   FXXMLString.cpp
+  FXXBMIcon.cpp
+  FXXBMImage.cpp
   FXXPMIcon.cpp
   FXXPMImage.cpp
+  fxascii.cpp
+  fxbase64.cpp
+  fxbase85.cpp
+  fxchar.cpp
+  fxcpuid.cpp
+  fxbmpio.cpp
+  fxcompose.cpp
+  fxddsio.cpp
+  fxezquantize.cpp
+  fxexeio.cpp
+  fxfsquantize.cpp
+  fxgifio.cpp
+  fxiffio.cpp
+  fxjpegio.cpp
+  fxjp2io.cpp
+  fxkeyboard.cpp
+  fxkeysym.cpp
+  fxleaps.cpp
+  fxmath.cpp
+  fxntp.cpp
+  fxosver.cpp
+  fxparsegeometry.cpp
+  fxpcxio.cpp
+  fxpngio.cpp
+  fxppmio.cpp
+  fxprintf.cpp
+  fxpriv.cpp
+  fxpsio.cpp
+  fxrasio.cpp
+  fxrgbio.cpp
+  fxscanf.cpp
+  fxstrtoll.cpp
+  fxstrtoull.cpp
+  fxstrtod.cpp
+  fxtabbify.cpp
+  fxtargaio.cpp
+  fxtifio.cpp
+  fxunicode.cpp
+  fxutils.cpp
+  fxwebpio.cpp
+  fxwuquantize.cpp
+  fxxbmio.cpp
   fxxpmio.cpp
   icons.cpp)
 
@@ -823,7 +839,6 @@ winmaximize.gif
 winminimize.gif
 winrestore.gif)
 
-# Building a shared library on Windows requires GL libraries
 #add_library(FOX SHARED ${SOURCES})
 add_library(FOX ${SOURCES})
 
@@ -833,17 +848,11 @@ find_package(X11)
 find_package(Freetype)
 pkg_check_modules(FONTCONFIG fontconfig)
 
-if(WITH_OPENGL)
-  find_package(OpenGL)
-endif()
-
 check_cxx_source_compiles( "#include <immintrin.h>
 int main(int argc,char *argv) { return 0; }" HAVE_IMMINTRIN_H)
 if(HAVE_IMMINTRIN_H)
   add_definitions(-DHAVE_IMMINTRIN_H)
 endif()
-
-
 
 check_cxx_symbol_exists(localtime_r "time.h" HAVE_LOCALTIME_R)
 if(HAVE_LOCALTIME_R)
@@ -1187,18 +1196,17 @@ if(WITH_OPENJPEG)
 endif()
 
 if(WITH_OPENGL)
+  find_package(OpenGL REQUIRED)
   target_compile_definitions(FOX PUBLIC -DHAVE_GL_H)
-  #  list(APPEND LIBRARIES ${EPOXY_LIBRARIES})
-endif()
-
-if (OPENGL_GLU_FOUND)
-  add_definitions(-DHAVE_GLU_H)
-  list(APPEND LIBRARIES ${OPENGL_glu_LIBRARY})
-endif()
-
-if (OpenGL_GLX_FOUND)
-  target_compile_definitions(FOX PUBLIC -DHAVE_GLX_H)
-  list(APPEND LIBRARIES ${OPENGL_glx_LIBRARY})
+  list(APPEND LIBRARIES OpenGL::GL)
+  if(OPENGL_GLU_FOUND)
+    target_compile_definitions(FOX PUBLIC -DHAVE_GLU_H)
+    list(APPEND LIBRARIES OpenGL::GLU)
+  endif()
+  if(OpenGL_GLX_FOUND)
+    target_compile_definitions(FOX PUBLIC -DHAVE_GLX_H)
+    list(APPEND LIBRARIES OpenGL::GLX)
+  endif()
 endif()
 
 if(NOT WITH_XIM)
