@@ -773,7 +773,6 @@ clearentry.gif
 cmymode.gif
 dialmode.gif
 dirup_gif.gif
-deleteicon.gif
 docktop.gif
 dockbottom.gif
 dockleft.gif
