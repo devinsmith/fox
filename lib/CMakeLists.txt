@@ -406,7 +406,6 @@ set(SOURCES
   FXArray.cpp
   FXArrowButton.cpp
   fxascii.cpp
-  FXAtomic.cpp
   FXAutoThreadStorageKey.cpp
   FXBarrier.cpp
   fxbase64.cpp
@@ -523,7 +522,6 @@ set(SOURCES
   FXFrame.cpp
   fxfsquantize.cpp
   FXGauge.cpp
-  fxgetticks.cpp
   FXGIFCursor.cpp
   FXGIFIcon.cpp
   FXGIFImage.cpp
