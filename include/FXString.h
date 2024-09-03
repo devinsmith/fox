@@ -3,7 +3,7 @@
 *                           S t r i n g   O b j e c t                           *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -666,7 +666,6 @@ public:
   static FXString detab(const FXchar* str,FXint num,FXint tabcols);
   static FXString detab(const FXString& str,FXint tabcols);
 
-
   /**
   * Compress runs of more than 2 spaces with tabs.
   * UTF8 characters are counted as one column.
@@ -674,6 +673,15 @@ public:
   static FXString entab(const FXchar* str,FXint tabcols);
   static FXString entab(const FXchar* str,FXint num,FXint tabcols);
   static FXString entab(const FXString& str,FXint tabcols);
+
+  /**
+  * Count number of columns in string.
+  * UTF8 characters are counted as one column; tabs are up
+  * to tabcols wide.
+  */
+  static FXint columns(const FXchar* str,FXint tabcols);
+  static FXint columns(const FXchar* str,FXint num,FXint tabcols);
+  static FXint columns(const FXString& str,FXint tabcols);
 
   /**
   * Retabbify lines of text.

@@ -3,7 +3,7 @@
 *       P e r s i s t e n t   S t o r a g e   S t r e a m   C l a s s e s       *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -23,6 +23,8 @@
 #include "fxdefs.h"
 #include "fxmath.h"
 #include "FXElement.h"
+#include "FXArray.h"
+#include "FXMetaClass.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXString.h"
@@ -882,7 +884,7 @@ FXStream& FXStream::saveObject(const FXObject* v){
     const FXchar *name;
     FXuint tag,zero=0;
     void* ref;
-    if(v==nullptr){                             // Its a NULL
+    if(!v){                                     // Its a NULL
       *this << zero;                            // Save special null-object tag
       return *this;
       }
@@ -946,7 +948,7 @@ FXStream& FXStream::loadObject(FXObject*& v){
       }
     load(name,tag);                             // Load class name
     cls=FXMetaClass::getMetaClassFromName(name);
-    if(cls==nullptr){                           // We don't have a class with this name
+    if(!cls){                                   // We don't have a class with this name
       code=FXStreamUnknown;                     // Unknown class
       return *this;
       }

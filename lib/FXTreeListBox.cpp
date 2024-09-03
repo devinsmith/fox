@@ -3,7 +3,7 @@
 *                      T r e e  L i s t  B o x   O b j e c t                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -23,14 +23,15 @@
 #include "fxdefs.h"
 #include "fxmath.h"
 #include "fxkeys.h"
-#include "FXArray.h"
-#include "FXHash.h"
 #include "FXMutex.h"
-#include "FXStream.h"
-#include "FXString.h"
 #include "FXSize.h"
 #include "FXPoint.h"
 #include "FXRectangle.h"
+#include "FXElement.h"
+#include "FXMetaClass.h"
+#include "FXHash.h"
+#include "FXStream.h"
+#include "FXString.h"
 #include "FXStringDictionary.h"
 #include "FXSettings.h"
 #include "FXRegistry.h"
@@ -592,7 +593,7 @@ void FXTreeListBox::sortRootItems(){
 
 // Set item text
 void FXTreeListBox::setItemText(FXTreeItem* item,const FXString& text){
-  if(item==nullptr){ fxerror("%s::setItemText: item is NULL\n",getClassName()); }
+  if(!item){ fxerror("%s::setItemText: item is NULL\n",getClassName()); }
   if(isItemCurrent(item)) field->setText(text);
   tree->setItemText(item,text);
   recalc();
@@ -601,7 +602,7 @@ void FXTreeListBox::setItemText(FXTreeItem* item,const FXString& text){
 
 // Get item text
 FXString FXTreeListBox::getItemText(const FXTreeItem* item) const {
-  if(item==nullptr){ fxerror("%s::getItemText: item is NULL\n",getClassName()); }
+  if(!item){ fxerror("%s::getItemText: item is NULL\n",getClassName()); }
   return tree->getItemText(item);
   }
 

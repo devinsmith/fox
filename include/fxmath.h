@@ -3,7 +3,7 @@
 *                           M a t h   F u n c t i o n s                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2015,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2015,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -197,58 +197,117 @@ const FXdouble RTOD=57.295779513082320876798154814;
 /// Feigenbaum constant
 const FXdouble FEIGENBAUM=4.6692016091029906718532038215;
 
+/// Golden ratio
+const FXdouble GOLDENRATIO=1.6180339887498948482045868343;
+
 /*********************************  Functions  *********************************/
 
 // FOX math functions live here
 namespace Math {
 
-/// Sign of single precision float point number (0..1)
-extern FXAPI FXint fpSign(FXfloat x);
-
-/// Sign of double precision float point number (0..1)
-extern FXAPI FXlong fpSign(FXdouble x);
-
-/// Signed exponent of single precision float point number (-126..128)
-extern FXAPI FXint fpExponent(FXfloat x);
-
-/// Signed exponent of double precision float point number (-1022..1024)
-extern FXAPI FXlong fpExponent(FXdouble x);
-
-/// Mantissa of single precision float point number (including hidden bit)
-extern FXAPI FXint fpMantissa(FXfloat x);
-
-/// Mantissa of double precision float point number (including hidden bit)
-extern FXAPI FXlong fpMantissa(FXdouble x);
-
-/// Single precision floating point number is finite
-extern FXAPI FXbool fpFinite(FXfloat x);
-
-/// Double precision floating point number is finite
-extern FXAPI FXbool fpFinite(FXdouble x);
-
-/// Single precision floating point number is infinite
-extern FXAPI FXbool fpInfinite(FXfloat x);
-
-/// Double precision floating point number is infinite
-extern FXAPI FXbool fpInfinite(FXdouble x);
-
-/// Single precision floating point number is NaN
-extern FXAPI FXbool fpNan(FXfloat x);
-
-/// Double precision floating point number is NaN
-extern FXAPI FXbool fpNan(FXdouble x);
-
-/// Single precision floating point number is normalized
-extern FXAPI FXbool fpNormal(FXfloat x);
-
-/// Double precision floating point number is normalized
-extern FXAPI FXbool fpNormal(FXdouble x);
 
 /// All bits of single precision floating point number
-extern FXAPI FXuint fpBits(FXfloat x);
+static inline FXuint fpBits(FXfloat x){
+  union{ FXfloat f; FXuint u; } z={x};
+  return z.u;
+  }
 
 /// All bits of double precision floating point number
-extern FXAPI FXulong fpBits(FXdouble x);
+static inline FXulong fpBits(FXdouble x){
+  union{ FXdouble f; FXulong u; } z={x};
+  return z.u;
+  }
+
+
+/// Sign of single precision float point number (0..1)
+static inline FXint fpSign(FXfloat x){
+  FXint sign=fpBits(x)>>31;
+  return sign;
+  }
+
+/// Sign of double precision float point number (0..1)
+static inline FXlong fpSign(FXdouble x){
+  FXlong sign=fpBits(x)>>63;
+  return sign;
+  }
+
+
+/// Signed exponent of single precision float point number (-126..128)
+static inline FXint fpExponent(FXfloat x){
+  FXint exponent=(fpBits(x)>>23)&0xff;
+  FXint bias=126-(-exponent>>31);
+  return exponent-bias;
+  }
+
+/// Signed exponent of double precision float point number (-1022..1024)
+static inline FXlong fpExponent(FXdouble x){
+  FXlong exponent=(fpBits(x)>>52)&0x7ff;
+  FXlong bias=1022-(-exponent>>63);
+  return exponent-bias;
+  }
+
+
+/// Mantissa of single precision float point number (including hidden bit)
+static inline FXint fpMantissa(FXfloat x){
+  FXint mantissa=fpBits(x)&0x007fffff;
+  FXint exponent=fpBits(x)&0x7f800000;
+  FXint extrabit=-(-exponent>>31);      // 1 if exponent!=0
+  return mantissa|(extrabit<<23);
+  }
+
+/// Mantissa of double precision float point number (including hidden bit)
+static inline FXlong fpMantissa(FXdouble x){
+  FXlong mantissa=fpBits(x)&FXLONG(0x000fffffffffffff);
+  FXlong exponent=fpBits(x)&FXLONG(0x7ff0000000000000);
+  FXlong extrabit=-(-exponent>>63);     // 1 if exponent!=0
+  return mantissa|(extrabit<<52);
+  }
+
+
+/// Single precision floating point number is finite
+static inline FXbool fpFinite(FXfloat x){
+  return ((fpBits(x)&0x7fffffff)<0x7f800000);
+  }
+
+/// Double precision floating point number is finite
+static inline FXbool fpFinite(FXdouble x){
+  return ((fpBits(x)&FXULONG(0x7fffffffffffffff))<FXULONG(0x7ff0000000000000));
+  }
+
+
+/// Single precision floating point number is infinite
+static inline FXbool fpInfinite(FXfloat x){
+  return ((fpBits(x)&0x7fffffff)==0x7f800000);
+  }
+
+/// Double precision floating point number is infinite
+static inline FXbool fpInfinite(FXdouble x){
+  return ((fpBits(x)&FXULONG(0x7fffffffffffffff))==FXULONG(0x7ff0000000000000));
+  }
+
+
+/// Single precision floating point number is NaN
+static inline FXbool fpNan(FXfloat x){
+  return (0x7f800000<(fpBits(x)&0x7fffffff));
+  }
+
+/// Double precision floating point number is NaN
+static inline FXbool fpNan(FXdouble x){
+  return (FXULONG(0x7ff0000000000000)<(fpBits(x)&FXULONG(0x7fffffffffffffff)));
+  }
+
+
+/// Single precision floating point number is normalized
+static inline FXbool fpNormal(FXfloat x){
+  FXuint bits=fpBits(x)&0x7fffffff;
+  return bits==0 || (0x00800000<=bits && bits<0x7f800000);
+  }
+
+/// Double precision floating point number is normalized
+static inline FXbool fpNormal(FXdouble x){
+  FXulong bits=fpBits(x)&FXULONG(0x7fffffffffffffff);
+  return (bits==0) || ((FXULONG(0x0010000000000000)<=bits) && (bits<FXULONG(0x7ff0000000000000)));
+  }
 
 
 /// Evaluate integer (a < b) ? x : y
@@ -267,22 +326,48 @@ static inline FXint imin(FXint x,FXint y){
   return (x<y)?x:y;
   }
 
+/// Minimum if two unsigned integers
+static inline FXuint imin(FXuint x,FXuint y){
+  return (x<y)?x:y;
+  }
+
 /// Minimum if two longs
 static inline FXlong imin(FXlong x,FXlong y){
   return (x<y)?x:y;
   }
 
+/// Minimum if two unsigned longs
+static inline FXulong imin(FXulong x,FXulong y){
+  return (x<y)?x:y;
+  }
 
-/// Minimum of two integers
+
+/// Maximum of two integers
 static inline FXint imax(FXint x,FXint y){
   return (x>y)?x:y;
   }
 
-/// Minimum of two longs
+/// Maximum of two unsigned integers
+static inline FXuint imax(FXuint x,FXuint y){
+  return (x>y)?x:y;
+  }
+
+
+/// Maximum of two longs
 static inline FXlong imax(FXlong x,FXlong y){
   return (x>y)?x:y;
   }
 
+/// Maximum of two unsigned longs
+static inline FXulong imax(FXulong x,FXulong y){
+  return (x>y)?x:y;
+  }
+
+
+/// Absolute value of short
+static inline FXshort iabs(FXshort x){
+  return 0<x?x:-x;
+  }
 
 /// Absolute value of integer
 static inline FXint iabs(FXint x){
@@ -556,7 +641,7 @@ static inline FXint lrint(FXfloat x){
 #if defined(NO_LRINTF)
   return (FXint)(x+Math::copysign(0.5f,x));
 #else
-  return ::lrintf(x);
+  return (FXint)::lrintf(x);
 #endif
  }
 
@@ -565,7 +650,7 @@ static inline FXlong lrint(FXdouble x){
 #if defined(NO_LRINT)
  return (FXlong)(x+Math::copysign(0.5,x));
 #else
- return ::lrint(x);
+ return (FXlong)::lrint(x);
 #endif
  }
 
@@ -897,6 +982,30 @@ static inline FXdouble cub(FXdouble x){
   }
 
 
+/// Single precision reciprocal square root
+static inline FXfloat rsqrt(FXfloat x){
+  return 1.0f/Math::sqrt(x);
+  }
+
+
+/// Double precision reciprocal square root
+static inline FXdouble rsqrt(FXdouble x){
+  return 1.0/Math::sqrt(x);
+  }
+
+
+/// Single precision reciprocal
+static inline FXfloat recip(FXfloat x){
+  return 1.0f/x;
+  }
+
+
+/// Double precision reciprocal
+static inline FXdouble recip(FXdouble x){
+  return 1.0/x;
+  }
+
+
 /// Single precision calculate hypothenuse sqrt(x^2+y^2)
 static inline FXfloat hypot(FXfloat x,FXfloat y){
 #if defined(NO_HYPOTF)
@@ -1131,6 +1240,7 @@ extern FXAPI FXfloat inverfc(FXfloat x);
 
 /// Double precision inverse complementary error function
 extern FXAPI FXdouble inverfc(FXdouble x);
+
 
 }
 

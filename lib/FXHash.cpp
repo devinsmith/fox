@@ -3,7 +3,7 @@
 *                       H a s h   T a b l e   C l a s s                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2003,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2003,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -22,10 +22,9 @@
 #include "fxver.h"
 #include "fxdefs.h"
 #include "fxmath.h"
-#include "FXArray.h"
+#include "FXElement.h"
 #include "FXHash.h"
 #include "FXException.h"
-#include "FXElement.h"
 
 
 /*
@@ -261,7 +260,7 @@ void* FXHash::remove(const void* ky){
     FXuval p,b,x;
     p=b=HASH(ky);
     while(table[x=p&(no()-1)].key!=ky){
-      if(table[x].key==nullptr) goto x;
+      if(!table[x].key) goto x;
       p=(p<<2)+p+b+1;
       b>>=BSHIFT;
       }

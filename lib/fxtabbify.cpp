@@ -3,7 +3,7 @@
 *                  T a b - S t o p s   M a n i p u l a t i o n s                *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -195,6 +195,46 @@ FXString FXString::entab(const FXchar* str,FXint tabcols){
 // Compress runs of more than 2 spaces with tabs.
 FXString FXString::entab(const FXString& str,FXint tabcols){
   return FXString::entab(str.text(),str.length(),tabcols);
+  }
+
+
+// Count number of columns in string
+FXint FXString::columns(const FXchar* str,FXint num,FXint tabcols){
+  FXint result=0,cols=0,p=0;
+  FXuchar c;
+  while(p<num){
+    c=str[p++];
+    if(c=='\n'){                                // End of the line; keep track of the longest
+      result=Math::imax(result,cols);
+      cols=0;
+      continue;
+      }
+    if(c=='\t'){                                // Advance by number of tab columns
+      cols+=tabcols-cols%tabcols;
+      continue;
+      }
+    cols++;
+    if(c<0xC0) continue;
+    p++;
+    if(c<0xE0) continue;
+    p++;
+    if(c<0xF0) continue;
+    p++;
+    }
+  result=Math::imax(result,cols);               // In case of unterminated last line
+  return result;
+  }
+
+
+// Count number of columns in string
+FXint FXString::columns(const FXchar* str,FXint tabcols){
+  return FXString::columns(str,strlen(str),tabcols);
+  }
+
+
+// Count number of columns in string
+FXint FXString::columns(const FXString& str,FXint tabcols){
+  return FXString::columns(str.text(),str.length(),tabcols);
   }
 
 

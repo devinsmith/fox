@@ -3,7 +3,7 @@
 *              T h e   P a t h F i n d e r   F i l e   B r o w s e r            *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2023 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This program is free software: you can redistribute it and/or modify          *
 * it under the terms of the GNU General Public License as published by          *
@@ -28,7 +28,7 @@
 #include "icons.h"
 
 // Support for extra image formats
-#ifdef HAVE_PNG_H
+#ifdef HAVE_ZLIB_H
 #include "FXPNGImage.h"
 #endif
 #ifdef HAVE_JPEG_H
@@ -1367,7 +1367,7 @@ long PathFinderMain::onCmdAbout(FXObject*,FXSelector,void*){
   FXVerticalFrame* side=new FXVerticalFrame(&about,LAYOUT_SIDE_RIGHT|LAYOUT_FILL_X|LAYOUT_FILL_Y,0,0,0,0, 10,10,10,10, 0,0);
   new FXLabel(side,"PathFinder",nullptr,JUSTIFY_LEFT|ICON_BEFORE_TEXT|LAYOUT_FILL_X);
   new FXHorizontalSeparator(side,SEPARATOR_LINE|LAYOUT_FILL_X);
-  new FXLabel(side,FXString::value(tr("\nPathFinder File Manager, version %d.%d.%d.\n\nPathFinder is a simple and speedy file manager with drag and drop support.\n\nUsing The FOX Toolkit (www.fox-toolkit.org), version %d.%d.%d (%s).\nCopyright (C) 2000,2023 Jeroen van der Zijp (jeroen@fox-toolkit.net).\n "),VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH,FOX_MAJOR,FOX_MINOR,FOX_LEVEL,__DATE__),nullptr,JUSTIFY_LEFT|LAYOUT_FILL_X|LAYOUT_FILL_Y);
+  new FXLabel(side,FXString::value(tr("\nPathFinder File Manager, version %d.%d.%d.\n\nPathFinder is a simple and speedy file manager with drag and drop support.\n\nUsing The FOX Toolkit (www.fox-toolkit.org), version %d.%d.%d (%s %s).\nCopyright (C) 2000,2024 Jeroen van der Zijp (jeroen@fox-toolkit.net).\n "),VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH,FOX_MAJOR,FOX_MINOR,FOX_LEVEL,__DATE__,__TIME__),nullptr,JUSTIFY_LEFT|LAYOUT_FILL_X|LAYOUT_FILL_Y);
   FXButton *button=new FXButton(side,tr("&OK"),nullptr,&about,FXDialogBox::ID_ACCEPT,BUTTON_INITIAL|BUTTON_DEFAULT|FRAME_RAISED|FRAME_THICK|LAYOUT_RIGHT,0,0,0,0,32,32,2,2);
   button->setFocus();
   about.execute(PLACEMENT_OWNER);
@@ -2145,7 +2145,10 @@ FXbool PathFinderMain::previewImage(const FXString& filename){
   else if(FXString::comparecase(ext,"dds")==0){
     img=new FXDDSImage(getApp(),nullptr,IMAGE_KEEP|IMAGE_SHMI|IMAGE_SHMP);
     }
-#ifdef HAVE_PNG_H
+  else if(FXString::comparecase(ext,"qoi")==0 || FXString::comparecase(ext,"qoif")==0){
+    img=new FXQOIFImage(getApp(),nullptr,IMAGE_KEEP|IMAGE_SHMI|IMAGE_SHMP);
+    }
+#ifdef HAVE_ZLIB_H
   else if(FXString::comparecase(ext,"png")==0){
     img=new FXPNGImage(getApp(),nullptr,IMAGE_KEEP|IMAGE_SHMI|IMAGE_SHMP);
     }
@@ -2284,9 +2287,47 @@ PathFinderMain::~PathFinderMain(){
 
 /*******************************************************************************/
 
+// Print command line help
+static void printusage(){
+  fxmessage("Usage: PathFinder [options] directory\n");
+  fxmessage("  options:\n");
+  fxmessage("  --help, -h               Print help.\n");
+  fxmessage("  --version                Print version number.\n");
+  fxmessage("  --size=WxH+X+Y           Force window size and placement.\n");
+  }
+
+
+// Print verson info
+static void printversion(){
+  fxmessage("PathFinder file manager version %d.%d.%d.\n",VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH);
+  fxmessage("Copyright (C) 1998,2024 Jeroen van der Zijp.  All Rights Reserved.\n\n");
+  fxmessage("Please visit: http://www.fox-toolkit.org for further information.\n");
+  fxmessage("\n");
+  fxmessage("This program is free software: you can redistribute it and/or modify\n");
+  fxmessage("it under the terms of the GNU General Public License as published by\n");
+  fxmessage("the Free Software Foundation, either version 3 of the License, or\n");
+  fxmessage("(at your option) any later version.\n");
+  fxmessage("\n");
+  fxmessage("This program is distributed in the hope that it will be useful,\n");
+  fxmessage("but WITHOUT ANY WARRANTY; without even the implied warranty of\n");
+  fxmessage("MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n");
+  fxmessage("GNU General Public License for more details.\n");
+  fxmessage("\n");
+  fxmessage("You should have received a copy of the GNU General Public License\n");
+  fxmessage("along with this program.  If not, see <http://www.gnu.org/licenses/>.\n");
+  }
+
+
 
 // Start the whole thing
 int main(int argc,char *argv[]){
+  FXString path;
+  FXint geom=0;
+  FXint winx=0;
+  FXint winy=0;
+  FXint winw=0;
+  FXint winh=0;
+  FXint arg=1;
 
   // Make sure  we're linked against the right library version
   if(fxversion[0]!=FOX_MAJOR || fxversion[1]!=FOX_MINOR || fxversion[2]!=FOX_LEVEL){
@@ -2313,8 +2354,46 @@ int main(int argc,char *argv[]){
   // Create window
   application.create();
 
+  // A few boilerplate options before starting
+  while(arg<argc){
+    if(FXString::compare(argv[arg],"--size=",7)==0){
+      geom=fxparsegeometry(argv[arg]+7,winx,winy,winw,winh);
+      arg++;
+      continue;
+      }
+    if(FXString::compare(argv[arg],"-h")==0){
+      printusage();
+      return 0;
+      }
+    if(FXString::compare(argv[arg],"--help")==0){
+      printusage();
+      return 0;
+      }
+    if(FXString::compare(argv[arg],"--version")==0){
+      printversion();
+      return 0;
+      }
+
+    // Interpret as initial directory
+    path=FXPath::absolute(argv[arg]);
+    break;
+    }
+
+  // Force position and/or size
+  if(geom){
+    if(!(geom&1)) winx=window->getX();
+    if(!(geom&2)) winy=window->getY();
+    if(!(geom&4)) winw=window->getWidth();
+    if(!(geom&8)) winh=window->getHeight();
+    if(winx<0) winx+=window->getRoot()->getWidth()-winw;
+    if(winy<0) winy+=window->getRoot()->getHeight()-winh;
+    window->position(winx,winy,winw,winh);
+    }
+
   // If given, start in indicated directory
-  if(argc==2) window->setDirectory(FXPath::absolute(argv[1]));
+  if(FXStat::isDirectory(path)){
+    window->setDirectory(path);
+    }
 
   // Run the app now...
   return application.run();

@@ -3,7 +3,7 @@
 *                            T a b l e   W i d g e t                            *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1999,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1999,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -23,9 +23,12 @@
 #include "fxdefs.h"
 #include "fxmath.h"
 #include "fxkeys.h"
+#include "FXElement.h"
 #include "FXArray.h"
+#include "FXMetaClass.h"
 #include "FXHash.h"
 #include "FXMutex.h"
+#include "FXException.h"
 #include "FXStream.h"
 #include "FXString.h"
 #include "FXSize.h"
@@ -868,7 +871,8 @@ FXbool FXTable::setSpanningRange(FXint row,FXint col,FXint fr,FXint lr,FXint fc,
   FXTableItem *item,*it;
 
   // Original cell should lie in table, and range should include original cell and be in table also
-  if(row<0 || col<0 || row>=nrows || col>=ncols || fr<0 || fc<0 || fr>row || fc>col || lr<row || lr>=nrows || lc<col || lc>=ncols){ fxerror("%s::reshapeItem: argument out of range\n",getClassName()); }
+  if(row<0 || col<0 || row>=nrows || col>=ncols){ fxerror("%s::setSpanningRange: cell row or column not inside table\n",getClassName()); }
+  if(fr<0 || fc<0 || lr>=nrows || lc>=ncols || fr>row || fc>col || lr<row || lc<col){ fxerror("%s::setSpanningRange: arguments out of range\n",getClassName()); }
 
   FXASSERT(0<=row && row<nrows && 0<=col && col<ncols);
 
@@ -957,6 +961,7 @@ FXbool FXTable::setSpanningRange(FXint row,FXint col,FXint fr,FXint lr,FXint fc,
 // Return spanning range of cell at row, col, rows fr..lr and columns fc..lc
 void FXTable::getSpanningRange(FXint row,FXint col,FXint& fr,FXint& lr,FXint& fc,FXint& lc) const {
   FXTableItem *item;
+  if(row<0 || col<0 || row>=nrows || col>=ncols){ fxerror("%s::getSpanningRange: cell row or column not inside table\n",getClassName()); }
   fr=lr=row;
   fc=lc=col;
   if((item=cells[row*ncols+col])!=nullptr){
@@ -1252,7 +1257,7 @@ void FXTable::updateItem(FXint row,FXint col) const {
 void FXTable::setItemText(FXint row,FXint col,const FXString& text,FXbool notify){
   if(row<0 || nrows<=row || col<0 || ncols<=col){ fxerror("%s::setItemText: index out of range.\n",getClassName()); }
   FXTableItem* item=cells[row*ncols+col];
-  if(item==nullptr){
+  if(!item){
     cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
     if(isItemSelected(row,col)) item->setSelected(true);
     }
@@ -1280,7 +1285,7 @@ FXString FXTable::getItemText(FXint row,FXint col) const {
 void FXTable::setItemTipText(FXint row,FXint col,const FXString& text){
   if(row<0 || nrows<=row || col<0 || ncols<=col){ fxerror("%s::setItemTipText: index out of range.\n",getClassName()); }
   FXTableItem* item=cells[row*ncols+col];
-  if(item==nullptr){
+  if(!item){
     cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
     if(isItemSelected(row,col)) item->setSelected(true);
     }
@@ -1300,7 +1305,7 @@ FXString FXTable::getItemTipText(FXint row,FXint col) const {
 void FXTable::setItemIcon(FXint row,FXint col,FXIcon* icon,FXbool owned,FXbool notify){
   if(row<0 || col<0 || nrows<=row || ncols<=col){ fxerror("%s::setItemIcon: index out of range.\n",getClassName()); }
   FXTableItem* item=cells[row*ncols+col];
-  if(item==nullptr){
+  if(!item){
     cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
     if(isItemSelected(row,col)) item->setSelected(true);
     }
@@ -1328,7 +1333,7 @@ FXIcon* FXTable::getItemIcon(FXint row,FXint col) const {
 void FXTable::setItemData(FXint row,FXint col,FXptr ptr){
   if(row<0 || col<0 || nrows<=row || ncols<=col){ fxerror("%s::setItemData: index out of range.\n",getClassName()); }
   FXTableItem* item=cells[row*ncols+col];
-  if(item==nullptr){
+  if(!item){
     cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
     if(isItemSelected(row,col)) item->setSelected(true);
     }
@@ -1361,7 +1366,7 @@ FXbool FXTable::isItemEnabled(FXint row,FXint col) const {
 FXbool FXTable::enableItem(FXint row,FXint col){
   if(0<=row && 0<=col && row<nrows && col<ncols){
     FXTableItem* item=cells[row*ncols+col];
-    if(item==nullptr){
+    if(!item){
       cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
       if(isItemSelected(row,col)) item->setSelected(true);
       }
@@ -1379,7 +1384,7 @@ FXbool FXTable::enableItem(FXint row,FXint col){
 FXbool FXTable::disableItem(FXint row,FXint col){
   if(0<=row && 0<=col && row<nrows && col<ncols){
     FXTableItem* item=cells[row*ncols+col];
-    if(item==nullptr){
+    if(!item){
       cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
       if(isItemSelected(row,col)) item->setSelected(true);
       }
@@ -1397,7 +1402,7 @@ FXbool FXTable::disableItem(FXint row,FXint col){
 void FXTable::setItemJustify(FXint row,FXint col,FXuint justify){
   if(row<0 || nrows<=row || col<0 || ncols<=col){ fxerror("%s::setItemJustify: index out of range.\n",getClassName()); }
   FXTableItem* item=cells[row*ncols+col];
-  if(item==nullptr){
+  if(!item){
     cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
     if(isItemSelected(row,col)) item->setSelected(true);
     }
@@ -1419,7 +1424,7 @@ FXuint FXTable::getItemJustify(FXint row,FXint col) const {
 void FXTable::setItemIconPosition(FXint row,FXint col,FXuint m){
   if(row<0 || nrows<=row || col<0 || ncols<=col){ fxerror("%s::setItemIconPosition: index out of range.\n",getClassName()); }
   FXTableItem* item=cells[row*ncols+col];
-  if(item==nullptr){
+  if(!item){
     cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
     if(isItemSelected(row,col)) item->setSelected(true);
     }
@@ -1441,7 +1446,7 @@ FXuint FXTable::getItemIconPosition(FXint row,FXint col) const {
 void FXTable::setItemBorders(FXint row,FXint col,FXuint borders){
   if(row<0 || nrows<=row || col<0 || ncols<=col){ fxerror("%s::setItemBorders: index out of range.\n",getClassName()); }
   FXTableItem* item=cells[row*ncols+col];
-  if(item==nullptr){
+  if(!item){
     cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
     if(isItemSelected(row,col)) item->setSelected(true);
     }
@@ -1463,7 +1468,7 @@ FXuint FXTable::getItemBorders(FXint row,FXint col) const {
 void FXTable::setItemStipple(FXint row,FXint col,FXStipplePattern pattern){
   if(row<0 || nrows<=row || col<0 || ncols<=col){ fxerror("%s::setItemStipple: index out of range.\n",getClassName()); }
   FXTableItem* item=cells[row*ncols+col];
-  if(item==nullptr){
+  if(!item){
     cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
     if(isItemSelected(row,col)) item->setSelected(true);
     }
@@ -1488,7 +1493,7 @@ void FXTable::extractText(FXchar*& text,FXint& size,FXint startrow,FXint endrow,
   FXString string;
 
   // Verify arguments
-  if(cs==nullptr || rs==nullptr){ fxerror("%s::extractText: bad argument.\n",getClassName()); }
+  if(!cs || !rs){ fxerror("%s::extractText: bad argument.\n",getClassName()); }
 
   // Verify range
   if(startrow<0 || startcol<0 || nrows<=endrow || ncols<=endcol){ fxerror("%s::extractText: index out of range.\n",getClassName()); }
@@ -1546,7 +1551,7 @@ void FXTable::extractText(FXString& text,FXint startrow,FXint endrow,FXint start
   FXString string;
 
   // Verify arguments
-  if(cs==nullptr || rs==nullptr){ fxerror("%s::extractText: bad argument.\n",getClassName()); }
+  if(!cs || !rs){ fxerror("%s::extractText: bad argument.\n",getClassName()); }
 
   // Verify range
   if(startrow<0 || startcol<0 || nrows<=endrow || ncols<=endcol){ fxerror("%s::extractText: index out of range.\n",getClassName()); }
@@ -1598,7 +1603,7 @@ void FXTable::countText(FXint& nr,FXint& nc,const FXchar* text,FXint size,const 
   FXint c=0,i=0,item=0;
 
   // Verify arguments
-  if(size<0 || text==nullptr || cs==nullptr || rs==nullptr){ fxerror("%s::countText: bad argument.\n",getClassName()); }
+  if(size<0 || !text || !cs || !rs){ fxerror("%s::countText: bad argument.\n",getClassName()); }
 
   nr=nc=0;
 
@@ -1643,7 +1648,7 @@ void FXTable::overlayText(FXint startrow,FXint endrow,FXint startcol,FXint endco
   FXint beg=0,end=0,r,c;
 
   // Verify arguments
-  if(size<0 || text==nullptr || cs==nullptr || rs==nullptr){ fxerror("%s::overlayText: bad argument.\n",getClassName()); }
+  if(size<0 || !text || !cs || !rs){ fxerror("%s::overlayText: bad argument.\n",getClassName()); }
 
   // Verify range
   if(startrow<0 || startcol<0 || startrow>endrow || startcol>endcol){ fxerror("%s::overlayText: index out of range.\n",getClassName()); }
@@ -1907,7 +1912,7 @@ FXbool FXTable::killSelection(FXbool notify){
 // Get input control to edit the item
 FXWindow* FXTable::getControlForItem(FXint row,FXint col){
   FXTableItem* item=cells[row*ncols+col];
-  if(item==nullptr){
+  if(!item){
     cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
     if(isItemSelected(row,col)) item->setSelected(false);
     }
@@ -1918,7 +1923,7 @@ FXWindow* FXTable::getControlForItem(FXint row,FXint col){
 // Set the item from the input control
 void FXTable::setItemFromControl(FXint row,FXint col,FXWindow* control){
   FXTableItem* item=cells[row*ncols+col];
-  if(item==nullptr){
+  if(!item){
     cells[row*ncols+col]=item=createItem(FXString::null,nullptr,nullptr);
     if(isItemSelected(row,col)) item->setSelected(false);
     }
@@ -3481,9 +3486,9 @@ void FXTable::setTableSize(FXint nr,FXint nc,FXbool notify){
 
 // Insert a row
 void FXTable::insertRows(FXint row,FXint nr,FXbool notify){
+  FXTableItem **oldcells=cells;
   FXint oldrow=current.row;
   FXint r,c,n;
-  FXTableItem **oldcells=cells;
 
   // Nothing to do
   if(nr<1) return;
@@ -3494,14 +3499,14 @@ void FXTable::insertRows(FXint row,FXint nr,FXbool notify){
   // Space for nr new rows
   n=nrows+nr;
 
+  // Allocate new table
+  if(!callocElms(cells,n*ncols+1)){
+    throw FXMemoryException("FXTable::insertRows: out of memory");
+    }
+
   // Initialize row headers
   for(r=row; r<row+nr; r++){
     rowHeader->insertItem(r,FXString::null,nullptr,defRowHeight);
-    }
-
-  // Allocate new table
-  if(!allocElms(cells,n*ncols+1)){
-    fxerror("%s::insertRows: out of memory.\n",getClassName());
     }
 
   // Copy first part
@@ -3511,16 +3516,14 @@ void FXTable::insertRows(FXint row,FXint nr,FXbool notify){
       }
     }
 
-  // Initialize middle part; cells spanning over current row are not split
-  for(c=0; c<ncols; c++){
-    if(0<row && row<nrows && oldcells[(row-1)*ncols+c]==oldcells[row*ncols+c]){
-      for(r=row; r<row+nr; r++){
-        cells[r*ncols+c]=oldcells[row*ncols+c];
-        }
-      }
-    else{
-      for(r=row; r<row+nr; r++){
-        cells[r*ncols+c]=nullptr;
+  // Handle spanning cells that go over the inserted row: these
+  // will now span accross the inserted rows
+  if(0<row && row<nrows){
+    for(c=0; c<ncols; c++){
+      if(oldcells[(row-1)*ncols+c]==oldcells[row*ncols+c]){
+        for(r=row; r<row+nr; r++){
+          cells[r*ncols+c]=oldcells[row*ncols+c];
+          }
         }
       }
     }
@@ -3573,9 +3576,9 @@ void FXTable::insertRows(FXint row,FXint nr,FXbool notify){
 
 // Insert a column
 void FXTable::insertColumns(FXint col,FXint nc,FXbool notify){
+  FXTableItem **oldcells=cells;
   FXint oldcol=current.col;
   FXint r,c,n;
-  FXTableItem **oldcells=cells;
 
   // Nothing to do
   if(nc<1) return;
@@ -3583,17 +3586,17 @@ void FXTable::insertColumns(FXint col,FXint nc,FXbool notify){
   // Must be in range
   if(col<0 || col>ncols){ fxerror("%s::insertColumns: column out of range.\n",getClassName()); }
 
-  // Space for nr new rows
+  // Space for nc new columns
   n=ncols+nc;
+
+  // Allocate new table
+  if(!callocElms(cells,nrows*n+1)){
+    throw FXMemoryException("FXTable::insertColumns: out of memory");
+    }
 
   // Initialize column headers
   for(c=col; c<col+nc; c++){
     colHeader->insertItem(c,FXString::null,nullptr,defColWidth);
-    }
-
-  // Allocate new table
-  if(!allocElms(cells,nrows*n+1)){
-    fxerror("%s::insertColumns: out of memory.\n",getClassName());
     }
 
   // Copy first part
@@ -3603,16 +3606,14 @@ void FXTable::insertColumns(FXint col,FXint nc,FXbool notify){
       }
     }
 
-  // Initialize middle part; cells spanning over current column are not split
-  for(r=0; r<nrows; r++){
-    if(0<col && col<ncols && oldcells[r*ncols+col-1]==oldcells[r*ncols+col]){
-      for(c=col; c<col+nc; c++){
-        cells[r*n+c]=oldcells[r*ncols+col];
-        }
-      }
-    else{
-      for(c=col; c<col+nc; c++){
-        cells[r*n+c]=nullptr;
+  // Handle spanning cells that go over the inserted column: these
+  // will now span accross the inserted columns
+  if(0<col && col<ncols){
+    for(r=0; r<nrows; r++){
+      if(oldcells[r*ncols+col-1]==oldcells[r*ncols+col]){
+        for(c=col; c<col+nc; c++){
+          cells[r*n+c]=oldcells[r*ncols+col];
+          }
         }
       }
     }
@@ -3665,10 +3666,10 @@ void FXTable::insertColumns(FXint col,FXint nc,FXbool notify){
 
 // Remove rows of cells
 void FXTable::removeRows(FXint row,FXint nr,FXbool notify){
+  FXTableItem **oldcells=cells;
   FXint oldrow=current.row;
   FXTableItem *item;
   FXint r,c,n;
-  FXTableItem **oldcells=cells;
 
   // Nothing to do
   if(nr<1) return;
@@ -3692,7 +3693,7 @@ void FXTable::removeRows(FXint row,FXint nr,FXbool notify){
 
   // Allocate new table
   if(!allocElms(cells,n*ncols+1)){
-    fxerror("%s::removeRows: out of memory.\n",getClassName());
+    throw FXMemoryException("FXTable::removeRows: out of memory");
     }
 
   // Copy first part
@@ -3770,10 +3771,10 @@ void FXTable::removeRows(FXint row,FXint nr,FXbool notify){
 
 // Remove columns of cells
 void FXTable::removeColumns(FXint col,FXint nc,FXbool notify){
+  FXTableItem **oldcells=cells;
   FXint oldcol=current.col;
   FXTableItem *item;
   FXint r,c,n;
-  FXTableItem **oldcells=cells;
 
   // Nothing to do
   if(nc<1) return;
@@ -3797,7 +3798,7 @@ void FXTable::removeColumns(FXint col,FXint nc,FXbool notify){
 
   // Allocate new table
   if(!allocElms(cells,nrows*n+1)){
-    fxerror("%s::removeColumns: out of memory.\n",getClassName());
+    throw FXMemoryException("FXTable::removeColumns: out of memory");
     }
 
   // Copy first part

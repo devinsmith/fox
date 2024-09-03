@@ -3,7 +3,7 @@
 *                         T o p l e v e l   O b j e c t                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -21,11 +21,10 @@
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
-#include "FXArray.h"
-#include "FXHash.h"
-#include "FXStream.h"
-#include "FXObject.h"
 #include "FXElement.h"
+#include "FXArray.h"
+#include "FXMetaClass.h"
+#include "FXObject.h"
 #include "FXException.h"
 
 
@@ -49,30 +48,32 @@ namespace FX {
 /*******************************************************************************/
 
 /// EXPERIMENT ///
+#if defined(NEWMAP)
 
 
-typedef long (*NewMethod)(FX::FXObject*,FX::FXObject*,FX::FXSelector,void*);
 
-struct NewMapEntry {
-  FX::FXSelector keylo;
-  FX::FXSelector keyhi;
-  FX::NewMethod  method;
+static const NewMapEntry messagemap[]={
+//  {100,200,&method_call<&FXObject::onDefault>},
+  {100,200,&FXMessageCallback::MethodCall<FXObject,&FXObject::onDefault>},
   };
 
-extern const NewMapEntry messagemap[];
+/*
+if you define a function template
 
+  template <typename t, void (t::*mf)()> foo<t, mf> f(mf);
 
-template <typename T,long (T::*mfn)(FX::FXObject*,FX::FXSelector,void*)>
-static long method_call(FX::FXObject* tgt,FX::FXObject* obj,FX::FXSelector sel,void* ptr){
-  return (tgt->*mfn)(obj,sel,ptr);
-  }
+where foo is your old-style class template like
 
-const NewMapEntry messagemap[]={
-  {100,200,&method_call<FXObject,&FXObject::onDefault>},
-  };
+  template <typename t, void (t::*mf)()> class foo;
 
+then you can use decltype(f(&x::h)) to deduce the desired type foo<x, &x::h> without having to repeat x.
+the price is that you either need to say decltype everywhere, or you wrap that in a macro.
 
+*/
+
+#endif
 /// EXPERIMENT ///
+
 
 // Have to do this one `by hand' as it has no base class
 const FXMetaClass FXObject::metaClass("FXObject",FXObject::manufacture,nullptr,nullptr,0,0);
@@ -81,6 +82,12 @@ const FXMetaClass FXObject::metaClass("FXObject",FXObject::manufacture,nullptr,n
 // Build an object
 FXObject* FXObject::manufacture(){
   return new FXObject;
+  }
+
+
+// Get metaclass of object
+const FX::FXMetaClass* FXObject::getMetaClass() const {
+  return &FXObject::metaClass;
   }
 
 
@@ -93,6 +100,18 @@ const FXchar* FXObject::getClassName() const {
 // Check if object belongs to a class
 FXbool FXObject::isMemberOf(const FXMetaClass* metaclass) const {
   return getMetaClass()->isSubClassOf(metaclass);
+  }
+
+
+// Unhandled function
+long FXObject::onDefault(FXObject*,FXSelector,void*){
+  return 0;
+  }
+
+
+// Handle message
+long FXObject::handle(FXObject* sender,FXSelector sel,void* ptr){
+  return onDefault(sender,sel,ptr);
   }
 
 
@@ -109,16 +128,6 @@ void FXObject::save(FXStream&) const { }
 
 // Load from stream
 void FXObject::load(FXStream&){ }
-
-
-// Unhandled function
-long FXObject::onDefault(FXObject*,FXSelector,void*){ return 0; }
-
-
-// Handle message
-long FXObject::handle(FXObject* sender,FXSelector sel,void* ptr){
-  return onDefault(sender,sel,ptr);
-  }
 
 
 // Virtual destructor

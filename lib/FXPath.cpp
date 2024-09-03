@@ -3,7 +3,7 @@
 *                  P a t h   N a m e   M a n i p u l a t i o n                  *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2000,2023 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2000,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -24,7 +24,9 @@
 #include "fxchar.h"
 #include "fxascii.h"
 #include "fxunicode.h"
+#include "FXElement.h"
 #include "FXArray.h"
+#include "FXMetaClass.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXString.h"
@@ -847,10 +849,10 @@ FXString FXPath::absolute(const FXString& base,const FXString& file){
 //  a          b            ../b        Branch point is assumed ..
 //  ./a        ./b          ../b        Branch point is assumed ..
 //
-//  /a/b/c     /a/b/c       .           Equal
-//  /a/b/c/    /a/b/c/      .           Equal
-//  /a/b/c     /a/b/c/      .           Equal
-//  /a/b/c/    /a/b/c       .           Equal
+//  /a/b/c     /a/b/c       ../c        Branch point is /a/b
+//  /a/b/c/    /a/b/c       ../c        Branch point is /a/b
+//  /a/b/c/    /a/b/c/      .           Branch point is /a/b/c
+//  /a/b/c     /a/b/c/      .           Branch point is /a/b/c
 //
 //  ../a/b/c   ../a/b/c/d   d           Branch point is ../a/b/c
 //
@@ -864,6 +866,8 @@ FXString FXPath::absolute(const FXString& base,const FXString& file){
 //  /          /a/b         a/b         Branch point is /
 //  /p/q       /a/b         ../../a/b   Branch point is /
 //
+// Note that absolute(base,relative(base,file)) should be equal to file
+// [after simplify()].
 FXString FXPath::relative(const FXString& base,const FXString& file){
   if(!base.empty() && !file.empty()){
 
@@ -902,8 +906,11 @@ FXString FXPath::relative(const FXString& base,const FXString& file){
         }
 #endif
 
-      // Common prefix except for trailing path separator
-      if((base[p]=='\0' || ISPATHSEP(base[p])) && (file[q]=='\0' || ISPATHSEP(file[q]))){
+      // Check if common prefix extends to the end of the base-path.
+      // If the file-path ends in "/", the final component is a directory,
+      // in which case it is OK to return ".".  Otherwise we prefer
+      // to prefix the file-part with "../".
+      if(ISPATHSEP(file[q]) && (base[p]=='\0' || ISPATHSEP(base[p]))){
         bp=p;
         bq=q;
         }
@@ -1223,6 +1230,7 @@ FXString FXPath::enquote(const FXString& file,FXbool force){
       case '*':                 // Wildcard
       case '?':
         if(!force) q++;
+        /*FALL*/
       default:                  // Normal characters
         q++;
         n=0;
@@ -1272,6 +1280,7 @@ FXString FXPath::enquote(const FXString& file,FXbool force){
         case '*':               // Wildcard
         case '?':
           if(!force) result[q++]='^';
+          /*FALL*/
         default:                // Normal characters
           result[q++]=c;
           n=0;
@@ -1407,6 +1416,7 @@ FXString FXPath::enquote(const FXString& file,FXbool force){
         continue;
       case '~':                 // Username substitution
         if(p==1) force=true;    // Force quotes if at beginning
+        /*FALL*/
       default:                  // Normal character
         q++;
         continue;
@@ -1879,7 +1889,7 @@ n:switch(*p){
       goto n;
     case '\\':          // Escape code
       if(!(flags&FXPath::NoEscape)){ if(*++p=='\0') goto x; }
-      // FALL //
+      /*FALL*/
     default:            // Regular character
       p=wcinc(p);       // Next unicode character
       set++;
@@ -1989,7 +1999,7 @@ static FXbool domatch(const FXchar* string,const FXchar* s,const FXchar* p,FXuin
         break;
       case '\\':        // Escaped character follows
         if(!(flags&FXPath::NoEscape)){ if(*++p=='\0') return false; }
-        // FALL //
+        /*FALL*/
       default:          // Match characters against pattern
         pp=wc(p);
         ss=wc(s);

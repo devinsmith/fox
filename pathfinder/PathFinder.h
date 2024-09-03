@@ -3,7 +3,7 @@
 *              T h e   P a t h F i n d e r   F i l e   B r o w s e r            *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2023 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This program is free software: you can redistribute it and/or modify          *
 * it under the terms of the GNU General Public License as published by          *
@@ -27,8 +27,8 @@ class Preferences;
 
 
 // Version
-#define VERSION_MAJOR 2
-#define VERSION_MINOR 1
+#define VERSION_MAJOR 3
+#define VERSION_MINOR 0
 #define VERSION_PATCH 0
 
 

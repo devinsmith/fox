@@ -3,7 +3,7 @@
 *                          U t i l i t y   F u n c t i o n s                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -25,7 +25,7 @@
 #include "fxmath.h"
 #include "fxendian.h"
 #include "fxascii.h"
-#include "FXArray.h"
+#include "FXElement.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXString.h"
@@ -42,7 +42,6 @@
 #ifndef INITIALMESSAGESIZE
 #define INITIALMESSAGESIZE 512
 #endif
-
 
 using namespace FX;
 
@@ -334,7 +333,7 @@ FXbool setTraceTopics(const FXchar* topics,FXbool flag){
 
 // Trace printout routine
 void fxtrace(FXuint level,const FXchar* format,...){
-  if(__unlikely(fxTraceVariable==nullptr)){
+  if(__unlikely(!fxTraceVariable)){
     const FXchar* str;
     fxTraceVariable="";
     if((str=getenv("FOX_TRACE_TOPICS"))!=nullptr){
