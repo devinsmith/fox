@@ -103,6 +103,7 @@ set(HEADERS
   ../include/FXCP869Codec.h
   ../include/FXCP874Codec.h
   ../include/fxcpuid.h
+  ../include/fxcrc.h
   ../include/FXCURCursor.h
   ../include/FXCursor.h
   ../include/FXDataTarget.h
@@ -213,6 +214,7 @@ set(HEADERS
   ../include/FXLocale.h
   ../include/FXMainWindow.h
   ../include/FXMappedFile.h
+  ../include/FXMarkedPtr.h
   ../include/FXMat2d.h
   ../include/FXMat2f.h
   ../include/FXMat3d.h
@@ -248,6 +250,7 @@ set(HEADERS
   ../include/FXPath.h
   ../include/FXPCXIcon.h
   ../include/FXPCXImage.h
+  ../include/FXPerformance.h
   ../include/FXPicker.h
   ../include/FXPipe.h
   ../include/FXPNGIcon.h
@@ -262,6 +265,8 @@ set(HEADERS
   ../include/FXProgressDialog.h
   ../include/FXPtrList.h
   ../include/FXPtrQueue.h
+  ../include/FXQOIFIcon.h
+  ../include/FXQOIFImage.h
   ../include/FXQuatd.h
   ../include/FXQuatf.h
   ../include/FXRadioButton.h
@@ -462,6 +467,7 @@ set(SOURCES
   FXCP869Codec.cpp
   FXCP874Codec.cpp
   fxcpuid.cpp
+  fxcrc.cpp
   FXCURCursor.cpp
   FXCursor.cpp
   FXDataTarget.cpp
@@ -604,6 +610,7 @@ set(SOURCES
   FXPCXIcon.cpp
   FXPCXImage.cpp
   fxpcxio.cpp
+  FXPerformance.cpp
   FXPicker.cpp
   FXPipe.cpp
   FXPNGIcon.cpp
@@ -623,6 +630,9 @@ set(SOURCES
   fxpsio.cpp
   FXPtrList.cpp
   FXPtrQueue.cpp
+  FXQOIFIcon.cpp
+  FXQOIFImage.cpp
+  fxqoifio.cpp
   FXReactor.cpp
   FXRadioButton.cpp
   FXRandom.cpp
