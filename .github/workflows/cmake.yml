@@ -76,7 +76,7 @@ jobs:
         if: startsWith(matrix.config.name, 'Ubuntu')
         run: |
           sudo apt update
-          sudo apt install -y libepoxy-dev ninja-build
+          sudo apt install -y libepoxy-dev ninja-build libgl1-mesa-dev libglu1-mesa-dev
           cmake --version
           gcc --version
 
