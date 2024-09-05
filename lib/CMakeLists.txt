@@ -1189,7 +1189,7 @@ if(WITH_OPENJPEG)
   endif()
 endif()
 
-if(WITH_OPENGL)
+if(OPENGL_FOUND)
   target_compile_definitions(FOX PUBLIC -DHAVE_GL_H)
   list(APPEND LIBRARIES OpenGL::GL)
 endif()
