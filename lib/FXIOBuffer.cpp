@@ -3,7 +3,7 @@
 *                        I / O   B u f f e r   C l a s s                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -23,7 +23,8 @@
 #include "fxdefs.h"
 #include "fxmath.h"
 #include "fxascii.h"
-#include "FXArray.h"
+#include "FXElement.h"
+#include "FXMetaClass.h"
 #include "FXHash.h"
 #include "FXStream.h"
 #include "FXString.h"
@@ -57,7 +58,7 @@ FXIOBuffer::FXIOBuffer(FXuchar* ptr,FXuval sz):buffer(nullptr),space(0){
 
 // Open buffer
 FXbool FXIOBuffer::open(FXuchar* ptr,FXuval sz){
-  if(ptr!=nullptr && 0<sz){
+  if(ptr && 0<sz){
     buffer=ptr;
     pointer=0;
     space=sz;
@@ -91,14 +92,14 @@ FXlong FXIOBuffer::position(FXlong offset,FXuint from){
   if(from==FXIO::Current){ ptr=pointer+offset; }
   else if(from==FXIO::End){ ptr=space+offset; }
   else if(from==FXIO::Begin){ ptr=offset; }
-  if(0<=ptr && ptr<=space){ pointer=ptr; }
+  if(ptr<=space){ pointer=ptr; }
   return ptr;
   }
 
 
 // Read block
 FXival FXIOBuffer::readBlock(void* ptr,FXival count){
-  if(buffer!=nullptr && ptr!=nullptr){
+  if(buffer && ptr){
     FXival remaining=space-pointer;
     if(remaining<count) count=remaining;
     memcpy(ptr,&buffer[pointer],count);
@@ -111,7 +112,7 @@ FXival FXIOBuffer::readBlock(void* ptr,FXival count){
 
 // Write block
 FXival FXIOBuffer::writeBlock(const void* ptr,FXival count){
-  if(buffer!=nullptr && ptr!=nullptr){
+  if(buffer && ptr){
     FXival remaining=space-pointer;
     if(remaining<count) count=remaining;
     memcpy(&buffer[pointer],ptr,count);
@@ -124,8 +125,8 @@ FXival FXIOBuffer::writeBlock(const void* ptr,FXival count){
 
 // Truncate file
 FXlong FXIOBuffer::truncate(FXlong sz){
-  if(buffer!=nullptr && 0<=sz && sz<=(FXlong)space){
-    if(pointer>sz) pointer=sz;
+  if(buffer && 0<=sz && sz<=(FXlong)space){
+    if((FXlong)pointer>sz) pointer=sz;
     space=sz;
     return sz;
     }
@@ -141,7 +142,7 @@ FXbool FXIOBuffer::flush(){
 
 // Test if we're at the end; -1 if error
 FXint FXIOBuffer::eof(){
-  return pointer>=(FXlong)space;
+  return pointer>=space;
   }
 
 

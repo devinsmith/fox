@@ -3,7 +3,7 @@
 *                    A S C I I   C h a r a c t e r   I n f o                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2023 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -24,7 +24,7 @@
 
 
 
-/******** Generated on 2023/06/11 16:57:56 by ascii tool version 3.1.0 *********/
+/******** Generated on 2023/08/16 11:48:41 by ascii tool version 4.0.0 *********/
 
 
 using namespace FX;

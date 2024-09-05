@@ -3,7 +3,7 @@
 *                         S c r o l l b a r   O b j e c t s                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1997,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1997,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -23,7 +23,9 @@
 #include "fxdefs.h"
 #include "fxmath.h"
 #include "fxkeys.h"
+#include "FXElement.h"
 #include "FXArray.h"
+#include "FXMetaClass.h"
 #include "FXHash.h"
 #include "FXMutex.h"
 #include "FXStream.h"
@@ -613,10 +615,11 @@ long FXScrollBar::onMouseWheel(FXObject*,FXSelector,void* ptr){
     getApp()->removeTimeout(this,ID_AUTOSCROLL);
     if(!(ev->state&(LEFTBUTTONMASK|MIDDLEBUTTONMASK|RIGHTBUTTONMASK))){
 
-      // Scroll by a line-at-a-time, page-at-a-time, or by given wheel-lines
-      if(ev->state&ALTMASK) jump=line;
+      // With modifiers, scroll multiples of lines or pages
+      if(ev->state&SHIFTMASK) jump=7*page;      // Siebenmeilenstiefel
       else if(ev->state&CONTROLMASK) jump=page;
-      else jump=FXMIN(page,wheelLines*line);
+      else if(ev->state&ALTMASK) jump=line;
+      else jump=wheelLines*line;
 
       // Move scroll position
       dragpoint-=ev->code*jump/120;

@@ -3,7 +3,7 @@
 *                      M a p p e d   F i l e   C l a s s                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2023 by Jeroen van der Zijp.   All Rights Reserved.             *
+* Copyright (C) 2023,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -140,7 +140,7 @@ FXptr FXMappedFile::open(const FXString& filename,FXuint m,FXuint perm,FXlong le
         // Open map
         FXptr ptr=::MapViewOfFile(hnd,bits,(DWORD)(off>>32),(DWORD)(off&0xFFFFFFFF),(DWORD)len);
 
-        if(ptr!=nullptr){
+        if(ptr){
           // MEMORY_BASIC_INFORMATION mbi;
           // if(VirtualQuery(ptr,&mbi,sizeof(mbi))!=0){ memlength=mbi.RegionSize; }
           memhandle=hnd;
@@ -277,11 +277,15 @@ FXlong FXMappedFile::size(){
 
 // Synchronize disk
 FXbool FXMappedFile::flush(){
-  if(mempointer!=nullptr){
-#if defined(WIN32)
-    return ::FlushViewOfFile(mempointer,memlength)!=0;
+  if(mempointer){
+#if defined(_WIN32)
+    if(::FlushViewOfFile(mempointer,memlength)!=0){
+      return ::FlushFileBuffers(device)!=0;
+      }
 #else
-    return ::msync(mempointer,memlength,MS_SYNC|MS_INVALIDATE)==0;
+    if(::msync(mempointer,memlength,MS_SYNC|MS_INVALIDATE)==0){
+      return ::fsync(device)==0;
+      }
 #endif
     }
   return false;
@@ -290,7 +294,7 @@ FXbool FXMappedFile::flush(){
 
 // Close file, and also the map
 FXbool FXMappedFile::close(){
-  if(mempointer!=nullptr){
+  if(mempointer){
 #if defined(WIN32)
     if(::UnmapViewOfFile(mempointer)!=0){
       ::CloseHandle(memhandle);

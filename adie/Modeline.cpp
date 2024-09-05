@@ -3,7 +3,7 @@
 *                          M o d e l i n e   P a r s e r                        *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2017,2023 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2017,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This program is free software: you can redistribute it and/or modify          *
 * it under the terms of the GNU General Public License as published by          *
@@ -63,6 +63,10 @@
 
         "-*- key1: value1; key2: value2; -*-"
 
+    or just:
+
+        "-*- lang -*-"
+
     See:
 
         http://www.delorie.com/gnu/docs/emacs/emacs_486.html
@@ -79,6 +83,7 @@
         et      Expand tabs to spaces.  Possible values 0,1.
         wr      Wrap mode. Possible values 0,1
         ai      Autoindent.  Possible values: 0,1.
+        ss      Strip trailing spaces.  Possible values: 0,1.
 
   - Modelines, when present, will override user-settings and language-dependent
     settings if Modeline support is enabled and modelines are detected in designated
@@ -93,7 +98,7 @@
 
 
 // Initialize modeline
-Modeline::Modeline():autoindent(-1),wrapwidth(-1),tabwidth(-1),wrapmode(-1),tabmode(-1){
+Modeline::Modeline():autoindent(-1),wrapwidth(-1),tabwidth(-1),wrapmode(-1),tabmode(-1),strip(-1){
   }
 
 
@@ -148,24 +153,55 @@ FXbool Modeline::parseVimModeline(const FXchar* s){
 FXbool Modeline::parseEmacsModeline(const FXchar* s){
   FXString key;
   FXString val;
-  while(*s!='\0'){
-    while(*s==';' || *s=='\t' || *s==' ') s++;
-    if(*s=='\0' || (*s=='-' && *(s+1)=='*' && *(s+2)=='-')) break;
+  while(*s!='\0' && !(*s=='-' && *(s+1)=='*' && *(s+2)=='-')){
+
+    // Skip white space
+    while(*s=='\t' || *s==' ') s++;
+
+    // Parse string
     key=FXString::null;
     val=FXString::null;
-    while(*s!='\0' && *s!=':' && *s!=';' && *s!='\t' && *s!=' '){
-      key+=*s++;
-      }
-    while(*s=='\t' || *s==' ') s++;
-    if(*s=='\0') break;
-    if(*s!=':') continue;
-    s++;
-    while(*s=='\t' || *s==' ') s++;
-    if(*s=='\0') break;
-    while(*s!='\0' && *s!=';' &&  *s!='\t' && *s!=' '){
+    while(*s!='\0' && *s!=':' && *s!='\t' && *s!=' '){
       val+=*s++;
       }
-    if(FXString::comparecase(key,"mode")==0){
+
+    // Skip white space
+    while(*s=='\t' || *s==' ') s++;
+
+    // This was a key
+    if(*s==':'){
+      s++;
+
+      // Skip white space
+      while(*s=='\t' || *s==' ') s++;
+
+      // Keep the key
+      key=val;
+
+      // Parse string
+      val=FXString::null;
+      while(*s!='\0' && *s!=';' && *s!='\t' && *s!=' '){
+        val+=*s++;
+        }
+
+      // Skip white space
+      while(*s=='\t' || *s==' ') s++;
+
+      // End of that
+      if(*s==';') s++;
+
+      // Skip white space
+      while(*s=='\t' || *s==' ') s++;
+      }
+
+    // Got nothing
+    if(val.empty()) break;
+
+    // Get key/value
+    if(key.empty()){
+      setLanguage(val);
+      }
+    else if(FXString::comparecase(key,"mode")==0){
       setLanguage(val);
       }
     else if(key=="tab-width"){
@@ -221,6 +257,9 @@ FXbool Modeline::parseAdieModeline(const FXchar* s){
     else if(key=="ai"){
       setAutoIndent(val!="0");
       }
+    else if(key=="ss"){
+      setStripSpaces(val!="0");
+      }
     }
   return true;
   }
@@ -232,14 +271,14 @@ FXbool Modeline::parseModeline(const FXchar* s){
   while(*s!='\0'){
     if(old==' ' || old=='\t'){
 
-      // Adie modeline
-      if(*s=='a' && *(s+1)=='d' && *(s+2)=='i' && *(s+3)=='e' && *(s+4)==':'){
-        return parseAdieModeline(s+5);
-        }
-
       // Emacs modeline
       if(*s=='-' && *(s+1)=='*' && *(s+2)=='-'){
         return parseEmacsModeline(s+3);
+        }
+
+      // Adie modeline
+      if(*s=='a' && *(s+1)=='d' && *(s+2)=='i' && *(s+3)=='e' && *(s+4)==':'){
+        return parseAdieModeline(s+5);
         }
 
       // Ex modeline
@@ -277,4 +316,5 @@ void Modeline::clear(){
   tabwidth=-1;
   wrapmode=-1;
   tabmode=-1;
+  strip=-1;
   }

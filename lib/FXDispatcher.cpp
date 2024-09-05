@@ -3,7 +3,7 @@
 *                      C a l l b a c k   D i s p a t c h e r                    *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2006,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2006,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 ********************************************************************************/
 #include "xincs.h"
 #include "fxver.h"
@@ -378,6 +378,7 @@ FXbool FXDispatcher::hasHandle(FXInputHandle hnd) const {
   return false;
   }
 
+// return handle && handle->cb(this,FXSEL(SEL_IO_READ,handle->message),handle->ptr);
 
 // Dispatch when when handle hnd is signaled with mode
 FXbool FXDispatcher::dispatchHandle(FXInputHandle hnd,FXuint mode,FXuint){

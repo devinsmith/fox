@@ -3,7 +3,7 @@
 *                           R e g i s t r y   C l a s s                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -22,10 +22,11 @@
 #include "fxver.h"
 #include "fxdefs.h"
 #include "fxmath.h"
+#include "FXElement.h"
 #include "FXArray.h"
+#include "FXMetaClass.h"
 #include "FXHash.h"
 #include "FXStream.h"
-#include "FXObject.h"
 #include "FXString.h"
 #include "FXSystem.h"
 #include "FXProcess.h"
@@ -380,7 +381,7 @@ FXbool FXRegistry::writeToRegistryGroup(const FXString& group,FXptr hbase){
           if(!data(s).empty(e) && data(s).mark(e)){
 
             // Create section in registry upon finding first key in it
-            if(hsection==nullptr){
+            if(!hsection){
               if(RegCreateKeyExA(hgroup,key(s).text(),0,REG_NONE,REG_OPTION_NON_VOLATILE,KEY_WRITE|KEY_READ,nullptr,&hsection,&disp)!=ERROR_SUCCESS) goto x;
               }
 

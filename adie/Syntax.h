@@ -3,7 +3,7 @@
 *                   S y n t a x   H i g h l i g h t   E n g i n e               *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2002,2023 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2002,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This program is free software: you can redistribute it and/or modify          *
 * it under the terms of the GNU General Public License as published by          *
@@ -243,7 +243,7 @@ protected:
   RuleList      rules;          // Highlight rules
   FXString      language;       // Language name
   FXString      group;          // Group name for syntax coloring
-  FXString      extensions;     // File extensions to recognize language
+  FXString      patterns;       // Wildcard patters to recognize language
   FXString      contents;       // Contents to recognize language
   FXString      delimiters;     // Word delimiters in this language
   FXint         contextLines;   // Context lines needed for restyle
@@ -253,6 +253,7 @@ protected:
   FXint         tabwidth;       // Tab is this many columns
   FXint         wrapmode;       // Wrap lines on or off
   FXint         tabmode;        // Tab key inserts spaces
+  FXint         strip;          // Strip spaces
 protected:
   Syntax(){}
 private:
@@ -283,11 +284,11 @@ public:
   void setGroup(const FXString& grp){ group=grp; }
   const FXString& getGroup() const { return group; }
 
-  // Extensions
-  void setExtensions(const FXString& exts){ extensions=exts; }
-  const FXString& getExtensions() const { return extensions; }
+  // Wildcard patterns
+  void setPatterns(const FXString& wild){ patterns=wild; }
+  const FXString& getPatterns() const { return patterns; }
 
-  // Contents
+  // Regular expression to match contents
   void setContents(const FXString& cont){ contents=cont; }
   const FXString& getContents() const { return contents; }
 
@@ -322,6 +323,10 @@ public:
   // Access tab expand mode
   void setTabMode(FXint m){ tabmode=m; }
   FXint getTabMode() const { return tabmode; }
+
+  // Access strip trailing spaces
+  void setStripSpaces(FXint s){ strip=s; }
+  FXint getStripSpaces() const { return strip; }
 
   // Find rule index, given name
   FXint getNamedRule(const FXString& name) const;

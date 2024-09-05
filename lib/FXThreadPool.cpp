@@ -3,7 +3,7 @@
 *                             T h r e a d   P o o l                             *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2006,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2006,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -188,7 +188,7 @@ FXuint FXThreadPool::start(FXuint count){
       }
 
     // Set context reference if not set yet
-    if(instance()==nullptr) instance(this);
+    if(!instance()) instance(this);
 
     // Start running
     running=1;

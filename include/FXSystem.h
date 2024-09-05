@@ -3,7 +3,7 @@
 *         M i s c e l l a n e o u s   S y s t e m   F u n c t i o n s           *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2005,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2005,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -185,6 +185,9 @@ namespace FXSystem {
   /// Return the home directory for a given user
   extern FXAPI FXString getUserDirectory(const FXString& user);
 
+
+  /// Kick off a command to the system
+  extern FXAPI FXint system(const FXString& cmd);
 
   /// Return host name
   extern FXAPI FXString getHostName();

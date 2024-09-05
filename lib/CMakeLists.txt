@@ -1,7 +1,3 @@
-if (POLICY CMP0072)
-   cmake_policy (SET CMP0072 OLD)
-endif(POLICY CMP0072)
-
 include(CheckIncludeFileCXX)
 include(CheckCXXSourceCompiles)
 include(CheckCXXSymbolExists)
@@ -103,6 +99,7 @@ set(HEADERS
   ../include/FXCP869Codec.h
   ../include/FXCP874Codec.h
   ../include/fxcpuid.h
+  ../include/fxcrc.h
   ../include/FXCURCursor.h
   ../include/FXCursor.h
   ../include/FXDataTarget.h
@@ -213,6 +210,7 @@ set(HEADERS
   ../include/FXLocale.h
   ../include/FXMainWindow.h
   ../include/FXMappedFile.h
+  ../include/FXMarkedPtr.h
   ../include/FXMat2d.h
   ../include/FXMat2f.h
   ../include/FXMat3d.h
@@ -248,6 +246,7 @@ set(HEADERS
   ../include/FXPath.h
   ../include/FXPCXIcon.h
   ../include/FXPCXImage.h
+  ../include/FXPerformance.h
   ../include/FXPicker.h
   ../include/FXPipe.h
   ../include/FXPNGIcon.h
@@ -262,6 +261,8 @@ set(HEADERS
   ../include/FXProgressDialog.h
   ../include/FXPtrList.h
   ../include/FXPtrQueue.h
+  ../include/FXQOIFIcon.h
+  ../include/FXQOIFImage.h
   ../include/FXQuatd.h
   ../include/FXQuatf.h
   ../include/FXRadioButton.h
@@ -401,7 +402,6 @@ set(SOURCES
   FXArray.cpp
   FXArrowButton.cpp
   fxascii.cpp
-  FXAtomic.cpp
   FXAutoThreadStorageKey.cpp
   FXBarrier.cpp
   fxbase64.cpp
@@ -462,6 +462,7 @@ set(SOURCES
   FXCP869Codec.cpp
   FXCP874Codec.cpp
   fxcpuid.cpp
+  fxcrc.cpp
   FXCURCursor.cpp
   FXCursor.cpp
   FXDataTarget.cpp
@@ -517,7 +518,6 @@ set(SOURCES
   FXFrame.cpp
   fxfsquantize.cpp
   FXGauge.cpp
-  fxgetticks.cpp
   FXGIFCursor.cpp
   FXGIFIcon.cpp
   FXGIFImage.cpp
@@ -604,6 +604,7 @@ set(SOURCES
   FXPCXIcon.cpp
   FXPCXImage.cpp
   fxpcxio.cpp
+  FXPerformance.cpp
   FXPicker.cpp
   FXPipe.cpp
   FXPNGIcon.cpp
@@ -623,6 +624,9 @@ set(SOURCES
   fxpsio.cpp
   FXPtrList.cpp
   FXPtrQueue.cpp
+  FXQOIFIcon.cpp
+  FXQOIFImage.cpp
+  fxqoifio.cpp
   FXReactor.cpp
   FXRadioButton.cpp
   FXRandom.cpp
@@ -765,7 +769,6 @@ clearentry.gif
 cmymode.gif
 dialmode.gif
 dirup_gif.gif
-deleteicon.gif
 docktop.gif
 dockbottom.gif
 dockleft.gif
@@ -1186,19 +1189,19 @@ if(WITH_OPENJPEG)
   endif()
 endif()
 
-if(WITH_OPENGL)
+if(OPENGL_FOUND)
   target_compile_definitions(FOX PUBLIC -DHAVE_GL_H)
-  #  list(APPEND LIBRARIES ${EPOXY_LIBRARIES})
+  list(APPEND LIBRARIES OpenGL::GL)
 endif()
 
 if (OPENGL_GLU_FOUND)
   add_definitions(-DHAVE_GLU_H)
-  list(APPEND LIBRARIES ${OPENGL_glu_LIBRARY})
+  list(APPEND LIBRARIES OpenGL::GLU)
 endif()
 
 if (OpenGL_GLX_FOUND)
   target_compile_definitions(FOX PUBLIC -DHAVE_GLX_H)
-  list(APPEND LIBRARIES ${OPENGL_glx_LIBRARY})
+  list(APPEND LIBRARIES OpenGL::GLX)
 endif()
 
 if(NOT WITH_XIM)

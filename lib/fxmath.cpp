@@ -3,7 +3,7 @@
 *                           M a t h   F u n c t i o n s                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2015,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 2015,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -21,8 +21,8 @@
 #include "xincs.h"
 #include "fxver.h"
 #include "fxdefs.h"
-#include "fxendian.h"
 #include "fxmath.h"
+#include "fxendian.h"
 
 
 /*
@@ -44,118 +44,6 @@ using namespace FX;
 /*******************************************************************************/
 
 namespace FX {
-
-
-// All bits of single precision floating point number
-FXuint Math::fpBits(FXfloat x){
-  union{ FXfloat f; FXuint u; } z={x};
-  return z.u;
-  }
-
-
-// All bits of double precision floating point number
-FXulong Math::fpBits(FXdouble x){
-  union{ FXdouble f; FXulong u; } z={x};
-  return z.u;
-  }
-
-
-// Sign of single precision float point number (0..1)
-FXint Math::fpSign(FXfloat x){
-  FXint sign=Math::fpBits(x)>>31;
-  return sign;
-  }
-
-
-// Sign of double precision float point number (0..1)
-FXlong Math::fpSign(FXdouble x){
-  FXlong sign=Math::fpBits(x)>>63;
-  return sign;
-  }
-
-
-// Signed exponent of single precision float point number (-126..128)
-FXint Math::fpExponent(FXfloat x){
-  FXint exponent=(Math::fpBits(x)>>23)&0xff;
-  FXint bias=126-(-exponent>>31);
-  return exponent-bias;
-  }
-
-
-// Signed exponent of double precision float point number (-1022..1024)
-FXlong Math::fpExponent(FXdouble x){
-  FXlong exponent=(Math::fpBits(x)>>52)&0x7ff;
-  FXlong bias=1022-(-exponent>>63);
-  return exponent-bias;
-  }
-
-
-// Mantissa of single precision float point number
-FXint Math::fpMantissa(FXfloat x){
-  FXint mantissa=Math::fpBits(x)&0x007fffff;
-  FXint exponent=Math::fpBits(x)&0x7f800000;
-  FXint extrabit=-(-exponent>>31);      // 1 if exponent!=0
-  return mantissa|(extrabit<<23);
-  }
-
-
-// Mantissa of double precision float point number
-FXlong Math::fpMantissa(FXdouble x){
-  FXlong mantissa=Math::fpBits(x)&FXLONG(0x000fffffffffffff);
-  FXlong exponent=Math::fpBits(x)&FXLONG(0x7ff0000000000000);
-  FXlong extrabit=-(-exponent>>63);     // 1 if exponent!=0
-  return mantissa|(extrabit<<52);
-  }
-
-
-// Single precision floating point number is finite
-FXbool Math::fpFinite(FXfloat x){
-  return ((Math::fpBits(x)&0x7fffffff)<0x7f800000);
-  }
-
-
-// Double precision floating point number is finite
-FXbool Math::fpFinite(FXdouble x){
-  return ((Math::fpBits(x)&FXULONG(0x7fffffffffffffff))<FXULONG(0x7ff0000000000000));
-  }
-
-
-// Single precision floating point number is infinite
-FXbool Math::fpInfinite(FXfloat x){
-  return ((Math::fpBits(x)&0x7fffffff)==0x7f800000);
-  }
-
-
-// Double precision floating point number is infinite
-FXbool Math::fpInfinite(FXdouble x){
-  return ((Math::fpBits(x)&FXULONG(0x7fffffffffffffff))==FXULONG(0x7ff0000000000000));
-  }
-
-
-// Single precision floating point number is NaN
-FXbool Math::fpNan(FXfloat x){
-  return (0x7f800000<(Math::fpBits(x)&0x7fffffff));
-  }
-
-
-// Double precision floating point number is NaN
-FXbool Math::fpNan(FXdouble x){
-  return (FXULONG(0x7ff0000000000000)<(Math::fpBits(x)&FXULONG(0x7fffffffffffffff)));
-  }
-
-
-// Single precision floating point number is normalized
-FXbool Math::fpNormal(FXfloat x){
-  FXuint bits=Math::fpBits(x)&0x7fffffff;
-  return bits==0 || (0x00800000<=bits && bits<0x7f800000);
-  }
-
-
-// Double precision floating point number is normalized
-FXbool Math::fpNormal(FXdouble x){
-  FXulong bits=Math::fpBits(x)&FXULONG(0x7fffffffffffffff);
-  return (bits==0) || ((FXULONG(0x0010000000000000)<=bits) && (bits<FXULONG(0x7ff0000000000000)));
-  }
 
 
 // Single precision ceiling (round upward to nearest integer)

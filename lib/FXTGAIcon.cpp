@@ -3,7 +3,7 @@
 *                     T A R G A   I c o n   O b j e c t                         *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 2001,2022 by Janusz Ganczarski.   All Rights Reserved.          *
+* Copyright (C) 2001,2024 by Janusz Ganczarski.   All Rights Reserved.          *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -22,21 +22,12 @@
 #include "fxver.h"
 #include "fxdefs.h"
 #include "fxmath.h"
+#include "FXElement.h"
 #include "FXArray.h"
+#include "FXMetaClass.h"
 #include "FXHash.h"
-#include "FXMutex.h"
 #include "FXStream.h"
 #include "FXMemoryStream.h"
-#include "FXString.h"
-#include "FXSize.h"
-#include "FXPoint.h"
-#include "FXRectangle.h"
-#include "FXStringDictionary.h"
-#include "FXSettings.h"
-#include "FXRegistry.h"
-#include "FXEvent.h"
-#include "FXWindow.h"
-#include "FXApp.h"
 #include "FXTGAIcon.h"
 
 
@@ -45,22 +36,6 @@
   - Targa does not support alpha in the file format.
   - You can also let the system guess a transparancy color based on the corners.
   - If that doesn't work, you can force a specific transparency color.
-  - This is just an idea at this point:
-
-      // Compute name of image support class
-      FXString name="FX"+ext.upper()+"Image";
-
-      // Find the meta class
-      const FXMetaClass *meta=FXMetaClass::getMetaClassFromName(name.text());
-
-      // Make instance of this class
-      if(meta) img=(FXImage*)meta->makeInstance();
-
-    The above is a simplistic view; we will need to set the image's visual,
-    options, and other stuff before this can work.
-    Also, when linking statically, we have to convince the linker to include
-    the referred image code...
-
 */
 
 using namespace FX;

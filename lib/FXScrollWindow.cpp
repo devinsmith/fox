@@ -3,7 +3,7 @@
 *                     S c r o l l W i n d o w   W i d g e t                     *
 *                                                                               *
 *********************************************************************************
-* Copyright (C) 1998,2022 by Jeroen van der Zijp.   All Rights Reserved.        *
+* Copyright (C) 1998,2024 by Jeroen van der Zijp.   All Rights Reserved.        *
 *********************************************************************************
 * This library is free software; you can redistribute it and/or modify          *
 * it under the terms of the GNU Lesser General Public License as published by   *
@@ -23,7 +23,9 @@
 #include "fxdefs.h"
 #include "fxmath.h"
 #include "fxkeys.h"
+#include "FXElement.h"
 #include "FXArray.h"
+#include "FXMetaClass.h"
 #include "FXHash.h"
 #include "FXMutex.h"
 #include "FXStream.h"
@@ -112,23 +114,24 @@ FXint FXScrollWindow::getContentHeight(){
 // Move contents; moves child window
 void FXScrollWindow::moveContents(FXint x,FXint y){
   FXWindow* contents=contentWindow();
-  FXint xx,yy,ww,hh,vw,vh;
-  FXuint hints;
   if(contents){
 
-    // Get hints
-    hints=contents->getLayoutHints();
+    // Get visible size
+    FXint vw=getVisibleWidth();
+    FXint vh=getVisibleHeight();
 
     // Get content size
-    ww=getContentWidth();
-    hh=getContentHeight();
+    FXint ww=getContentWidth();
+    FXint hh=getContentHeight();
 
-    // Get visible size
-    vw=getVisibleWidth();
-    vh=getVisibleHeight();
+    // Child window position
+    FXint xx=x;
+    FXint yy=y;
+
+    // Get hints
+    FXuint hints=contents->getLayoutHints();
 
     // Determine x-position
-    xx=x;
     if(ww<vw){
       if(hints&LAYOUT_FILL_X) ww=vw;
       if(hints&LAYOUT_CENTER_X) xx=(vw-ww)/2;
@@ -137,15 +140,18 @@ void FXScrollWindow::moveContents(FXint x,FXint y){
       }
 
     // Determine y-position
-    yy=y;
     if(hh<vh){
       if(hints&LAYOUT_FILL_Y) hh=vh;
       if(hints&LAYOUT_CENTER_Y) yy=(vh-hh)/2;
       else if(hints&LAYOUT_BOTTOM) yy=vh-hh;
       else yy=0;
       }
+
+    // Move child window
     contents->move(xx,yy);
     }
+
+  // Update scroll position
   pos_x=x;
   pos_y=y;
   }
@@ -153,9 +159,6 @@ void FXScrollWindow::moveContents(FXint x,FXint y){
 
 // Recalculate layout
 void FXScrollWindow::layout(){
-  FXWindow* contents=contentWindow();
-  FXint xx,yy,ww,hh,vw,vh;
-  FXuint hints;
 
   // Layout scroll bars and viewport
   FXScrollArea::layout();
@@ -165,21 +168,25 @@ void FXScrollWindow::layout(){
   vertical->setLine(10);
 
   // Resize contents
+  FXWindow* contents=contentWindow();
   if(contents){
 
-    // Get hints
-    hints=contents->getLayoutHints();
+    // Get visible size
+    FXint vw=getVisibleWidth();
+    FXint vh=getVisibleHeight();
 
     // Get content size
-    ww=getContentWidth();
-    hh=getContentHeight();
+    FXint ww=getContentWidth();
+    FXint hh=getContentHeight();
 
-    // Get visible size
-    vw=getVisibleWidth();
-    vh=getVisibleHeight();
+    // Child window position
+    FXint xx=pos_x;
+    FXint yy=pos_y;
+
+    // Get hints
+    FXuint hints=contents->getLayoutHints();
 
     // Determine x-position
-    xx=pos_x;
     if(ww<vw){
       if(hints&LAYOUT_FILL_X) ww=vw;
       if(hints&LAYOUT_CENTER_X) xx=(vw-ww)/2;
@@ -188,7 +195,6 @@ void FXScrollWindow::layout(){
       }
 
     // Determine y-position
-    yy=pos_y;
     if(hh<vh){
       if(hints&LAYOUT_FILL_Y) hh=vh;
       if(hints&LAYOUT_CENTER_Y) yy=(vh-hh)/2;
