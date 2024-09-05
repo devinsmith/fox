@@ -1191,17 +1191,17 @@ endif()
 
 if(WITH_OPENGL)
   target_compile_definitions(FOX PUBLIC -DHAVE_GL_H)
-  #  list(APPEND LIBRARIES ${EPOXY_LIBRARIES})
+  list(APPEND LIBRARIES OpenGL::GL)
 endif()
 
 if (OPENGL_GLU_FOUND)
   add_definitions(-DHAVE_GLU_H)
-  list(APPEND LIBRARIES ${OPENGL_glu_LIBRARY})
+  list(APPEND LIBRARIES OpenGL::GLU)
 endif()
 
 if (OpenGL_GLX_FOUND)
   target_compile_definitions(FOX PUBLIC -DHAVE_GLX_H)
-  list(APPEND LIBRARIES ${OPENGL_glx_LIBRARY})
+  list(APPEND LIBRARIES OpenGL::GLX)
 endif()
 
 if(NOT WITH_XIM)
