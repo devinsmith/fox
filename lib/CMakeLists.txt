@@ -826,9 +826,7 @@ winmaximize.gif
 winminimize.gif
 winrestore.gif)
 
-# Building a shared library on Windows requires GL libraries
-#add_library(FOX SHARED ${SOURCES})
-add_library(FOX ${SOURCES})
+add_library(FOX SHARED ${SOURCES})
 
 find_package(PkgConfig)
 find_package(Threads)
