@@ -681,11 +681,13 @@ winrestore.gif)
 
 add_library(fox ${SOURCES})
 
-find_package(PkgConfig)
-find_package(Threads)
-find_package(X11)
-find_package(Freetype)
-pkg_check_modules(FONTCONFIG fontconfig)
+if (NOT MSVC)
+  find_package(PkgConfig)
+  find_package(Threads)
+  find_package(X11)
+  find_package(Freetype)
+  pkg_check_modules(FONTCONFIG fontconfig)
+endif()
 
 if(WITH_OPENGL)
   find_package(OpenGL)
@@ -759,6 +761,11 @@ endif()
 check_cxx_symbol_exists(getgrgid_r "sys/types.h;grp.h" HAVE_GETGRGID_R)
 if(HAVE_GETGRGID_R)
   add_definitions(-DHAVE_GETGRGID_R)
+endif()
+
+check_cxx_symbol_exists(vsscanf "stdio.h" HAVE_VSSCANF)
+if(HAVE_VSSCANF)
+  add_definitions(-DHAVE_VSSCANF)
 endif()
 
 cmake_push_check_state()
@@ -863,7 +870,7 @@ else()
     add_definitions(-DHAVE_SYS_NDIR_H)
   else()
     check_cxx_source_compiles("#include <sys/dir.h>\nint main(int argc,char *argv[]) { DIR * d; return 0; }" HAVE_SYS_DIR_H)
-    if(NOT HAVE_SYS_DIR_H)
+    if(HAVE_SYS_DIR_H)
       add_definitions(-DHAVE_SYS_DIR_H)
     else()
       check_cxx_source_compiles("#include <ndir.h>\nint main(int argc,char *argv[]) { DIR * d; return 0; }" HAVE_NDIR_H)
@@ -1013,35 +1020,25 @@ if(WITH_TIFF)
 endif()
 
 if(WITH_WEBP)
-  pkg_check_modules(WEBP libwebp)
-  if(WEBP_FOUND)
-    list(APPEND LIBRARIES ${WEBP_LIBRARIES})
+  find_package(WebP)
+  if(WebP_FOUND)
+    list(APPEND LIBRARIES WebP::webp)
     add_definitions(-DHAVE_WEBP_H)
   endif()
 endif()
 
 if(WITH_OPENJPEG)
-  pkg_check_modules(OPENJPEG libopenjpeg1)
-  if(OPENJPEG_FOUND)
-    list(APPEND LIBRARIES ${OPENJPEG_LIBRARIES})
+  find_package(OpenJPEG)
+  if(OpenJPEG_FOUND)
+    list(APPEND LIBRARIES openjp2)
     add_definitions(-DHAVE_JP2_H)
-    include_directories(${OPENJPEG_INCLUDE_DIRS})
-
-  else()
-    pkg_check_modules(OPENJPEG libopenjpeg)
-    if(OPENJPEG_FOUND)
-      list(APPEND LIBRARIES ${OPENJPEG_LIBRARIES})
-      add_definitions(-DHAVE_JP2_H)
-      include_directories(${OPENJPEG_INCLUDE_DIRS})
-    endif()
   endif()
 endif()
 
 if(WITH_OPENGL)
-  pkg_check_modules(EPOXY REQUIRED epoxy)
+  find_package(OpenGL REQUIRED)
   target_compile_definitions(fox PUBLIC -DHAVE_GL_H)
-  list(APPEND LIBRARIES ${EPOXY_LIBRARIES})
-  add_definitions(-DHAVE_EPOXY)
+  list(APPEND LIBRARIES OpenGL::GL OpenGL::GLU)
 endif()
 
 if (OPENGL_GLU_FOUND)
@@ -1055,6 +1052,10 @@ endif()
 
 target_include_directories(fox PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(fox PRIVATE ${X11_LIBRARIES} ${LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
+if(MSVC)
+  target_link_libraries(fox PRIVATE
+    ws2_32 gdi32 user32 comctl32 winspool mpr imm32 shell32 ole32 uuid advapi32)
+endif()
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/icons.cpp ${CMAKE_CURRENT_SOURCE_DIR}/icons.h
@@ -1067,13 +1068,11 @@ add_custom_command(
 
 set_target_properties(fox PROPERTIES VERSION ${fox-toolkit_VERSION} SOVERSION ${fox-toolkit_VERSION_PATCH})
 set_target_properties(fox PROPERTIES OUTPUT_NAME fox-${fox-toolkit_VERSION_MAJOR}.${fox-toolkit_VERSION_MINOR})
+set_target_properties(fox PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-# don't distribute for cfox
-# install(TARGETS cfox
-#        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-#        )
-# install(FILES ${HEADERS} DESTINATION include/cfox-${cfox_VERSION_MAJOR}.${cfox_VERSION_MINOR})
-
-
-
+install(TARGETS fox
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        )
+install(FILES ${HEADERS} DESTINATION include/fox-${fox-toolkit_VERSION_MAJOR}.${fox-toolkit_VERSION_MINOR})
