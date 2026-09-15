@@ -315,7 +315,7 @@ FXint FXDir::listFiles(FXString*& filelist,const FXString& path,const FXString& 
 
 // List drives, i.e. roots of directory trees.
 FXint FXDir::listDrives(FXString*& drivelist){
-  register FXint count=0;
+  FXint count=0;
 #ifdef WIN32
   TCHAR drives[256],*drive;
   GetLogicalDriveStrings(256,drives);

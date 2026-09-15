@@ -148,39 +148,61 @@ FXMutex::~FXMutex(){
 
 #ifdef __APPLE__
 
+// the following changes in the semaphore implementation have been backported from fox 1.7,
+// thanks to https://yamaimo.hatenablog.jp/entry/2019/02/24/200000
 
 // Initialize semaphore
 FXSemaphore::FXSemaphore(FXint initial){
-  // If this fails on your machine, determine what value
-  // of sizeof(MPSemaphoreID*) is supposed to be on your
-  // machine and mail it to: jeroen@fox-toolkit.org!!
-  //FXTRACE((150,"sizeof(MPSemaphoreID*)=%d\n",sizeof(MPSemaphoreID*)));
-  FXASSERT(sizeof(data)>=sizeof(MPSemaphoreID*));
-  MPCreateSemaphore(2147483647,initial,(MPSemaphoreID*)data);
+  // If this fails on your machine, determine what value of
+  // sizeof(pthread_cond_t) and sizeof(pthread_mutex_t) is
+  // supposed to be and mail it to: jeroen@fox-toolkit.net!!
+  //FXTRACE((150,"sizeof(pthread_cond_t)=%d\n",sizeof(pthread_cond_t)));
+  //FXTRACE((150,"sizeof(pthread_mutex_t)=%d\n",sizeof(pthread_mutex_t)));
+  FXASSERT(sizeof(FXuval)*9 >= sizeof(pthread_cond_t));
+  FXASSERT(sizeof(FXuval)*11 >= sizeof(pthread_mutex_t));
+  data[0]=initial;
+  pthread_cond_init((pthread_cond_t*)&data[1],nullptr);
+  pthread_mutex_init((pthread_mutex_t*)&data[10],nullptr);
   }
 
 
 // Decrement semaphore
 void FXSemaphore::wait(){
-  MPWaitOnSemaphore(*((MPSemaphoreID*)data),kDurationForever);
+  pthread_mutex_lock((pthread_mutex_t*)&data[10]);
+  while(data[0]==0){
+    pthread_cond_wait((pthread_cond_t*)&data[1],(pthread_mutex_t*)&data[10]);
+    }
+  data[0]-=1;
+  pthread_mutex_unlock((pthread_mutex_t*)&data[10]);
   }
 
 
 // Decrement semaphore but don't block
 FXbool FXSemaphore::trywait(){
-  return MPWaitOnSemaphore(*((MPSemaphoreID*)data),kDurationImmediate)==noErr;
+  pthread_mutex_lock((pthread_mutex_t*)&data[10]);
+  if(data[0]==0){
+    pthread_mutex_unlock((pthread_mutex_t*)&data[10]);
+    return false;
+    }
+  data[0]-=1;
+  pthread_mutex_unlock((pthread_mutex_t*)&data[10]);
+  return true;
   }
 
 
 // Increment semaphore
 void FXSemaphore::post(){
-  MPSignalSemaphore(*((MPSemaphoreID*)data));
+  pthread_mutex_lock((pthread_mutex_t*)&data[10]);
+  data[0]+=1;
+  pthread_cond_signal((pthread_cond_t*)&data[1]);
+  pthread_mutex_unlock((pthread_mutex_t*)&data[10]);
   }
 
 
 // Delete semaphore
 FXSemaphore::~FXSemaphore(){
-  MPDeleteSemaphore(*((MPSemaphoreID*)data));
+  pthread_mutex_destroy((pthread_mutex_t*)&data[10]);
+  pthread_cond_destroy((pthread_cond_t*)&data[1]);
   }
 
 #else
@@ -255,7 +277,7 @@ void FXCondition::wait(FXMutex& mtx){
 
 // Wait for condition but fall through after timeout
 FXbool FXCondition::wait(FXMutex& mtx,FXlong nsec){
-  register int result;
+  int result;
   struct timespec ts;
   ts.tv_sec=nsec/1000000000;
   ts.tv_nsec=nsec%1000000000;
@@ -315,7 +337,7 @@ FXbool FXThread::running() const {
 // this thread using thread-local storage accessed with self_key.
 // Also, we catch any errors thrown by the thread code here.
 void* FXThread::execute(void* thread){
-  register FXint code=-1;
+  FXint code=-1;
   pthread_setspecific(self_key,thread);
   pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,NULL);
   pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
@@ -329,7 +351,7 @@ void* FXThread::execute(void* thread){
 // We can't check for it because not all machines have this the
 // PTHREAD_STACK_MIN definition.
 FXbool FXThread::start(unsigned long stacksize){
-  register FXbool code;
+  FXbool code;
   pthread_attr_t attr;
   pthread_attr_init(&attr);
   pthread_attr_setinheritsched(&attr,PTHREAD_INHERIT_SCHED);
@@ -343,7 +365,7 @@ FXbool FXThread::start(unsigned long stacksize){
 
 // Suspend calling thread until thread is done
 FXbool FXThread::join(FXint& code){
-  register pthread_t ttid=(pthread_t)tid;
+  pthread_t ttid=(pthread_t)tid;
   void *trc=NULL;
   if(ttid && pthread_join(ttid,&trc)==0){
     code=(FXint)(FXival)trc;
@@ -356,7 +378,7 @@ FXbool FXThread::join(FXint& code){
 
 // Suspend calling thread until thread is done
 FXbool FXThread::join(){
-  register pthread_t ttid=(pthread_t)tid;
+  pthread_t ttid=(pthread_t)tid;
   if(ttid && pthread_join(ttid,NULL)==0){
     tid=0;
     return TRUE;
@@ -367,7 +389,7 @@ FXbool FXThread::join(){
 
 // Cancel the thread
 FXbool FXThread::cancel(){
-  register pthread_t ttid=(pthread_t)tid;
+  pthread_t ttid=(pthread_t)tid;
   if(ttid && pthread_cancel(ttid)==0){
     pthread_join(ttid,NULL);
     tid=0;
@@ -379,7 +401,7 @@ FXbool FXThread::cancel(){
 
 // Detach thread
 FXbool FXThread::detach(){
-  register pthread_t ttid=(pthread_t)tid;
+  pthread_t ttid=(pthread_t)tid;
   return ttid && pthread_detach(ttid)==0;
   }
 
@@ -477,7 +499,7 @@ FXThreadID FXThread::current(){
 
 // Set thread priority
 void FXThread::priority(FXint prio){
-  register pthread_t ttid=(pthread_t)tid;
+  pthread_t ttid=(pthread_t)tid;
   if(ttid){
     sched_param sched={0};
     int pcy=0;
@@ -496,7 +518,7 @@ void FXThread::priority(FXint prio){
 
 // Return thread priority
 FXint FXThread::priority(){
-  register pthread_t ttid=(pthread_t)tid;
+  pthread_t ttid=(pthread_t)tid;
   if(ttid){
     sched_param sched={0};
     int pcy=0;
@@ -509,7 +531,7 @@ FXint FXThread::priority(){
 
 // Destroy; if it was running, stop it
 FXThread::~FXThread(){
-  register pthread_t ttid=(pthread_t)tid;
+  pthread_t ttid=(pthread_t)tid;
   if(ttid){
     pthread_cancel(ttid);
     }
@@ -733,7 +755,7 @@ FXbool FXThread::running() const {
 // this thread using thread-local storage accessed with self_key.
 // Also, we catch any errors thrown by the thread code here.
 unsigned int CALLBACK FXThread::execute(void* thread){
-  register FXint code=-1;
+  FXint code=-1;
   TlsSetValue(self_key,thread);
   try{ code=((FXThread*)thread)->run(); } catch(...){ }
   ((FXThread*)thread)->tid=0;
@@ -751,7 +773,7 @@ FXbool FXThread::start(unsigned long stacksize){
 
 // Suspend calling thread until thread is done
 FXbool FXThread::join(FXint& code){
-  register HANDLE ttid=(HANDLE)tid;
+  HANDLE ttid=(HANDLE)tid;
   if(ttid && WaitForSingleObject(ttid,INFINITE)==WAIT_OBJECT_0){
     GetExitCodeThread(ttid,(DWORD*)&code);
     CloseHandle(ttid);
@@ -764,7 +786,7 @@ FXbool FXThread::join(FXint& code){
 
 // Suspend calling thread until thread is done
 FXbool FXThread::join(){
-  register HANDLE ttid=(HANDLE)tid;
+  HANDLE ttid=(HANDLE)tid;
   if(ttid && WaitForSingleObject(ttid,INFINITE)==WAIT_OBJECT_0){
     CloseHandle(ttid);
     tid=0;
@@ -776,7 +798,7 @@ FXbool FXThread::join(){
 
 // Cancel the thread
 FXbool FXThread::cancel(){
-  register HANDLE ttid=(HANDLE)tid;
+  HANDLE ttid=(HANDLE)tid;
   if(ttid && TerminateThread(ttid,0)){
     CloseHandle(ttid);
     tid=0;
@@ -845,7 +867,7 @@ FXThread* FXThread::self(){
 
 // Set thread priority
 void FXThread::priority(FXint prio){
-  register HANDLE ttid=(HANDLE)tid;
+  HANDLE ttid=(HANDLE)tid;
   if(ttid){
     SetThreadPriority(ttid,prio);
     }
@@ -854,7 +876,7 @@ void FXThread::priority(FXint prio){
 
 // Return thread priority
 FXint FXThread::priority(){
-  register HANDLE ttid=(HANDLE)tid;
+  HANDLE ttid=(HANDLE)tid;
   if(ttid){
     return GetThreadPriority(ttid);
     }
@@ -864,7 +886,7 @@ FXint FXThread::priority(){
 
 // Destroy
 FXThread::~FXThread(){
-  register HANDLE ttid=(HANDLE)tid;
+  HANDLE ttid=(HANDLE)tid;
   if(ttid){
     TerminateThread(ttid,0);
     CloseHandle(ttid);
