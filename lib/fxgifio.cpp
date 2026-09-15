@@ -82,6 +82,8 @@ const FXuchar TAG_NEW         = 0x39;   // New version
 const FXuchar TAG_OLD         = 0x37;   // Old version
 const FXuchar TAG_SUF         = 0x61;   // Version suffix
 
+const FXint Yinit[4]={0,4,2,1};
+const FXint Yinc[4]={8,8,4,2};
 
 // Check if stream contains a GIF
 bool fxcheckGIF(FXStream& store){
@@ -94,11 +96,12 @@ bool fxcheckGIF(FXStream& store){
 
 // Load image from stream
 bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
-  const   FXint Yinit[4]={0,4,2,1};
-  const   FXint Yinc[4]={8,8,4,2};
   FXint   imwidth,imheight,interlace,ncolors,npixels,maxpixels,i;
   FXuchar c1,c2,c3,sbsize,flags,alpha,*ptr,*buf,*pix;
-  FXColor colormap[256];
+  FXColor colormap[256];              // Colormap
+  FXint   Prefix[4096];               // The hash table used by the decompressor
+  FXint   Suffix[4096];               // The hash table used by the decompressor
+  FXint   OutCode[4097];              // An output array used by the decompressor
   FXint   BitOffset;                  // Bit Offset of next code
   FXint   ByteOffset;                 // Byte offset of next code
   FXint   XC,YC;                      // Output X and Y coords of current pixel
@@ -116,9 +119,6 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
   FXint   FinChar;                    // Decompressor variable
   FXint   BitMask;                    // AND mask for data size
   FXint   ReadMask;                   // Code AND mask for current code size
-  FXint   Prefix[4096];               // The hash table used by the decompressor
-  FXint   Suffix[4096];               // The hash table used by the decompressor
-  FXint   OutCode[4097];              // An output array used by the decompressor
 
   // Null out
   data=NULL;
@@ -216,6 +216,7 @@ bool fxloadGIF(FXStream& store,FXColor*& data,FXint& width,FXint& height){
       // Read local map if there is one
       if(flags&0x80){
         ncolors=2<<(flags&7);
+        BitMask=ncolors-1;
         for(i=0; i<ncolors; i++){
           store >> ((FXuchar*)(colormap+i))[0]; // Red
           store >> ((FXuchar*)(colormap+i))[1]; // Green
