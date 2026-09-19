@@ -121,7 +121,7 @@ FXCursor::FXCursor(FXApp* a,const FXColor *pix,FXint w,FXint h,FXint hx,FXint hy
 
 // Return TRUE if color cursor
 bool FXCursor::isColor() const {
-  register FXint i;
+  FXint i;
   if(data){
     for(i=width*height-1; 0<=i; i--){
       if(data[i]!=black && data[i]!=white && FXALPHAVAL(data[i])!=0) return true;
@@ -191,7 +191,7 @@ void FXCursor::create(){
         // We have support for color cursors and its a color cursor
 #ifdef HAVE_XCURSOR_H
         if(isColor() && XcursorSupportsARGB(DISPLAY(getApp()))){
-          register FXuchar *src,*dst,*end; XcursorImage *image;
+          FXuchar *src,*dst,*end; XcursorImage *image;
           FXTRACE((100,"%s::create: custom color %dx%d cursor\n",getClassName(),width,height));
           image=XcursorImageCreate(width,height);
           image->xhot=hotx;
@@ -212,7 +212,7 @@ void FXCursor::create(){
             dst[3]=src[2];      // B
             dst[2]=src[1];      // G
             dst[1]=src[0];      // R
-#endif   
+#endif
             dst+=4;
             src+=4;
             }
@@ -225,7 +225,7 @@ void FXCursor::create(){
         else{
 #endif
           FXuchar shapebits[128],maskbits[128]; XColor color[2]; Pixmap srcpix,mskpix;
-          register FXint srcoffset,dstoffset,dstbytes,i,j;
+          FXint srcoffset,dstoffset,dstbytes,i,j;
           FXTRACE((100,"%s::create: custom b/w %dx%d cursor\n",getClassName(),width,height));
           color[0].pixel=BlackPixel(DISPLAY(getApp()),DefaultScreen(DISPLAY(getApp())));
           color[1].pixel=WhitePixel(DISPLAY(getApp()),DefaultScreen(DISPLAY(getApp())));

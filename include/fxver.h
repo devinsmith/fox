@@ -5,18 +5,14 @@
 // FOX version
 #define FOX_MAJOR  1
 #define FOX_MINOR  6
-#define FOX_LEVEL  57
+#define FOX_LEVEL  59
+
 
 
 // FOX byte order
 #ifndef FOX_BIGENDIAN
-#if defined(__BIG_ENDIAN__)
-#define FOX_BIGENDIAN 1
-#elif defined(__LITTLE_ENDIAN__)
-#define FOX_BIGENDIAN 0
-#else
 #define FOX_BIGENDIAN 0
 #endif
-#endif
+
 
 #endif
